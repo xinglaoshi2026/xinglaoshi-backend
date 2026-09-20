@@ -12,8 +12,8 @@
   header{background:var(--pri);color:#fff;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
   header h1{font-size:17px;margin:0;font-weight:600}
   header .u{font-size:12px;opacity:.9}
-  .tabs{display:flex;background:var(--pri2);position:sticky;top:46px;z-index:9}
-  .tabs button{flex:1;background:none;border:0;color:#cde;padding:10px 0;font-size:14px}
+  .tabs{display:flex;background:var(--pri2);position:sticky;top:46px;z-index:9;overflow-x:auto;white-space:nowrap}
+  .tabs button{flex:0 0 auto;background:none;border:0;color:#cde;padding:10px 14px;font-size:14px}
   .tabs button.on{color:#fff;border-bottom:3px solid #fff;font-weight:600}
   .body{flex:1;padding:10px;overflow:auto}
   .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
@@ -77,8 +77,12 @@
     <div class="tabs">
       <button data-tab="questions" class="on" onclick="switchTab('questions')">题库</button>
       <button data-tab="papers" onclick="switchTab('papers')">试卷</button>
-      <button data-tab="students" onclick="switchTab('students')">学生</button>
       <button data-tab="compose" onclick="switchTab('compose')">组卷</button>
+      <button data-tab="students" onclick="switchTab('students')">学生</button>
+      <button data-tab="schedule" onclick="switchTab('schedule')">课时</button>
+      <button data-tab="exams" onclick="switchTab('exams')">考试</button>
+      <button data-tab="knowledgePoints" onclick="switchTab('knowledgePoints')">知识点</button>
+      <button data-tab="records" onclick="switchTab('records')">记录</button>
     </div>
     <div class="body" id="body">
       <!-- 题库 -->
@@ -135,8 +139,40 @@
         <div class="kv">从题库手动添加（点 ＋ 加入）</div>
         <div id="composePool"></div>
       </div>
+      <!-- 课时 -->
+      <div id="tab-schedule" class="hidden">
+        <div class="search">
+          <input id="scheduleSearch" placeholder="搜索学生/科目…" oninput="debounce(()=>renderModuleList('schedule'),300)()">
+          <button class="btn sec" onclick="renderModuleList('schedule')">搜</button>
+        </div>
+        <div id="scheduleList"></div>
+      </div>
+      <!-- 考试 -->
+      <div id="tab-exams" class="hidden">
+        <div class="search">
+          <input id="examsSearch" placeholder="搜索标题/来源/标签…" oninput="debounce(()=>renderModuleList('exams'),300)()">
+          <button class="btn sec" onclick="renderModuleList('exams')">搜</button>
+        </div>
+        <div id="examsList"></div>
+      </div>
+      <!-- 知识点 -->
+      <div id="tab-knowledgePoints" class="hidden">
+        <div class="search">
+          <input id="knowledgePointsSearch" placeholder="搜索知识点名称/ID…" oninput="debounce(()=>renderModuleList('knowledgePoints'),300)()">
+          <button class="btn sec" onclick="renderModuleList('knowledgePoints')">搜</button>
+        </div>
+        <div id="knowledgePointsList"></div>
+      </div>
+      <!-- 记录 -->
+      <div id="tab-records" class="hidden">
+        <div class="search">
+          <input id="recordsSearch" placeholder="搜索学生/类型/主题…" oninput="debounce(()=>renderModuleList('records'),300)()">
+          <button class="btn sec" onclick="renderModuleList('records')">搜</button>
+        </div>
+        <div id="recordsList"></div>
+      </div>
     </div>
-    <button class="fab" onclick="openEditor()">+</button>
+    <button class="fab" onclick="openFab()">+</button>
   </div>
 
   <!-- 编辑/详情 弹窗 -->

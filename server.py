@@ -297,6 +297,14 @@ class H(BaseHTTPRequestHandler):
             body, ts = store_get("papers", id)
             if body is None: return send_json(self, {"error": "not found"}, 404)
             return send_json(self, {"id": id, "updated_at": ts, "body": body})
+        # 通用：单条查询（覆盖 knowledgePoints/examCategories/exams/schedule/records 等）
+        for m in MODULES:
+            pre = "/api/" + m + "/"
+            if p.startswith(pre):
+                id = p[len(pre):]
+                body, ts = store_get(m, id)
+                if body is None: return send_json(self, {"error": "not found"}, 404)
+                return send_json(self, {"id": id, "updated_at": ts, "body": body})
         if p == "/api/exams":
             return send_json(self, {"items": store_list("exams", limit=500)})
         if p == "/api/students":
@@ -383,6 +391,15 @@ class H(BaseHTTPRequestHandler):
             body["id"] = id; body["updatedAt"] = now_ts()
             store_put("records", id, body)
             return send_json(self, {"ok": True, "id": id})
+        # 通用：创建（覆盖 knowledgePoints/examCategories 等未单独处理的模块）
+        for m in MODULES:
+            if p == "/api/" + m:
+                body, err = read_body(self)
+                if err: return send_json(self, {"error": err}, 400)
+                id = body.get("id") or (m[:2] + "_" + uuid.uuid4().hex[:12])
+                body["id"] = id; body["updatedAt"] = now_ts()
+                store_put(m, id, body)
+                return send_json(self, {"ok": True, "id": id})
         if p == "/api/sync/push":
             body, err = read_body(self)
             if err: return send_json(self, {"error": err}, 400)
@@ -440,6 +457,16 @@ class H(BaseHTTPRequestHandler):
             body["id"] = id; body["updatedAt"] = now_ts()
             store_put("students", id, body)
             return send_json(self, {"ok": True, "id": id})
+        # 通用：更新（覆盖 exams/schedule/records/knowledgePoints/examCategories 等）
+        for m in MODULES:
+            pre = "/api/" + m + "/"
+            if p.startswith(pre):
+                id = p[len(pre):]
+                body, err = read_body(self)
+                if err: return send_json(self, {"error": err}, 400)
+                body["id"] = id; body["updatedAt"] = now_ts()
+                store_put(m, id, body)
+                return send_json(self, {"ok": True, "id": id})
         send_json(self, {"error": "未知接口 " + p}, 404)
 
     # ---- DELETE ----
@@ -449,7 +476,9 @@ class H(BaseHTTPRequestHandler):
         if not u: return send_json(self, {"error": "未登录"}, 401)
         for prefix, mod in (("/api/questions/", "questions"), ("/api/papers/", "papers"),
                             ("/api/exams/", "exams"), ("/api/students/", "students"),
-                            ("/api/schedule/", "schedule"), ("/api/records/", "records")):
+                            ("/api/schedule/", "schedule"), ("/api/records/", "records"),
+                            ("/api/knowledgePoints/", "knowledgePoints"),
+                            ("/api/examCategories/", "examCategories")):
             if p.startswith(prefix):
                 id = p[len(prefix):]
                 store_delete(mod, id)

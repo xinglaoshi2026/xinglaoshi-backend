@@ -330,6 +330,10 @@
     if (tab === "papers") loadPapers();
     if (tab === "students") loadStudents();
     if (tab === "compose") { renderComposePool(); renderCompose(); }
+    if (tab === "schedule") renderModuleList("schedule");
+    if (tab === "exams") renderModuleList("exams");
+    if (tab === "knowledgePoints") renderModuleList("knowledgePoints");
+    if (tab === "records") renderModuleList("records");
   }
   function switchTab(t) {
     tab = t;
@@ -338,8 +342,18 @@
     $("#tab-papers").classList.toggle("hidden", t !== "papers");
     $("#tab-students").classList.toggle("hidden", t !== "students");
     $("#tab-compose").classList.toggle("hidden", t !== "compose");
-    $("#title").textContent = { questions: "题库", papers: "试卷", students: "学生", compose: "组卷" }[t];
+    $("#tab-schedule").classList.toggle("hidden", t !== "schedule");
+    $("#tab-exams").classList.toggle("hidden", t !== "exams");
+    $("#tab-knowledgePoints").classList.toggle("hidden", t !== "knowledgePoints");
+    $("#tab-records").classList.toggle("hidden", t !== "records");
+    $("#title").textContent = { questions: "题库", papers: "试卷", students: "学生", compose: "组卷",
+      schedule: "课时", exams: "考试", knowledgePoints: "知识点", records: "记录" }[t];
     renderTab();   // 仅用本地缓存渲染，秒开；不再自动后台重拉，避免免费服务器冷启卡顿
+  }
+  function openFab() {
+    if (tab === "questions") return openEditor();
+    if (MOD_UI[tab]) return openModuleEditor(tab, null);
+    toast("当前页不支持新建");
   }
 
   // ---------- 组卷 ----------
@@ -442,6 +456,139 @@
     } catch (e) { toast("保存失败：" + e.message); }
   }
 
+  // ---------- 通用模块（课时/考试/知识点/记录）----------
+  const WD = ["日", "一", "二", "三", "四", "五", "六"];
+  const MOD_UI = {
+    schedule: {
+      label: "课时",
+      title: b => b.studentName || "课时",
+      sub: b => `周${WD[b.dayOfWeek] != null ? WD[b.dayOfWeek] : "?"} ${b.startTime || ""}-${b.endTime || ""}` + (b.subject ? " · " + b.subject : "") + (b.location ? " @ " + b.location : ""),
+      fields: [
+        { k: "studentName", label: "学生", type: "text" },
+        { k: "dayOfWeek", label: "星期(0-6)", type: "number" },
+        { k: "startTime", label: "开始时间", type: "text" },
+        { k: "endTime", label: "结束时间", type: "text" },
+        { k: "subject", label: "科目", type: "text" },
+        { k: "location", label: "地点", type: "text" },
+        { k: "weekStart", label: "周起始日", type: "text" },
+        { k: "note", label: "备注", type: "textarea" },
+      ],
+    },
+    exams: {
+      label: "考试",
+      title: b => b.title || "未命名考试",
+      sub: b => [b.grade, b.source, b.tags].filter(Boolean).join(" · "),
+      fields: [
+        { k: "title", label: "标题", type: "text" },
+        { k: "grade", label: "年级", type: "text" },
+        { k: "source", label: "来源", type: "text" },
+        { k: "tags", label: "标签", type: "text" },
+        { k: "categoryId", label: "分类ID", type: "text" },
+        { k: "note", label: "备注", type: "textarea" },
+        { k: "contentHtml", label: "内容HTML", type: "textarea" },
+      ],
+      files: true,
+    },
+    knowledgePoints: {
+      label: "知识点",
+      title: b => b.name || b.id || "知识点",
+      sub: b => b.parentId ? ("父: " + b.parentId) : "顶级",
+      fields: [
+        { k: "id", label: "ID", type: "text" },
+        { k: "name", label: "名称", type: "text" },
+        { k: "parentId", label: "父ID", type: "text" },
+      ],
+    },
+    records: {
+      label: "记录",
+      title: b => (b.studentName || "") + (b.date ? " " + b.date : ""),
+      sub: b => [b.type, b.topic].filter(Boolean).join(" · "),
+      fields: [
+        { k: "studentName", label: "学生", type: "text" },
+        { k: "type", label: "类型", type: "text" },
+        { k: "date", label: "日期", type: "text" },
+        { k: "hours", label: "课时", type: "number" },
+        { k: "durationHours", label: "时长(小时)", type: "number" },
+        { k: "topic", label: "主题", type: "text" },
+        { k: "note", label: "备注", type: "textarea" },
+      ],
+    },
+  };
+  function renderModuleList(mod) {
+    const ui = MOD_UI[mod]; if (!ui) return;
+    const q = ($("#" + mod + "Search") ? $("#" + mod + "Search").value : "").trim().toLowerCase();
+    let items = DB.data[mod] || [];
+    if (q) items = items.filter(it => { const b = it.body || {}; return (ui.title(b) + " " + (ui.sub ? ui.sub(b) : "")).toLowerCase().includes(q); });
+    const box = $("#" + mod + "List");
+    box.innerHTML = items.length ? "" : '<div class="center">暂无' + ui.label + "</div>";
+    items.forEach(it => {
+      const b = it.body || {};
+      const div = document.createElement("div"); div.className = "card";
+      div.innerHTML = `<div class="row"><span class="tag">${esc(ui.label)}</span>
+        <span style="flex:1;font-weight:600">${esc(ui.title(b))}</span></div>
+        <div class="muted">${esc(ui.sub(b))}</div>`;
+      div.onclick = () => openModuleDetail(mod, it.id);
+      box.appendChild(div);
+    });
+  }
+  function openModuleDetail(mod, id) {
+    const ui = MOD_UI[mod];
+    const it = (DB.data[mod] || []).find(x => x.id === id);
+    const b = (it && it.body) || {};
+    let html = `<h3>${esc(ui.title(b))}</h3><div class="muted">${esc(ui.sub(b))}</div>`;
+    (ui.fields || []).forEach(f => {
+      const v = b[f.k];
+      if (f.k === "contentHtml" && v) html += `<div class="kv" style="margin-top:6px">${esc(f.label)}</div><div>${renderRich(v)}</div>`;
+      else html += `<div class="kv" style="margin-top:4px">${esc(f.label)}：${esc(v == null ? "" : v)}</div>`;
+    });
+    if (ui.files && (b.files || []).length) {
+      html += `<div class="kv" style="margin-top:6px">附件</div>`;
+      (b.files || []).forEach(fl => { html += `<div><a href="/api/media/${encodeURIComponent(fl.rel)}" target="_blank">${esc(fl.name || fl.rel)}</a></div>`; });
+    }
+    html += `<div class="row" style="margin-top:12px">
+      <button class="btn" onclick="openModuleEditor('${mod}','${id}')">编辑</button>
+      <button class="btn danger" onclick="delModule('${mod}','${id}')">删除</button>
+      <button class="btn sec" onclick="closeModal()">关闭</button></div>`;
+    $("#modalBox").innerHTML = html; openModal();
+  }
+  function openModuleEditor(mod, id) {
+    const ui = MOD_UI[mod];
+    const isEdit = !!id;
+    const it = isEdit ? (DB.data[mod] || []).find(x => x.id === id) : null;
+    const b = (it && it.body) || {};
+    let html = `<h3>${isEdit ? "编辑" : "新建"}${ui.label}</h3>
+      <input type="hidden" id="m_mod" value="${mod}"><input type="hidden" id="m_id" value="${esc(id || "")}">`;
+    (ui.fields || []).forEach(f => {
+      const v = b[f.k] == null ? "" : b[f.k];
+      if (f.type === "textarea") html += `<label class="kv">${esc(f.label)}</label><textarea id="mf_${f.k}">${esc(v)}</textarea>`;
+      else html += `<label class="kv">${esc(f.label)}</label><input id="mf_${f.k}" type="${f.type === "number" ? "number" : "text"}" value="${esc(v)}">`;
+    });
+    html += `<div class="row" style="margin-top:12px"><button class="btn ok" onclick="saveModule()">保存</button><button class="btn sec" onclick="closeModal()">取消</button></div>`;
+    $("#modalBox").innerHTML = html; openModal();
+  }
+  async function saveModule() {
+    const mod = $("#m_mod").value;
+    const id = $("#m_id").value || (mod.slice(0, 2) + "_" + Date.now().toString(36));
+    const ui = MOD_UI[mod];
+    const body = { id };
+    (ui.fields || []).forEach(f => {
+      let v = $("#mf_" + f.k).value;
+      if (f.type === "number") v = v === "" ? 0 : Number(v);
+      body[f.k] = v;
+    });
+    body.updatedAt = Math.floor(Date.now() / 1000);
+    try {
+      if ($("#m_id").value) await api("PUT", "/api/" + mod + "/" + id, body);
+      else await api("POST", "/api/" + mod, body);
+      toast("已保存"); closeModal(); await loadPull(true); renderTab();
+    } catch (e) { toast("保存失败：" + e.message); }
+  }
+  async function delModule(mod, id) {
+    if (!confirm("确认删除？")) return;
+    try { await api("DELETE", "/api/" + mod + "/" + id); toast("已删除"); closeModal(); await loadPull(true); renderTab(); }
+    catch (e) { toast("删除失败：" + e.message); }
+  }
+
   // 暴露给 inline onclick
   window.doLogin = doLogin; window.switchTab = switchTab; window.loadQuestions = () => applyFilter();
   window.refreshData = refreshData;
@@ -452,6 +599,9 @@
   window.renderComposePool = renderComposePool; window.addToCompose = addToCompose;
   window.removeFromCompose = removeFromCompose; window.clearCompose = clearCompose;
   window.smartCompose = smartCompose; window.previewCompose = previewCompose; window.saveCompose = saveCompose;
+  window.renderModuleList = renderModuleList; window.openModuleDetail = openModuleDetail;
+  window.openModuleEditor = openModuleEditor; window.saveModule = saveModule; window.delModule = delModule;
+  window.openFab = openFab;
 
   // 启动
   if (token) enterMain();
