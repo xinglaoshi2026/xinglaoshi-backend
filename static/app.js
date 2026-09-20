@@ -111,7 +111,7 @@
     $("#who").onclick = logout;
     $("#qList").innerHTML = '<div class="center">正在同步数据…</div>';
     await loadPull(true);
-    applyFilter();
+    switchTab("dashboard");
   }
 
   // ---------- 题库（本地过滤 + 分页） ----------
@@ -334,21 +334,41 @@
     if (tab === "exams") renderModuleList("exams");
     if (tab === "knowledgePoints") renderModuleList("knowledgePoints");
     if (tab === "records") renderModuleList("records");
+    if (tab === "dashboard") renderDashboard();
   }
   function switchTab(t) {
     tab = t;
-    document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
-    $("#tab-questions").classList.toggle("hidden", t !== "questions");
-    $("#tab-papers").classList.toggle("hidden", t !== "papers");
-    $("#tab-students").classList.toggle("hidden", t !== "students");
-    $("#tab-compose").classList.toggle("hidden", t !== "compose");
-    $("#tab-schedule").classList.toggle("hidden", t !== "schedule");
-    $("#tab-exams").classList.toggle("hidden", t !== "exams");
-    $("#tab-knowledgePoints").classList.toggle("hidden", t !== "knowledgePoints");
-    $("#tab-records").classList.toggle("hidden", t !== "records");
-    $("#title").textContent = { questions: "题库", papers: "试卷", students: "学生", compose: "组卷",
-      schedule: "课时", exams: "考试", knowledgePoints: "知识点", records: "记录" }[t];
+    // 侧栏高亮（与桌面版 nav-btn.active 一致）
+    document.querySelectorAll(".sb-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === t));
+    ["dashboard","questions","papers","compose","students","schedule","records","exams","knowledgePoints"]
+      .forEach(id => $("#tab-" + id).classList.toggle("hidden", id !== t));
+    $("#title").textContent = { dashboard: "首页", questions: "题库", papers: "试卷", compose: "组卷",
+      students: "学生", schedule: "排课", records: "课时", exams: "考试", knowledgePoints: "知识点" }[t];
+    $(".fab").style.display = (t === "dashboard") ? "none" : "flex";
+    closeSidebar();
     renderTab();   // 仅用本地缓存渲染，秒开；不再自动后台重拉，避免免费服务器冷启卡顿
+  }
+  function openSidebar() { $("#sidebar").classList.add("open"); $("#backdrop").classList.add("show"); }
+  function closeSidebar() { $("#sidebar").classList.remove("open"); $("#backdrop").classList.remove("show"); }
+  // 首页仪表盘（与桌面版 stats-grid / stat-card 一致）
+  function renderDashboard() {
+    const d = DB.data || {};
+    const stats = [
+      { ico: "📚", label: "题库题目", value: (d.questions || []).length, color: "" },
+      { ico: "📄", label: "试卷", value: (d.papers || []).length },
+      { ico: "👥", label: "学生", value: (d.students || []).length },
+      { ico: "📝", label: "课时记录", value: (d.records || []).length },
+      { ico: "📋", label: "考试", value: (d.exams || []).length },
+      { ico: "💡", label: "知识点", value: (d.knowledgePoints || []).length },
+    ];
+    $("#dashStats").innerHTML = stats.map(s => `
+      <div class="stat-card">
+        <div class="stat-icon">${s.ico}</div>
+        <div class="stat-info">
+          <div class="stat-label">${s.label}</div>
+          <div class="stat-value">${s.value}</div>
+        </div>
+      </div>`).join("");
   }
   function openFab() {
     if (tab === "questions") return openEditor();
@@ -460,8 +480,8 @@
   const WD = ["日", "一", "二", "三", "四", "五", "六"];
   const MOD_UI = {
     schedule: {
-      label: "课时",
-      title: b => b.studentName || "课时",
+      label: "排课",
+      title: b => b.studentName || "排课",
       sub: b => `周${WD[b.dayOfWeek] != null ? WD[b.dayOfWeek] : "?"} ${b.startTime || ""}-${b.endTime || ""}` + (b.subject ? " · " + b.subject : "") + (b.location ? " @ " + b.location : ""),
       fields: [
         { k: "studentName", label: "学生", type: "text" },
@@ -602,6 +622,7 @@
   window.renderModuleList = renderModuleList; window.openModuleDetail = openModuleDetail;
   window.openModuleEditor = openModuleEditor; window.saveModule = saveModule; window.delModule = delModule;
   window.openFab = openFab;
+  window.openSidebar = openSidebar; window.closeSidebar = closeSidebar; window.renderDashboard = renderDashboard;
 
   // 启动
   if (token) enterMain();

@@ -5,88 +5,226 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>邢老师工作台·手机端</title>
 <style>
-  :root{--bg:#f5f6f8;--card:#fff;--pri:#2b6cb0;--pri2:#1a4971;--ok:#2f855a;--warn:#c05621;--line:#e2e8f0;--txt:#1a202c;--mut:#718096}
-  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  body{margin:0;font-family:-apple-system,system-ui,"Microsoft YaHei",sans-serif;background:var(--bg);color:var(--txt);font-size:15px}
-  .app{max-width:760px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column}
-  header{background:var(--pri);color:#fff;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
-  header h1{font-size:17px;margin:0;font-weight:600}
-  header .u{font-size:12px;opacity:.9}
-  .tabs{display:flex;background:var(--pri2);position:sticky;top:46px;z-index:9;overflow-x:auto;white-space:nowrap}
-  .tabs button{flex:0 0 auto;background:none;border:0;color:#cde;padding:10px 14px;font-size:14px}
-  .tabs button.on{color:#fff;border-bottom:3px solid #fff;font-weight:600}
-  .body{flex:1;padding:10px;overflow:auto}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
-  .card h3{margin:0 0 6px;font-size:15px}
-  .muted{color:var(--mut);font-size:12px}
-  .tag{display:inline-block;background:#ebf4ff;color:var(--pri);border-radius:6px;padding:1px 7px;font-size:12px;margin-right:5px}
-  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-  input,textarea,select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-size:15px;font-family:inherit;background:#fff}
-  textarea{min-height:80px;resize:vertical}
-  button.btn{background:var(--pri);color:#fff;border:0;border-radius:8px;padding:10px 14px;font-size:15px;font-weight:600}
-  button.btn.sec{background:#edf2f7;color:var(--txt)}
-  button.btn.ok{background:var(--ok)}
-  button.btn.danger{background:#e53e3e}
-  button.btn:active{opacity:.85}
-  .fab{position:fixed;right:16px;bottom:18px;width:54px;height:54px;border-radius:50%;background:var(--pri);color:#fff;font-size:26px;border:0;box-shadow:0 3px 10px rgba(0,0,0,.25);z-index:20}
+  /* ===== 与桌面版一致的配色与组件体系 ===== */
+  :root{
+    --primary:#4F46E5; --primary-light:#818CF8; --primary-dark:#3730A3; --primary-bg:#EEF2FF;
+    --bg:#F3F4F6; --card-bg:#FFFFFF; --text:#1F2937; --text-muted:#6B7280;
+    --border:#E5E7EB; --border-dark:#D1D5DB;
+    --success:#10B981; --success-bg:#ECFDF5; --warning:#F59E0B; --warning-bg:#FFFBEB;
+    --danger:#EF4444; --danger-bg:#FEF2F2; --info:#3B82F6; --info-bg:#EFF6FF;
+    --radius:12px; --radius-sm:8px; --radius-lg:16px;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.06); --shadow:0 1px 3px rgba(0,0,0,.1),0 1px 2px rgba(0,0,0,.04);
+    --shadow-lg:0 10px 30px rgba(0,0,0,.08),0 4px 12px rgba(0,0,0,.04);
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg);color:var(--text);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  button{font-family:inherit;cursor:pointer;border:none;background:none}
+  input,select,textarea{font-family:inherit;font-size:14px}
+  a{color:var(--primary);text-decoration:none}
   .hidden{display:none!important}
-  .center{text-align:center;padding:30px 10px;color:var(--mut)}
-  .qimg{max-width:100%;border:1px solid var(--line);border-radius:8px;margin:6px 0;display:block}
+  .muted{color:var(--text-muted);font-size:12px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .center{text-align:center;padding:40px 10px;color:var(--text-muted)}
+
+  /* ===== 顶部栏（对应桌面版 app-logo 风格） ===== */
+  .topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:10px;
+    background:#fff;border-bottom:1px solid var(--border);padding:10px 12px;box-shadow:var(--shadow-sm)}
+  .hamburger{width:38px;height:38px;border-radius:var(--radius-sm);font-size:20px;color:var(--primary);
+    display:flex;align-items:center;justify-content:center}
+  .hamburger:active{background:var(--primary-bg)}
+  .top-title{flex:1;font-size:16px;font-weight:600;color:var(--text)}
+  .who{font-size:12px;color:var(--text-muted);white-space:nowrap}
+  .who:active{color:var(--danger)}
+
+  /* ===== 左侧抽屉导航（对应桌面版 app-sidebar） ===== */
+  .backdrop{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:40;opacity:0;pointer-events:none;transition:opacity .2s}
+  .backdrop.show{opacity:1;pointer-events:auto}
+  .sidebar{position:fixed;top:0;left:0;height:100vh;width:250px;z-index:50;
+    background:linear-gradient(180deg,var(--primary) 0%,var(--primary-dark) 100%);color:#fff;
+    display:flex;flex-direction:column;transform:translateX(-100%);transition:transform .22s ease;box-shadow:var(--shadow-lg)}
+  .sidebar.open{transform:translateX(0)}
+  .sb-logo{display:flex;align-items:center;gap:8px;padding:20px 18px;font-size:17px;font-weight:700;
+    white-space:nowrap;border-bottom:1px solid rgba(255,255,255,.12)}
+  .sb-logo .icon{font-size:22px}
+  .sb-nav{display:flex;flex-direction:column;gap:4px;padding:14px 12px;flex:1;overflow-y:auto}
+  .sb-btn{display:flex;align-items:center;gap:12px;width:100%;color:rgba(255,255,255,.72);
+    padding:12px 14px;border-radius:var(--radius-sm);font-size:15px;font-weight:500;text-align:left;transition:all .2s}
+  .sb-btn .ico{font-size:18px;width:22px;text-align:center}
+  .sb-btn:active{background:rgba(255,255,255,.12)}
+  .sb-btn.active{color:#fff;background:rgba(255,255,255,.2)}
+  .sb-foot{border-top:1px solid rgba(255,255,255,.12);padding:12px}
+  .sb-foot .sb-btn{color:rgba(255,255,255,.6);font-size:14px}
+
+  /* ===== 内容区 ===== */
+  .content{flex:1;padding:12px;max-width:1100px;width:100%;margin:0 auto}
+
+  /* ===== 卡片（对应桌面版 .card） ===== */
+  .card{background:var(--card-bg);border-radius:var(--radius);box-shadow:var(--shadow-sm);
+    overflow:hidden;padding:14px 16px;margin-bottom:10px}
+  .card h3{margin:0 0 6px;font-size:16px;font-weight:600;color:var(--text)}
+  .card.page{padding:0;overflow:visible}
+
+  /* ===== 标签/徽章（对应桌面版 .badge-primary） ===== */
+  .tag{display:inline-flex;align-items:center;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:500;
+    background:var(--primary-bg);color:var(--primary);margin-right:5px}
+  .badge{display:inline-flex;align-items:center;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:500}
+  .badge-success{background:var(--success-bg);color:var(--success)}
+  .badge-warning{background:var(--warning-bg);color:var(--warning)}
+  .badge-danger{background:var(--danger-bg);color:var(--danger)}
+  .badge-info{background:var(--info-bg);color:var(--info)}
+  .badge-gray{background:#F3F4F6;color:var(--text-muted)}
+
+  /* ===== 按钮（对应桌面版 .btn 体系） ===== */
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 16px;
+    border-radius:var(--radius-sm);font-size:14px;font-weight:500;background:var(--primary);color:#fff;transition:all .15s;white-space:nowrap}
+  .btn:active{opacity:.85}
+  .btn.sec{background:#fff;color:var(--text);border:1px solid var(--border-dark)}
+  .btn.sec:active{background:var(--bg);border-color:var(--primary);color:var(--primary)}
+  .btn.ok{background:var(--success);color:#fff}
+  .btn.danger{background:var(--danger-bg);color:var(--danger)}
+  .btn.danger:active{background:var(--danger);color:#fff}
+  .btn.sm{padding:6px 11px;font-size:13px}
+  .btn:disabled{opacity:.5}
+
+  /* ===== 表单 ===== */
+  label.kv{display:block;font-size:13px;font-weight:600;color:var(--text-muted);margin:10px 0 6px}
+  input,textarea,select{width:100%;padding:9px 12px;border:1px solid var(--border-dark);border-radius:var(--radius-sm);
+    background:#fff;color:var(--text);outline:none;transition:border-color .15s,box-shadow .15s}
+  input:focus,textarea:focus,select:focus{border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-bg)}
+  textarea{min-height:84px;resize:vertical;line-height:1.6}
   .search{display:flex;gap:8px;margin-bottom:10px}
   .search input{flex:1}
-  .toast{position:fixed;left:50%;top:60px;transform:translateX(-50%);background:#000c;color:#fff;padding:8px 14px;border-radius:8px;z-index:50;opacity:0;transition:.2s}
-  .toast.show{opacity:1}
-  .modal{position:fixed;inset:0;background:#0008;z-index:40;display:flex;align-items:center;justify-content:center;padding:14px}
-  .modal .box{background:#fff;border-radius:12px;width:100%;max-width:560px;max-height:90vh;overflow:auto;padding:16px}
-  .kv{font-size:13px;color:var(--mut);margin:2px 0}
-  .login{max-width:360px;margin:40px auto;padding:0 16px}
-  .login .card{padding:20px}
   .seg{display:flex;gap:6px;margin:8px 0}
-  .seg button{flex:1;background:#edf2f7;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px}
-  .seg button.on{background:var(--pri);color:#fff;border-color:var(--pri)}
+  .seg button{flex:1;background:#fff;border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;font-size:14px}
+  .seg button.on{background:var(--primary);color:#fff;border-color:var(--primary)}
+
+  /* ===== 首页仪表盘（对应桌面版 .stats-grid / .stat-card） ===== */
+  .stats-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:14px}
+  .stat-card{background:var(--card-bg);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow-sm);
+    display:flex;align-items:center;gap:14px}
+  .stat-icon{width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;
+    font-size:22px;flex-shrink:0;background:var(--primary-bg);color:var(--primary)}
+  .stat-info{flex:1;min-width:0}
+  .stat-label{font-size:13px;color:var(--text-muted)}
+  .stat-value{font-size:24px;font-weight:700;line-height:1.2}
+  .stat-sub{font-size:12px;color:var(--text-muted)}
+  .quick-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  .quick-card{background:var(--card-bg);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow-sm);
+    display:flex;flex-direction:column;gap:6px;align-items:flex-start;transition:all .15s}
+  .quick-card:active{transform:translateY(1px);box-shadow:var(--shadow)}
+  .quick-card .qc-ico{width:40px;height:40px;border-radius:10px;background:var(--primary-bg);color:var(--primary);
+    display:flex;align-items:center;justify-content:center;font-size:20px}
+  .quick-card .qc-title{font-size:15px;font-weight:600}
+  .quick-card .qc-sub{font-size:12px;color:var(--text-muted)}
+
+  /* ===== 题目卡片左侧强调条（对应桌面版 question-card） ===== */
+  .card.q{border-left:4px solid var(--primary);padding:14px 16px}
+  .q-content{font-size:14px;line-height:1.7;margin:8px 0;white-space:pre-wrap;word-break:break-word}
+  .q-answer{font-size:13px;color:var(--text-muted);background:#F9FAFB;padding:10px 14px;border-radius:var(--radius-sm);
+    margin-top:8px;white-space:pre-wrap;border:1px dashed var(--border)}
+
+  /* ===== 图片 ===== */
+  .qimg{max-width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);margin:6px 0;display:block}
+
+  /* ===== 悬浮新建按钮（对应桌面版 + 操作） ===== */
+  .fab{position:fixed;right:16px;bottom:20px;width:54px;height:54px;border-radius:50%;background:var(--primary);
+    color:#fff;font-size:26px;border:0;box-shadow:0 4px 14px rgba(79,70,229,.4);z-index:35;display:flex;align-items:center;justify-content:center}
+  .fab:active{transform:scale(.94)}
+
+  /* ===== 弹窗（对应桌面版 .modal-overlay / .modal） ===== */
+  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-start;justify-content:center;
+    z-index:60;padding:24px 14px;overflow-y:auto;animation:fadeIn .15s ease}
+  .modal{background:#fff;border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);width:100%;max-width:560px;margin:auto}
+  .modal-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+  .modal-title{font-size:18px;font-weight:600}
+  .modal-close{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--text-muted)}
+  .modal-close:active{background:var(--bg)}
+  .modal-body{padding:20px;max-height:70vh;overflow-y:auto}
+  .modal-footer{padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:12px}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+
+  /* ===== 登录（对应桌面版 .auth-overlay） ===== */
+  .auth-screen{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%);padding:16px}
+  .auth-card{width:360px;max-width:92vw;background:var(--card-bg);border-radius:var(--radius);box-shadow:0 24px 60px rgba(0,0,0,.45);padding:28px 26px}
+  .auth-brand{display:flex;align-items:center;gap:10px;font-size:18px;font-weight:700;color:var(--primary);margin-bottom:20px}
+  .auth-logo{font-size:24px}
+  .auth-title{font-size:16px;font-weight:600;margin-bottom:14px}
+  .auth-hint{font-size:12px;color:var(--text-muted);margin-top:14px;line-height:1.6}
+
+  /* ===== Toast（对应桌面版 .toast） ===== */
+  .toast{position:fixed;left:50%;top:64px;transform:translateX(-50%) translateY(-8px);background:var(--text);color:#fff;
+    padding:9px 16px;border-radius:var(--radius-sm);z-index:80;opacity:0;transition:.2s;font-size:14px;box-shadow:var(--shadow-lg);max-width:90vw}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .toast.success{background:var(--success)}
+  .toast.error{background:var(--danger)}
 </style>
 </head>
 <body>
 <div class="app" id="app">
-  <!-- 登录 -->
-  <div id="loginView" class="login">
-    <div class="card">
-      <h3>邢老师工作台 · 手机端</h3>
-      <p class="muted">登录云端同步账号，即可在手机上查看 / 添加 / 修改。</p>
-      <label class="kv">后端地址（部署后填写，默认同源）</label>
-      <input id="baseUrl" placeholder="https://your-app.onrender.com" value="">
+
+  <!-- 登录（与桌面版 auth 一致） -->
+  <div id="loginView" class="auth-screen">
+    <div class="auth-card">
+      <div class="auth-brand"><span class="auth-logo">📘</span>邢老师工作台</div>
+      <div class="auth-title">手机端登录</div>
+      <label class="kv">后端地址（部署后自动填充，默认同源）</label>
+      <input id="baseUrl" placeholder="https://your-app.up.railway.app" value="">
       <label class="kv">用户名</label>
       <input id="username" placeholder="admin" value="admin">
       <label class="kv">密码</label>
       <input id="password" type="password" placeholder="密码" value="">
       <div style="height:10px"></div>
       <button class="btn" style="width:100%" onclick="doLogin()">登录</button>
-      <p class="muted" id="loginMsg" style="margin-top:8px"></p>
+      <p class="auth-hint" id="loginMsg">登录云端同步账号，即可在手机上查看 / 添加 / 修改题库、试卷、学生等。</p>
     </div>
   </div>
 
   <!-- 主界面 -->
   <div id="mainView" class="hidden">
-    <header>
-      <h1 id="title">题库</h1>
-      <div class="row">
-        <button class="btn sec" style="padding:6px 11px;font-size:13px" onclick="refreshData()">刷新</button>
-        <span class="u" id="who"></span>
-      </div>
+    <header class="topbar">
+      <button class="hamburger" onclick="openSidebar()">☰</button>
+      <div class="top-title" id="title">首页</div>
+      <button class="btn sec sm" onclick="refreshData()">刷新</button>
+      <span class="who" id="who"></span>
     </header>
-    <div class="tabs">
-      <button data-tab="questions" class="on" onclick="switchTab('questions')">题库</button>
-      <button data-tab="papers" onclick="switchTab('papers')">试卷</button>
-      <button data-tab="compose" onclick="switchTab('compose')">组卷</button>
-      <button data-tab="students" onclick="switchTab('students')">学生</button>
-      <button data-tab="schedule" onclick="switchTab('schedule')">课时</button>
-      <button data-tab="exams" onclick="switchTab('exams')">考试</button>
-      <button data-tab="knowledgePoints" onclick="switchTab('knowledgePoints')">知识点</button>
-      <button data-tab="records" onclick="switchTab('records')">记录</button>
-    </div>
-    <div class="body" id="body">
+
+    <!-- 左侧抽屉导航（与桌面版一致） -->
+    <div class="backdrop" id="backdrop" onclick="closeSidebar()"></div>
+    <aside class="sidebar" id="sidebar">
+      <div class="sb-logo"><span class="icon">📘</span>邢老师工作台</div>
+      <nav class="sb-nav">
+        <button class="sb-btn active" data-tab="dashboard" onclick="switchTab('dashboard')"><span class="ico">🏠</span><span>首页</span></button>
+        <button class="sb-btn" data-tab="questions" onclick="switchTab('questions')"><span class="ico">📚</span><span>题库</span></button>
+        <button class="sb-btn" data-tab="papers" onclick="switchTab('papers')"><span class="ico">📄</span><span>试卷</span></button>
+        <button class="sb-btn" data-tab="compose" onclick="switchTab('compose')"><span class="ico">🧩</span><span>组卷</span></button>
+        <button class="sb-btn" data-tab="students" onclick="switchTab('students')"><span class="ico">👥</span><span>学生</span></button>
+        <button class="sb-btn" data-tab="schedule" onclick="switchTab('schedule')"><span class="ico">📅</span><span>排课</span></button>
+        <button class="sb-btn" data-tab="records" onclick="switchTab('records')"><span class="ico">📝</span><span>课时</span></button>
+        <button class="sb-btn" data-tab="exams" onclick="switchTab('exams')"><span class="ico">📋</span><span>考试</span></button>
+        <button class="sb-btn" data-tab="knowledgePoints" onclick="switchTab('knowledgePoints')"><span class="ico">💡</span><span>知识点</span></button>
+      </nav>
+      <div class="sb-foot">
+        <button class="sb-btn" onclick="logout()"><span class="ico">⏻</span><span>退出登录</span></button>
+      </div>
+    </aside>
+
+    <main class="content" id="body">
+      <!-- 首页仪表盘 -->
+      <div id="tab-dashboard">
+        <div class="stats-grid" id="dashStats"></div>
+        <div class="quick-grid">
+          <button class="quick-card" onclick="switchTab('compose')"><span class="qc-ico">🧩</span><span class="qc-title">智能组卷</span><span class="qc-sub">按条件抽取题目成卷</span></button>
+          <button class="quick-card" onclick="switchTab('schedule')"><span class="qc-ico">📅</span><span class="qc-title">本周排课</span><span class="qc-sub">查看课程安排</span></button>
+          <button class="quick-card" onclick="switchTab('questions')"><span class="qc-ico">📚</span><span class="qc-title">题库检索</span><span class="qc-sub">搜索 / 查看题目</span></button>
+          <button class="quick-card" onclick="switchTab('students')"><span class="qc-ico">👥</span><span class="qc-title">学生管理</span><span class="qc-sub">课时 / 联系信息</span></button>
+        </div>
+      </div>
+
       <!-- 题库 -->
-      <div id="tab-questions">
+      <div id="tab-questions" class="hidden">
         <div class="search">
           <input id="qSearch" placeholder="搜索题干/答案…" oninput="debounce(loadQuestions,400)()">
           <button class="btn sec" onclick="loadQuestions()">搜</button>
@@ -95,13 +233,9 @@
         <div class="center"><button class="btn sec" onclick="loadMore()">加载更多</button></div>
       </div>
       <!-- 试卷 -->
-      <div id="tab-papers" class="hidden">
-        <div id="pList"></div>
-      </div>
+      <div id="tab-papers" class="hidden"><div id="pList"></div></div>
       <!-- 学生 -->
-      <div id="tab-students" class="hidden">
-        <div id="sList"></div>
-      </div>
+      <div id="tab-students" class="hidden"><div id="sList"></div></div>
       <!-- 组卷 -->
       <div id="tab-compose" class="hidden">
         <div class="card">
@@ -110,9 +244,7 @@
           <label class="kv">备注</label>
           <input id="cNote" placeholder="可选">
           <div class="kv" style="margin-top:6px">智能抽取规则</div>
-          <div class="search">
-            <input id="cKw" placeholder="题干关键词（可空）" oninput="debounce(renderComposePool,300)()">
-          </div>
+          <div class="search"><input id="cKw" placeholder="题干关键词（可空）" oninput="debounce(renderComposePool,300)()"></div>
           <div class="row" style="gap:6px;margin-bottom:6px">
             <select id="cType"><option value="">全部题型</option><option>选择题</option><option>多选题</option><option>填空题</option><option>解答题</option></select>
             <input id="cKp" placeholder="知识点ID(可空)" style="flex:1">
@@ -131,7 +263,7 @@
         <div class="card">
           <div class="row" style="justify-content:space-between">
             <span class="kv">已选题目（<span id="cCount">0</span>）</span>
-            <button class="btn sec" style="padding:6px 10px;font-size:13px" onclick="previewCompose()">预览试卷</button>
+            <button class="btn sec sm" onclick="previewCompose()">预览试卷</button>
           </div>
           <div id="composeList"></div>
           <button class="btn ok" style="width:100%;margin-top:8px" onclick="saveCompose()">保存为试卷</button>
@@ -139,13 +271,21 @@
         <div class="kv">从题库手动添加（点 ＋ 加入）</div>
         <div id="composePool"></div>
       </div>
-      <!-- 课时 -->
+      <!-- 排课 -->
       <div id="tab-schedule" class="hidden">
         <div class="search">
           <input id="scheduleSearch" placeholder="搜索学生/科目…" oninput="debounce(()=>renderModuleList('schedule'),300)()">
           <button class="btn sec" onclick="renderModuleList('schedule')">搜</button>
         </div>
         <div id="scheduleList"></div>
+      </div>
+      <!-- 课时 -->
+      <div id="tab-records" class="hidden">
+        <div class="search">
+          <input id="recordsSearch" placeholder="搜索学生/类型/主题…" oninput="debounce(()=>renderModuleList('records'),300)()">
+          <button class="btn sec" onclick="renderModuleList('records')">搜</button>
+        </div>
+        <div id="recordsList"></div>
       </div>
       <!-- 考试 -->
       <div id="tab-exams" class="hidden">
@@ -163,21 +303,14 @@
         </div>
         <div id="knowledgePointsList"></div>
       </div>
-      <!-- 记录 -->
-      <div id="tab-records" class="hidden">
-        <div class="search">
-          <input id="recordsSearch" placeholder="搜索学生/类型/主题…" oninput="debounce(()=>renderModuleList('records'),300)()">
-          <button class="btn sec" onclick="renderModuleList('records')">搜</button>
-        </div>
-        <div id="recordsList"></div>
-      </div>
-    </div>
-    <button class="fab" onclick="openFab()">+</button>
+    </main>
+
+    <button class="fab" onclick="openFab()">＋</button>
   </div>
 
   <!-- 编辑/详情 弹窗 -->
-  <div id="modal" class="modal hidden" onclick="if(event.target===this)closeModal()">
-    <div class="box" id="modalBox"></div>
+  <div id="modal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal()">
+    <div class="modal" id="modalBox"></div>
   </div>
   <div class="toast" id="toast"></div>
 </div>
