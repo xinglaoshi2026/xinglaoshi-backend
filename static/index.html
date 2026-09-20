@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>邢老师工作台·手机端</title>
+<style>
+  :root{--bg:#f5f6f8;--card:#fff;--pri:#2b6cb0;--pri2:#1a4971;--ok:#2f855a;--warn:#c05621;--line:#e2e8f0;--txt:#1a202c;--mut:#718096}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;font-family:-apple-system,system-ui,"Microsoft YaHei",sans-serif;background:var(--bg);color:var(--txt);font-size:15px}
+  .app{max-width:760px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column}
+  header{background:var(--pri);color:#fff;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
+  header h1{font-size:17px;margin:0;font-weight:600}
+  header .u{font-size:12px;opacity:.9}
+  .tabs{display:flex;background:var(--pri2);position:sticky;top:46px;z-index:9}
+  .tabs button{flex:1;background:none;border:0;color:#cde;padding:10px 0;font-size:14px}
+  .tabs button.on{color:#fff;border-bottom:3px solid #fff;font-weight:600}
+  .body{flex:1;padding:10px;overflow:auto}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .card h3{margin:0 0 6px;font-size:15px}
+  .muted{color:var(--mut);font-size:12px}
+  .tag{display:inline-block;background:#ebf4ff;color:var(--pri);border-radius:6px;padding:1px 7px;font-size:12px;margin-right:5px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  input,textarea,select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-size:15px;font-family:inherit;background:#fff}
+  textarea{min-height:80px;resize:vertical}
+  button.btn{background:var(--pri);color:#fff;border:0;border-radius:8px;padding:10px 14px;font-size:15px;font-weight:600}
+  button.btn.sec{background:#edf2f7;color:var(--txt)}
+  button.btn.ok{background:var(--ok)}
+  button.btn.danger{background:#e53e3e}
+  button.btn:active{opacity:.85}
+  .fab{position:fixed;right:16px;bottom:18px;width:54px;height:54px;border-radius:50%;background:var(--pri);color:#fff;font-size:26px;border:0;box-shadow:0 3px 10px rgba(0,0,0,.25);z-index:20}
+  .hidden{display:none!important}
+  .center{text-align:center;padding:30px 10px;color:var(--mut)}
+  .qimg{max-width:100%;border:1px solid var(--line);border-radius:8px;margin:6px 0;display:block}
+  .search{display:flex;gap:8px;margin-bottom:10px}
+  .search input{flex:1}
+  .toast{position:fixed;left:50%;top:60px;transform:translateX(-50%);background:#000c;color:#fff;padding:8px 14px;border-radius:8px;z-index:50;opacity:0;transition:.2s}
+  .toast.show{opacity:1}
+  .modal{position:fixed;inset:0;background:#0008;z-index:40;display:flex;align-items:center;justify-content:center;padding:14px}
+  .modal .box{background:#fff;border-radius:12px;width:100%;max-width:560px;max-height:90vh;overflow:auto;padding:16px}
+  .kv{font-size:13px;color:var(--mut);margin:2px 0}
+  .login{max-width:360px;margin:40px auto;padding:0 16px}
+  .login .card{padding:20px}
+  .seg{display:flex;gap:6px;margin:8px 0}
+  .seg button{flex:1;background:#edf2f7;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px}
+  .seg button.on{background:var(--pri);color:#fff;border-color:var(--pri)}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <!-- 登录 -->
+  <div id="loginView" class="login">
+    <div class="card">
+      <h3>邢老师工作台 · 手机端</h3>
+      <p class="muted">登录云端同步账号，即可在手机上查看 / 添加 / 修改。</p>
+      <label class="kv">后端地址（部署后填写，默认同源）</label>
+      <input id="baseUrl" placeholder="https://your-app.onrender.com" value="">
+      <label class="kv">用户名</label>
+      <input id="username" placeholder="admin" value="admin">
+      <label class="kv">密码</label>
+      <input id="password" type="password" placeholder="密码" value="">
+      <div style="height:10px"></div>
+      <button class="btn" style="width:100%" onclick="doLogin()">登录</button>
+      <p class="muted" id="loginMsg" style="margin-top:8px"></p>
+    </div>
+  </div>
+
+  <!-- 主界面 -->
+  <div id="mainView" class="hidden">
+    <header>
+      <h1 id="title">题库</h1>
+      <span class="u" id="who"></span>
+    </header>
+    <div class="tabs">
+      <button data-tab="questions" class="on" onclick="switchTab('questions')">题库</button>
+      <button data-tab="papers" onclick="switchTab('papers')">试卷</button>
+      <button data-tab="students" onclick="switchTab('students')">学生</button>
+    </div>
+    <div class="body" id="body">
+      <!-- 题库 -->
+      <div id="tab-questions">
+        <div class="search">
+          <input id="qSearch" placeholder="搜索题干/答案…" oninput="debounce(loadQuestions,400)()">
+          <button class="btn sec" onclick="loadQuestions()">搜</button>
+        </div>
+        <div id="qList"></div>
+        <div class="center"><button class="btn sec" onclick="loadQuestions(true)">加载更多</button></div>
+      </div>
+      <!-- 试卷 -->
+      <div id="tab-papers" class="hidden">
+        <div id="pList"></div>
+      </div>
+      <!-- 学生 -->
+      <div id="tab-students" class="hidden">
+        <div id="sList"></div>
+      </div>
+    </div>
+    <button class="fab" onclick="openEditor()">+</button>
+  </div>
+
+  <!-- 编辑/详情 弹窗 -->
+  <div id="modal" class="modal hidden" onclick="if(event.target===this)closeModal()">
+    <div class="box" id="modalBox"></div>
+  </div>
+  <div class="toast" id="toast"></div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

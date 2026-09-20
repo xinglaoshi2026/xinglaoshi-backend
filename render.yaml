@@ -1,0 +1,21 @@
+# Render 一键部署配置（免费层）
+# 部署后获得一个公网 URL，手机端填该 URL 即可在任何网络下同步。
+services:
+  - type: web
+    name: xing-laoshi-sync
+    runtime: python
+    plan: free
+    region: oregon        # 可选：singapore 等
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python server.py"
+    healthCheckPath: "/api/me"
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: DATA_DIR
+        value: "/var/data/sync"
+    # 持久化磁盘（免费层默认容器磁盘重启会清空，挂载 Disk 以保留数据）
+    disk:
+      name: syncdatadisk
+      mountPath: /var/data
+      sizeGB: 1

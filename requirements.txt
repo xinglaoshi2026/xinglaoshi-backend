@@ -1,0 +1,2 @@
+# 零依赖后端：仅使用 Python 标准库（http.server + sqlite3）。
+# 云端部署时无需安装任何第三方包；这里保留占位以便 Render build 阶段通过。
