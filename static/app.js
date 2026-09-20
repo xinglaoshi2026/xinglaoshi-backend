@@ -321,10 +321,15 @@
   // ---------- 弹窗/切换 ----------
   function openModal() { $("#modal").classList.remove("hidden"); }
   function closeModal() { $("#modal").classList.add("hidden"); }
+  function refreshData() {
+    toast("正在同步…");
+    loadPull(true).then(ok => { if (ok) { renderTab(); toast("已刷新"); } else toast("刷新失败"); });
+  }
   function renderTab() {
     if (tab === "questions") applyFilter();
     if (tab === "papers") loadPapers();
     if (tab === "students") loadStudents();
+    if (tab === "compose") { renderComposePool(); renderCompose(); }
   }
   function switchTab(t) {
     tab = t;
@@ -332,17 +337,121 @@
     $("#tab-questions").classList.toggle("hidden", t !== "questions");
     $("#tab-papers").classList.toggle("hidden", t !== "papers");
     $("#tab-students").classList.toggle("hidden", t !== "students");
-    $("#title").textContent = { questions: "题库", papers: "试卷", students: "学生" }[t];
-    renderTab();                       // 先用缓存立刻渲染（秒开）
-    loadPull(false).then(ok => { if (ok) renderTab(); });  // 超过 60 秒才后台刷新
+    $("#tab-compose").classList.toggle("hidden", t !== "compose");
+    $("#title").textContent = { questions: "题库", papers: "试卷", students: "学生", compose: "组卷" }[t];
+    renderTab();   // 仅用本地缓存渲染，秒开；不再自动后台重拉，避免免费服务器冷启卡顿
+  }
+
+  // ---------- 组卷 ----------
+  let composeSet = [];   // 已选题目 id（有序）
+  const TYPE_KEYS = [
+    { label: "选择题", input: "cN_choice" },
+    { label: "多选题", input: "cN_multi" },
+    { label: "填空题", input: "cN_blank" },
+    { label: "解答题", input: "cN_solve" },
+  ];
+  function composePool() {
+    const kw = ($("#cKw").value || "").trim().toLowerCase();
+    const type = $("#cType").value || "";
+    const kp = ($("#cKp").value || "").trim();
+    return (DB.data.questions || []).filter(it => {
+      const b = it.body || {};
+      if (type && b.type !== type) return false;
+      if (kp && !String(b.kpId || "").includes(kp)) return false;
+      if (kw && !((b.content || "") + " " + (b.answer || "")).toLowerCase().includes(kw)) return false;
+      return true;
+    });
+  }
+  function renderComposePool() {
+    if (tab !== "compose") return;
+    const pool = composePool().slice(0, 60);
+    const box = $("#composePool");
+    box.innerHTML = pool.length ? "" : '<div class="center">无匹配题目</div>';
+    pool.forEach(it => {
+      const b = it.body || {};
+      const div = document.createElement("div"); div.className = "card";
+      const inSet = composeSet.includes(it.id);
+      div.innerHTML = `<div class="row"><span class="tag">${esc(b.type || "题")}</span>
+        <span class="muted">${esc(b.kpId || "")}${b.qid ? " · " + esc(b.qid) : ""}</span></div>
+        <div style="margin:6px 0">${renderRich(b.content)}</div>
+        <button class="btn ${inSet ? "sec" : ""}" style="width:100%" ${inSet ? "disabled" : ""} onclick="addToCompose('${it.id}')">${inSet ? "已加入" : "＋ 加入组卷"}</button>`;
+      box.appendChild(div);
+    });
+  }
+  function addToCompose(id) { if (!composeSet.includes(id)) { composeSet.push(id); renderComposePool(); renderCompose(); } }
+  function removeFromCompose(id) { composeSet = composeSet.filter(x => x !== id); renderComposePool(); renderCompose(); }
+  function clearCompose() { composeSet = []; renderComposePool(); renderCompose(); }
+  function renderCompose() {
+    $("#cCount").textContent = composeSet.length;
+    const box = $("#composeList");
+    if (!composeSet.length) { box.innerHTML = '<div class="center">还没有选题目，用上方「智能抽取」或手动 ＋ 加入</div>'; return; }
+    box.innerHTML = "";
+    composeSet.forEach((id, i) => {
+      const it = qMap[id]; const b = (it && it.body) || {};
+      const div = document.createElement("div"); div.className = "card";
+      div.innerHTML = `<div class="row"><span class="muted">${i + 1}.</span>
+        <span class="tag">${esc(b.type || "题")}</span>
+        <span style="flex:1">${esc(b.qid || id)}</span>
+        <button class="btn danger" style="padding:4px 9px;font-size:13px" onclick="removeFromCompose('${id}')">移除</button></div>`;
+      box.appendChild(div);
+    });
+  }
+  function smartCompose() {
+    const pool = composePool();
+    const want = {};
+    TYPE_KEYS.forEach(t => { want[t.label] = Math.max(0, parseInt($("#" + t.input).value, 10) || 0); });
+    const total = Object.values(want).reduce((a, c) => a + c, 0);
+    if (total === 0) return toast("请先设置每种题型要抽几道");
+    const byType = {};
+    pool.forEach(it => { const tp = (it.body || {}).type || "其他"; (byType[tp] = byType[tp] || []).push(it); });
+    const added = [];
+    TYPE_KEYS.forEach(t => {
+      const n = want[t.label]; if (!n) return;
+      const src = (byType[t.label] || []).filter(it => !composeSet.includes(it.id));
+      for (let i = src.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [src[i], src[j]] = [src[j], src[i]]; }
+      src.slice(0, n).forEach(it => { if (!composeSet.includes(it.id)) { composeSet.push(it.id); added.push(it.id); } });
+    });
+    if (added.length === 0) return toast("没有更多可抽取的题目（可能已全部加入）");
+    renderComposePool(); renderCompose();
+    toast("已抽取 " + added.length + " 道，共 " + composeSet.length + " 道");
+  }
+  function previewCompose() {
+    if (!composeSet.length) return toast("还没有选题目");
+    let html = `<h3>${esc($("#cTitle").value || "未命名试卷")}</h3><div class="muted">${esc($("#cNote").value || "")}</div>`;
+    composeSet.forEach((id, i) => {
+      const it = qMap[id]; const b = (it && it.body) || {};
+      html += `<div class="card" style="margin:6px 0"><b>${i + 1}.</b> ${renderRich(b.content)}
+        <div class="muted">答：${renderRich(b.answer) || "—"}</div></div>`;
+    });
+    html += `<button class="btn sec" onclick="closeModal()">关闭</button>`;
+    $("#modalBox").innerHTML = html; openModal();
+  }
+  async function saveCompose() {
+    if (!composeSet.length) return toast("还没有选题目");
+    const body = {
+      id: "p_" + Date.now().toString(36),
+      title: $("#cTitle").value.trim() || ("组卷_" + new Date().toLocaleString("zh-CN")),
+      note: $("#cNote").value.trim(),
+      questionIds: composeSet.slice(),
+      createdAt: Math.floor(Date.now() / 1000)
+    };
+    try {
+      await api("POST", "/api/papers", body);
+      toast("试卷已保存"); closeModal();
+      await loadPull(true); switchTab("papers");
+    } catch (e) { toast("保存失败：" + e.message); }
   }
 
   // 暴露给 inline onclick
   window.doLogin = doLogin; window.switchTab = switchTab; window.loadQuestions = () => applyFilter();
+  window.refreshData = refreshData;
   window.loadMore = showMore;
   window.openDetail = openDetail; window.openEditor = openEditor; window.saveQ = saveQ;
   window.delQ = delQ; window.closeModal = closeModal; window.openPaper = openPaper;
   window.openStudent = openStudent; window.saveStudent = saveStudent;
+  window.renderComposePool = renderComposePool; window.addToCompose = addToCompose;
+  window.removeFromCompose = removeFromCompose; window.clearCompose = clearCompose;
+  window.smartCompose = smartCompose; window.previewCompose = previewCompose; window.saveCompose = saveCompose;
 
   // 启动
   if (token) enterMain();

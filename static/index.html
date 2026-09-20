@@ -69,12 +69,16 @@
   <div id="mainView" class="hidden">
     <header>
       <h1 id="title">题库</h1>
-      <span class="u" id="who"></span>
+      <div class="row">
+        <button class="btn sec" style="padding:6px 11px;font-size:13px" onclick="refreshData()">刷新</button>
+        <span class="u" id="who"></span>
+      </div>
     </header>
     <div class="tabs">
       <button data-tab="questions" class="on" onclick="switchTab('questions')">题库</button>
       <button data-tab="papers" onclick="switchTab('papers')">试卷</button>
       <button data-tab="students" onclick="switchTab('students')">学生</button>
+      <button data-tab="compose" onclick="switchTab('compose')">组卷</button>
     </div>
     <div class="body" id="body">
       <!-- 题库 -->
@@ -93,6 +97,43 @@
       <!-- 学生 -->
       <div id="tab-students" class="hidden">
         <div id="sList"></div>
+      </div>
+      <!-- 组卷 -->
+      <div id="tab-compose" class="hidden">
+        <div class="card">
+          <label class="kv">试卷标题</label>
+          <input id="cTitle" placeholder="如：高二动能定理专题卷">
+          <label class="kv">备注</label>
+          <input id="cNote" placeholder="可选">
+          <div class="kv" style="margin-top:6px">智能抽取规则</div>
+          <div class="search">
+            <input id="cKw" placeholder="题干关键词（可空）" oninput="debounce(renderComposePool,300)()">
+          </div>
+          <div class="row" style="gap:6px;margin-bottom:6px">
+            <select id="cType"><option value="">全部题型</option><option>选择题</option><option>多选题</option><option>填空题</option><option>解答题</option></select>
+            <input id="cKp" placeholder="知识点ID(可空)" style="flex:1">
+          </div>
+          <div class="row" style="gap:6px;flex-wrap:wrap">
+            <label class="kv" style="flex:1">选择题<input id="cN_choice" type="number" value="0" min="0" style="margin-top:2px"></label>
+            <label class="kv" style="flex:1">多选题<input id="cN_multi" type="number" value="0" min="0" style="margin-top:2px"></label>
+            <label class="kv" style="flex:1">填空题<input id="cN_blank" type="number" value="0" min="0" style="margin-top:2px"></label>
+            <label class="kv" style="flex:1">解答题<input id="cN_solve" type="number" value="0" min="0" style="margin-top:2px"></label>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <button class="btn" onclick="smartCompose()">智能抽取</button>
+            <button class="btn sec" onclick="clearCompose()">清空</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="row" style="justify-content:space-between">
+            <span class="kv">已选题目（<span id="cCount">0</span>）</span>
+            <button class="btn sec" style="padding:6px 10px;font-size:13px" onclick="previewCompose()">预览试卷</button>
+          </div>
+          <div id="composeList"></div>
+          <button class="btn ok" style="width:100%;margin-top:8px" onclick="saveCompose()">保存为试卷</button>
+        </div>
+        <div class="kv">从题库手动添加（点 ＋ 加入）</div>
+        <div id="composePool"></div>
       </div>
     </div>
     <button class="fab" onclick="openEditor()">+</button>
