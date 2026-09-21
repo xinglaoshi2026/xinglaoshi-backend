@@ -210,8 +210,9 @@
       }
       return true;
     });
-    // 新知识点优先、同知识点按编号
-    qFiltered.sort((a, b) => String(a.body && a.body.kpId).localeCompare(String(b.body && b.body.kpId)) || String(a.body && a.body.qid).localeCompare(String(b.body && b.body.qid), "zh-CN", { numeric: true }));
+    // 新题置顶：按 updated_at 倒序（毫秒），兜底用 body.updatedAt/createdAt，再按 id 稳定排序
+    const tsOf = it => it.updated_at || (it.body && (it.body.updatedAt || it.body.createdAt)) || 0;
+    qFiltered.sort((a, b) => tsOf(b) - tsOf(a) || String(a.id).localeCompare(String(b.id)));
     qShown = 0;
     renderFilterBar();
     $("#qList").innerHTML = "";
