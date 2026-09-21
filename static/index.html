@@ -29,13 +29,6 @@
   .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .center{text-align:center;padding:40px 10px;color:var(--text-muted)}
 
-  /* ===== 顶部栏 ===== */
-  .topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:10px;
-    background:#fff;border-bottom:1px solid var(--border);padding:10px 12px;box-shadow:var(--shadow-sm)}
-  .top-title{flex:1;font-size:16px;font-weight:600;color:var(--text)}
-  .who{font-size:12px;color:var(--text-muted);white-space:nowrap}
-  .who:active{color:var(--danger)}
-
   /* ===== 内容区（底部留出 tabbar 空间） ===== */
   .content{flex:1;padding:12px 12px calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 12px);max-width:1100px;width:100%;margin:0 auto}
   .main-view{}
@@ -103,16 +96,15 @@
   .q-actions .btn{flex:1;padding:8px 2px;font-size:13px;gap:4px}
   .q-actions .btn.marked{background:var(--danger);color:#fff;border-color:var(--danger)}
 
-  /* ===== 筛选栏 / chips ===== */
+  /* ===== 筛选栏（下拉菜单形式） ===== */
   .filter-bar{background:var(--bg);padding:2px 0 6px}
-  .chips{display:flex;gap:8px;overflow-x:auto;padding:2px 0 2px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
-  .chips::-webkit-scrollbar{display:none}
-  .chip{flex-shrink:0;display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border-radius:20px;
-    background:#fff;border:1px solid var(--border-dark);font-size:13px;color:var(--text-muted);font-weight:500;transition:all .15s}
-  .chip:active{transform:scale(.96)}
-  .chip.on{background:var(--primary);border-color:var(--primary);color:#fff;box-shadow:0 2px 8px rgba(79,70,229,.28)}
-  .chip.kp{max-width:56vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .chip .x{font-size:12px;opacity:.8}
+  .filter-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+  .filter-row select{flex:1 1 110px;width:auto;min-width:0;padding:9px 8px;
+    appearance:none;-webkit-appearance:none;
+    background:#fff url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0l5 6 5-6z' fill='%236B7280'/></svg>") no-repeat right 10px center;
+    font-size:13px;font-weight:500;color:var(--text);border:1px solid var(--border-dark);border-radius:var(--radius-sm)}
+  .filter-row select.on{border-color:var(--primary);color:var(--primary);background-color:var(--primary-bg)}
+  .filter-row .f-search{flex:2 1 150px;min-width:0}
   .q-count{font-size:12px;color:var(--text-muted);margin:4px 2px 8px;display:flex;align-items:center;gap:6px}
 
   /* ===== 知识点选择底部抽屉 ===== */
@@ -161,7 +153,7 @@
   .tab-btn.active .ico{transform:translateY(-1px)}
 
   /* ===== 主视图内的 sub-tab 条（顶部平铺） ===== */
-  .subtabs{position:sticky;top:52px;z-index:25;display:flex;gap:6px;overflow-x:auto;padding:8px 0 10px;
+  .subtabs{position:sticky;top:0;z-index:25;display:flex;gap:6px;overflow-x:auto;padding:8px 0 10px;
     background:var(--bg);-webkit-overflow-scrolling:touch;scrollbar-width:none}
   .subtabs::-webkit-scrollbar{display:none}
   .subtab{flex-shrink:0;padding:7px 15px;border-radius:20px;background:#fff;border:1px solid var(--border-dark);
@@ -291,12 +283,6 @@
 
   <!-- 主界面 -->
   <div id="mainView" class="hidden">
-    <header class="topbar">
-      <div class="top-title" id="title">题库</div>
-      <button class="btn sec sm" onclick="refreshData()">刷新</button>
-      <span class="who" id="who"></span>
-    </header>
-
     <main class="content" id="body">
 
       <!-- 题库主视图 -->
@@ -310,15 +296,14 @@
         </div>
 
         <div id="sub-q" class="subpane">
-          <div class="search">
-            <input id="qSearch" placeholder="搜索题干/答案/编号…" oninput="debounce(applyFilter,400)()">
-            <button class="btn sec" onclick="applyFilter()">搜</button>
-          </div>
-          <div class="filter-bar">
-            <div class="chips" id="qTypeChips"></div>
-            <div class="chips" style="margin-top:8px">
-              <button class="chip kp" id="qKpChip" onclick="openKpSheet()">💡 全部知识点</button>
-            </div>
+          <div class="filter-row">
+            <select id="qTypeSel" onchange="setTypeFilter(this.value)">
+              <option value="">全部题型</option>
+            </select>
+            <select id="qKpSel" onchange="setKpFilter(this.value)">
+              <option value="">全部知识点</option>
+            </select>
+            <input id="qSearch" class="f-search" placeholder="搜索题干/答案/编号…" oninput="debounce(applyFilter,400)()">
           </div>
           <div class="q-count" id="qCount"></div>
           <div id="qList"></div>

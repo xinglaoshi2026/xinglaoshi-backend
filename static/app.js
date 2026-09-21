@@ -185,9 +185,6 @@
 
   async function enterMain() {
     $("#loginView").classList.add("hidden"); $("#mainView").classList.remove("hidden");
-    const u = user ? JSON.parse(user) : {};
-    $("#who").textContent = (u.username || "") + " · 退出";
-    $("#who").onclick = logout;
     $("#qList").innerHTML = '<div class="center">正在同步数据…</div>';
     await loadPull(true);
     switchMain("questions");
@@ -226,17 +223,22 @@
     showMore();
   }
   function renderFilterBar() {
-    const chips = ['<button class="chip' + (qf.type ? "" : " on") + '" onclick="setTypeFilter(\'\')">全部</button>']
-      .concat(Q_TYPE_CHIPS.map(t => '<button class="chip' + (qf.type === t ? " on" : "") + '" onclick="setTypeFilter(\'' + t + '\')">' + t + "</button>"));
-    $("#qTypeChips").innerHTML = chips.join("");
-    const kpChip = $("#qKpChip");
-    if (qf.kpId) {
-      kpChip.classList.add("on");
-      kpChip.innerHTML = "💡 " + esc(kpPath(qf.kpId)) + ' <span class="x">✕</span>';
-    } else {
-      kpChip.classList.remove("on");
-      kpChip.textContent = "💡 全部知识点";
-    }
+    // 题型下拉
+    const typeSel = $("#qTypeSel");
+    const curType = qf.type || "";
+    typeSel.innerHTML = '<option value="">全部题型</option>' +
+      Q_TYPE_CHIPS.map(t => '<option value="' + t + '"' + (t === curType ? " selected" : "") + ">" + t + "</option>").join("");
+    typeSel.classList.toggle("on", !!curType);
+    // 知识点下拉（按路径排序，展示完整路径）
+    const kpSel = $("#qKpSel");
+    const curKp = qf.kpId || "";
+    const paths = Object.keys(kpMap)
+      .map(id => ({ id, path: kpPath(id) }))
+      .sort((a, b) => a.path.localeCompare(b.path, "zh-CN"));
+    kpSel.innerHTML = '<option value="">全部知识点</option>' +
+      paths.map(p => '<option value="' + esc(p.id) + '"' + (p.id === curKp ? " selected" : "") + ">" + esc(p.path) + "</option>").join("");
+    if (curKp && !kpMap[curKp]) { kpSel.value = ""; } else { kpSel.value = curKp; }
+    kpSel.classList.toggle("on", !!curKp);
     $("#qCount").textContent = "共 " + qFiltered.length + " 题" + (qf.kpId ? " · " + kpPath(qf.kpId) : "") + (qf.type ? " · " + qf.type : "");
   }
   function setTypeFilter(t) { qf.type = t; applyFilter(); }
@@ -718,7 +720,6 @@
     loadPull(true).then(ok => { if (ok) { renderTab(); toast("已刷新"); } else toast("刷新失败"); });
   }
   // ---------- 底部四主菜单导航 ----------
-  const MAIN_TITLE = { questions: "题库", schedule: "排课", students: "学生", settings: "设置" };
   let mainTab = "questions";
   let qSubPane = "q";
   let schedSubPane = "grid";
@@ -733,7 +734,6 @@
     ["questions", "schedule", "students", "settings"].forEach(id =>
       $("#view-" + id).classList.toggle("hidden", id !== m));
     document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.main === m));
-    $("#title").textContent = MAIN_TITLE[m] || m;
     if (m === "questions") qSub(qSubPane);
     else if (m === "schedule") schedSub(schedSubPane);
     else if (m === "students") renderStudents();
@@ -1252,7 +1252,7 @@
   window.doLogin = doLogin;
   window.refreshData = refreshData; window.applyFilter = applyFilter; window.debounce = debounce;
   window.loadMore = showMore;
-  window.setTypeFilter = setTypeFilter; window.openKpSheet = openKpSheet; window.closeKpSheet = closeKpSheet;
+  window.setTypeFilter = setTypeFilter; window.setKpFilter = setKpFilter; window.openKpSheet = openKpSheet; window.closeKpSheet = closeKpSheet;
   window.renderKpTree = renderKpTree; window.pickKp = pickKp;
   window.quickCompose = quickCompose; window.markWrong = markWrong; window.saveWrong = saveWrong;
   window.loadWrong = loadWrong; window.toggleWrongResolved = toggleWrongResolved; window.delWrong = delWrong;
