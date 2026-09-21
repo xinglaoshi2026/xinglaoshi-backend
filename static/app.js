@@ -85,7 +85,8 @@
     const s = String(html);
     if (/<[a-z][\s\S]*>/i.test(s)) {
       return s.replace(/(src\s*=\s*["'])media:\/\//gi, "$1/api/media/")
-              .replace(/<img(?![^>]*onerror)/gi, '<img onerror="this.style.display=\'none\'"');
+              .replace(/<img(?![^>]*onerror)/gi, '<img onerror="this.style.display=\'none\'"')
+              .replace(/<img(?![^>]*\bclass=)/gi, '<img class="qimg"');
     }
     return renderMedia(s);
   }
@@ -234,7 +235,7 @@
       '<div class="q-ans-box" id="ans-' + it.id + '"><div class="ans-label">答案 / 解析</div>' + (renderRich(b.answer) || "—") + (b.analysis ? '<div style="margin-top:6px">' + renderRich(b.analysis) + "</div>" : "") + "</div>" +
       '<div class="q-actions">' +
         '<button class="btn sec sm" data-act="detail" data-id="' + it.id + '">🔍 详情</button>' +
-        '<button class="btn sm' + (inCompose ? " ok" : "") + '" data-act="compose" data-id="' + it.id + '">' + (inCompose ? "✓ 已加入组卷" : "🧩 加入组卷") + "</button>" +
+        '<button class="btn sm' + (inCompose ? " ok" : "") + '" data-act="compose" data-id="' + it.id + '">' + (inCompose ? "✕ 取消组卷" : "🧩 加入组卷") + "</button>" +
         '<button class="btn danger sm' + (isWrong ? " marked" : "") + '" data-act="wrong" data-id="' + it.id + '">' + (isWrong ? "✓ 已标错题" : "📕 标记错题") + "</button>" +
       "</div>";
     return div;
@@ -258,10 +259,23 @@
     else if (act === "kp") { setKpFilter(t.getAttribute("data-kp")); window.scrollTo(0, 0); }
   }
   function quickCompose(id) {
-    if (composeSet.includes(id)) { toast("该题已在组卷清单中"); return; }
-    composeSet.push(id);
-    toast("已加入组卷（共 " + composeSet.length + " 题）");
-    applyFilter();
+    const i = composeSet.indexOf(id);
+    if (i >= 0) {
+      composeSet.splice(i, 1);
+      toast("已取消组卷");
+    } else {
+      composeSet.push(id);
+      toast("已加入组卷（共 " + composeSet.length + " 题）");
+    }
+    syncComposeBtn(id);
+  }
+  // 原地同步某题的组卷按钮状态（列表卡片 + 详情弹窗），不整页刷新
+  function syncComposeBtn(id) {
+    const on = composeSet.includes(id);
+    document.querySelectorAll('button[data-act="compose"][data-id="' + id + '"]').forEach(btn => {
+      btn.classList.toggle("ok", on);
+      btn.innerHTML = on ? "✕ 取消组卷" : "🧩 加入组卷";
+    });
   }
   function showLightbox(src) {
     $("#lightboxImg").src = src;
@@ -299,39 +313,50 @@
   function markWrong(qId) {
     const students = DB.data.students || [];
     const existing = (DB.data.wrongNotes || []).find(it => (it.body || {}).questionId === qId && !(it.body || {}).resolved);
+    const qb = (qMap[qId] && qMap[qId].body) || {};
     const box = $("#modalBox");
     box.innerHTML =
-      "<h3>📕 标记错题</h3>" +
-      '<div style="margin:8px 0">' + renderRich((qMap[qId] && qMap[qId].body || {}).content) + "</div>" +
-      '<label class="kv">哪位学生做错（可先不选）</label>' +
-      '<select id="wnStudent"><option value="">— 暂不指定 —</option>' +
-      students.map(s => '<option value="' + esc(s.id) + '">' + esc((s.body || {}).name || s.id) + "</option>").join("") +
-      "</select>" +
-      '<label class="kv">备注（错因等，可选）</label>' +
-      '<textarea id="wnNote" style="min-height:60px">' + esc(existing ? (existing.body.note || "") : "") + "</textarea>" +
-      '<div class="row" style="margin-top:12px">' +
-      '<button class="btn ok" onclick="saveWrong(\'' + qId + '\')">保存错题</button>' +
-      '<button class="btn sec" onclick="closeModal()">取消</button></div>';
+      '<div class="modal-header"><span class="modal-title">📕 ' + (existing ? "编辑错题" : "标记错题") + '</span><button class="modal-close" onclick="closeModal()">✕</button></div>' +
+      '<div class="modal-body">' +
+        '<div class="q-preview-card">' + (renderRich(qb.content) || '<span class="muted">（题目内容为空）</span>') + "</div>" +
+        '<div class="form-group"><label class="kv">哪位学生做错<span class="opt">（可先不选）</span></label>' +
+        '<select id="wnStudent"><option value="">— 暂不指定 —</option>' +
+        students.map(s => '<option value="' + esc(s.id) + '">' + esc((s.body || {}).name || s.id) + "</option>").join("") +
+        "</select></div>" +
+        '<div class="form-group"><label class="kv">备注 / 错因<span class="opt">（可选）</span></label>' +
+        '<textarea id="wnNote" style="min-height:88px" placeholder="例如：概念不清 / 公式记错 / 计算失误…">' + esc(existing ? (existing.body.note || "") : "") + "</textarea></div>" +
+      "</div>" +
+      '<div class="modal-footer">' +
+        '<button class="btn sec" style="flex:1" onclick="closeModal()">取消</button>' +
+        '<button class="btn ok" style="flex:2" onclick="saveWrong(\'' + qId + '\')">' + (existing ? "保存修改" : "保存错题") + "</button>" +
+      "</div>";
     if (existing && existing.body.studentId) $("#wnStudent").value = existing.body.studentId;
     openModal();
   }
   async function saveWrong(qId) {
+    const existing = (DB.data.wrongNotes || []).find(it => (it.body || {}).questionId === qId && !(it.body || {}).resolved);
     const studentId = $("#wnStudent").value || "";
     const stu = (DB.data.students || []).find(s => s.id === studentId);
-    const body = {
-      id: "wn_" + Date.now().toString(36),
+    const base = existing ? existing.body : { id: "wn_" + Date.now().toString(36), source: "手机端", createdAt: Math.floor(Date.now() / 1000) };
+    const body = Object.assign({}, base, {
       questionId: qId,
       studentId, studentName: stu ? ((stu.body || {}).name || "") : "",
-      source: "手机端", note: ($("#wnNote").value || "").trim(),
-      resolved: false, createdAt: Math.floor(Date.now() / 1000),
-      updatedAt: Math.floor(Date.now() / 1000)
-    };
+      note: ($("#wnNote").value || "").trim(),
+      resolved: false, updatedAt: Math.floor(Date.now() / 1000)
+    });
     try {
-      await api("POST", "/api/wrongNotes", body);
-      DB.data.wrongNotes = DB.data.wrongNotes || [];
-      DB.data.wrongNotes.push({ id: body.id, updated_at: body.updatedAt, body });
-      toast("已标记错题 ✓"); closeModal(); applyFilter();
-    } catch (e) { toast("标记失败：" + e.message); }
+      if (existing) {
+        await api("PUT", "/api/wrongNotes/" + existing.id, body);
+        existing.body = body;
+        toast("错题已更新 ✓");
+      } else {
+        await api("POST", "/api/wrongNotes", body);
+        DB.data.wrongNotes = DB.data.wrongNotes || [];
+        DB.data.wrongNotes.push({ id: body.id, updated_at: body.updatedAt, body });
+        toast("已标记错题 ✓");
+      }
+      closeModal(); applyFilter();
+    } catch (e) { toast("保存失败：" + e.message); }
   }
 
   // ---------- 错题本 ----------
@@ -390,20 +415,29 @@
     }
     const box = $("#modalBox");
     const inCompose = composeSet.includes(id);
+    const badges = [];
+    if (b.type) badges.push('<span class="tag">' + esc(b.type) + "</span>");
+    if (b.grade) badges.push('<span class="badge badge-gray">' + esc(b.grade) + "</span>");
+    if (b.qid) badges.push('<span class="badge badge-gray">' + esc(b.qid) + "</span>");
+    if (b.kpId) badges.push('<span class="badge badge-info">💡 ' + esc(kpPath(b.kpId)) + "</span>");
     box.innerHTML = `
-      <h3>题目详情</h3>
-      <div class="kv">${esc(kpPath(b.kpId || ""))}${b.qid ? " · " + esc(b.qid) : ""} · ${esc(b.type || "")}</div>
-      <div style="margin:8px 0">${renderRich(b.content)}</div>
-      <div class="kv">答案</div><div>${renderRich(b.answer) || "—"}</div>
-      <div class="kv" style="margin-top:6px">解析</div><div>${renderRich(b.analysis) || "—"}</div>
-      <div class="row" style="margin-top:14px">
-        <button class="btn sm ${inCompose ? "ok" : ""}" onclick="quickCompose('${id}');openDetail('${id}')">${inCompose ? "✓ 已加入组卷" : "🧩 加入组卷"}</button>
-        <button class="btn danger sm" onclick="markWrong('${id}')">📕 标记错题</button>
+      <div class="modal-header"><span class="modal-title">题目详情</span><button class="modal-close" onclick="closeModal()">✕</button></div>
+      <div class="modal-body">
+        <div class="dt-badges">${badges.join("")}</div>
+        <div class="dt-sec"><span class="dt-label">题干</span><div class="dt-content">${renderRich(b.content) || "—"}</div></div>
+        <div class="dt-sec"><span class="dt-label ans">答案</span><div class="dt-content ans-box">${renderRich(b.answer) || "—"}</div></div>
+        ${b.analysis ? '<div class="dt-sec"><span class="dt-label">解析</span><div class="dt-content">' + renderRich(b.analysis) + "</div></div>" : ""}
       </div>
-      <div class="row" style="margin-top:8px">
-        <button class="btn" onclick="openEditor('${id}')">编辑</button>
-        <button class="btn danger" onclick="delQ('${id}')">删除</button>
-        <button class="btn sec" onclick="closeModal()">关闭</button>
+      <div class="modal-footer">
+        <div class="row-2">
+          <button class="btn ${inCompose ? "ok" : ""}" data-act="compose" data-id="${id}">${inCompose ? "✕ 取消组卷" : "🧩 加入组卷"}</button>
+          <button class="btn danger" onclick="markWrong('${id}')">📕 标记错题</button>
+        </div>
+        <div class="row-3">
+          <button class="btn sec" onclick="openEditor('${id}')">编辑</button>
+          <button class="btn sec" onclick="delQ('${id}')">删除</button>
+          <button class="btn sec" onclick="closeModal()">关闭</button>
+        </div>
       </div>`;
     openModal();
   }
@@ -862,7 +896,9 @@
   document.getElementById("qList").addEventListener("click", qListClick);
   document.getElementById("modalBox").addEventListener("click", (e) => {
     const img = e.target.closest("img");
-    if (img) showLightbox(img.src);
+    if (img) { showLightbox(img.src); return; }
+    const t = e.target.closest('[data-act="compose"]');
+    if (t) quickCompose(t.getAttribute("data-id"));
   });
 
   // 启动
