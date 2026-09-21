@@ -285,9 +285,17 @@
   // ---------- 知识点选择抽屉 ----------
   function openKpSheet() { $("#kpSearch").value = ""; renderKpTree(); $("#kpSheet").classList.remove("hidden"); }
   function closeKpSheet() { $("#kpSheet").classList.add("hidden"); }
+  // 选中节点的祖先链（用于再次打开抽屉时自动展开到当前筛选位置）
+  function kpAncestors(id) {
+    const set = new Set();
+    let cur = kpMap[id] && kpMap[id].parentId;
+    while (cur) { set.add(cur); cur = kpMap[cur] && kpMap[cur].parentId; }
+    return set;
+  }
   function renderKpTree() {
     const kw = ($("#kpSearch").value || "").trim().toLowerCase();
     const box = $("#kpTree");
+    const anc = qf.kpId ? kpAncestors(qf.kpId) : new Set();
     const allBtn = '<div class="kp-row' + (qf.kpId ? "" : " sel") + '" data-kp="" onclick="pickKp(\'\')">' +
       '<span class="kp-toggle leaf">·</span><span class="kp-name">📚 全部知识点</span>' +
       '<span class="kp-cnt">' + (DB.data.questions || []).length + " 题</span></div>";
@@ -297,15 +305,21 @@
       const cnt = kpCount(id);
       if (kw && !String(b.name || "").toLowerCase().includes(kw) && !kids.some(k => String(kpMap[k].name || "").toLowerCase().includes(kw))) return "";
       const hasKids = kids.length > 0;
+      const expanded = hasKids && anc.has(id);
       return '<div><div class="kp-row' + (qf.kpId === id ? " sel" : "") + '" data-kp="' + esc(id) + '" onclick="pickKp(\'' + esc(id) + '\')">' +
-        '<span class="kp-toggle' + (hasKids ? "" : " leaf") + '" onclick="event.stopPropagation();this.classList.toggle(\'open\');this.closest(\'.kp-row\').parentElement.querySelector(\':scope > .kp-kids\').classList.toggle(\'open\')">' + (hasKids ? "▶" : "") + "</span>" +
+        '<span class="kp-toggle' + (hasKids ? "" : " leaf") + (expanded ? " open" : "") + '" onclick="event.stopPropagation();this.classList.toggle(\'open\');this.closest(\'.kp-row\').parentElement.querySelector(\':scope > .kp-kids\').classList.toggle(\'open\')">' + (hasKids ? "▶" : "") + "</span>" +
         '<span class="kp-name">' + esc(b.name || id) + "</span>" +
         '<span class="kp-cnt">' + cnt + " 题</span></div>" +
-        (hasKids ? '<div class="kp-kids">' + kids.map(nodeHtml).join("") + "</div>" : "") +
+        (hasKids ? '<div class="kp-kids' + (expanded ? " open" : "") + '">' + kids.map(nodeHtml).join("") + "</div>" : "") +
         "</div>";
     }
     const roots = (kpKids[""] || []).slice().sort((a, c) => String(kpMap[a].name).localeCompare(String(kpMap[c].name), "zh-CN"));
     box.innerHTML = allBtn + roots.map(nodeHtml).join("");
+    // 滚动到当前选中的知识点，方便接着选同级/相邻节点
+    if (qf.kpId) {
+      const sel = box.querySelector(".kp-row.sel");
+      if (sel && sel.scrollIntoView) setTimeout(() => sel.scrollIntoView({ block: "center" }), 60);
+    }
   }
   function pickKp(id) { closeKpSheet(); setKpFilter(id); window.scrollTo(0, 0); }
 
@@ -414,7 +428,6 @@
       catch (e) { return toast("加载失败：" + e.message); }
     }
     const box = $("#modalBox");
-    const inCompose = composeSet.includes(id);
     const badges = [];
     if (b.type) badges.push('<span class="tag">' + esc(b.type) + "</span>");
     if (b.grade) badges.push('<span class="badge badge-gray">' + esc(b.grade) + "</span>");
@@ -429,10 +442,6 @@
         ${b.analysis ? '<div class="dt-sec"><span class="dt-label">解析</span><div class="dt-content">' + renderRich(b.analysis) + "</div></div>" : ""}
       </div>
       <div class="modal-footer">
-        <div class="row-2">
-          <button class="btn ${inCompose ? "ok" : ""}" data-act="compose" data-id="${id}">${inCompose ? "✕ 取消组卷" : "🧩 加入组卷"}</button>
-          <button class="btn danger" onclick="markWrong('${id}')">📕 标记错题</button>
-        </div>
         <div class="row-3">
           <button class="btn sec" onclick="openEditor('${id}')">编辑</button>
           <button class="btn sec" onclick="delQ('${id}')">删除</button>
@@ -539,8 +548,13 @@
         qs += `<div class="muted">（题 ${esc(qid)} 未同步）</div>`;
       }
     }
-    $("#modalBox").innerHTML = `<h3>${esc(b.title || "试卷")}</h3><div class="muted">${esc(b.note || "")}</div>${qs}
-      <button class="btn sec" onclick="closeModal()">关闭</button>`;
+    $("#modalBox").innerHTML = `<div class="modal-header"><span class="modal-title">📄 ${esc(b.title || "试卷")}</span><button class="modal-close" onclick="closeModal()">✕</button></div>
+      <div class="modal-body"><div class="muted">${esc(b.note || "")}</div>${qs}</div>
+      <div class="modal-footer">
+        <a class="btn ok" style="display:block;text-align:center;text-decoration:none;flex:1"
+           href="/api/papers/${esc(id)}/docx" download="${esc(b.title || "试卷")}.docx">⬇ 下载 Word 试卷</a>
+        <button class="btn sec" style="flex:1" onclick="closeModal()">关闭</button>
+      </div>`;
     openModal();
   }
 
@@ -734,7 +748,11 @@
     };
     try {
       await api("POST", "/api/papers", body);
-      toast("试卷已保存"); closeModal();
+      toast("试卷已保存，可在试卷页下载 Word");
+      closeModal();
+      // 重置组卷清单：所有题目恢复为「加入组卷」，方便再次挑题组卷
+      composeSet = [];
+      renderComposePool(); renderCompose();
       await loadPull(true); switchTab("papers");
     } catch (e) { toast("保存失败：" + e.message); }
   }
@@ -896,9 +914,7 @@
   document.getElementById("qList").addEventListener("click", qListClick);
   document.getElementById("modalBox").addEventListener("click", (e) => {
     const img = e.target.closest("img");
-    if (img) { showLightbox(img.src); return; }
-    const t = e.target.closest('[data-act="compose"]');
-    if (t) quickCompose(t.getAttribute("data-id"));
+    if (img) showLightbox(img.src);
   });
 
   // 启动

@@ -16,10 +16,11 @@
 数据模型（业务字段保持与桌面端 data.json 一致，整条以 JSON 存于 store 表）：
   store(module, id, body, updated_at)
 """
-import os, sys, json, sqlite3, hashlib, secrets, time, uuid, mimetypes
+import os, sys, json, sqlite3, hashlib, secrets, time, uuid, mimetypes, re, io, zipfile, struct
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, quote as urlquote
 from datetime import datetime, timezone
+from xml.sax.saxutils import escape as xesc
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(BASE, "data"))
@@ -117,6 +118,179 @@ def store_list(module, since=None, limit=200, offset=0, q=None, **filters):
     cx.close()
     return [{"id": r["id"], "updated_at": r["updated_at"],
              "body": json.loads(r["body"])} for r in rows]
+
+
+# ---------------- 试卷导出 DOCX（零依赖，手工构建 OOXML） ----------------
+IMG_TAG_RE = re.compile(r'<img[^>]*src=["\']([^"\']+)["\'][^>]*>', re.I)
+HTML_TAG_RE = re.compile(r'<[^>]+>')
+DOCX_CTYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+def _img_dims(data):
+    """从 PNG/JPEG/GIF 二进制头里取 (宽, 高)，取不到用 800x600。"""
+    try:
+        if data[:8] == b"\x89PNG\r\n\x1a\n" and len(data) > 24:
+            w, h = struct.unpack(">II", data[16:24]); return w, h
+        if data[:2] == b"\xff\xd8":
+            i = 2
+            while i < len(data) - 9:
+                if data[i] != 0xFF:
+                    i += 1; continue
+                marker = data[i + 1]
+                if marker in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7,
+                              0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF):
+                    h, w = struct.unpack(">HH", data[i + 5:i + 9]); return w, h
+                i += 2 + struct.unpack(">H", data[i + 2:i + 4])[0]
+        if data[:6] in (b"GIF87a", b"GIF89a"):
+            w, h = struct.unpack("<HH", data[6:10]); return w, h
+    except Exception:
+        pass
+    return 800, 600
+
+
+def _media_file(src):
+    """media://xxx 或 /api/media/xxx -> 本地文件路径；不存在返回 None。"""
+    rel = src
+    for pre in ("media://", "/api/media/"):
+        if rel.startswith(pre):
+            rel = rel[len(pre):]
+            break
+    fp = os.path.normpath(os.path.join(MEDIA_DIR, rel))
+    if fp.startswith(MEDIA_DIR) and os.path.isfile(fp):
+        return fp
+    return None
+
+
+def _content_segments(html):
+    """题干 HTML -> [("text", s) | ("img", 本地路径)] 序列。"""
+    segs = []
+    pos = 0
+    for m in IMG_TAG_RE.finditer(html or ""):
+        before = html_mod_unescape(HTML_TAG_RE.sub("", (html or "")[pos:m.start()])).strip()
+        if before:
+            segs.append(("text", before))
+        fp = _media_file(m.group(1))
+        if fp:
+            segs.append(("img", fp))
+        pos = m.end()
+    tail = html_mod_unescape(HTML_TAG_RE.sub("", (html or "")[pos:])).strip()
+    if tail:
+        segs.append(("text", tail))
+    return segs
+
+
+def html_mod_unescape(s):
+    import html as _html
+    return _html.unescape(s)
+
+
+def _p_text(text, bold=False, sz=22):
+    rpr = "<w:rPr>%s<w:sz w:val=\"%d\"/></w:rPr>" % ("<w:b/>" if bold else "", sz)
+    return ("<w:p><w:r>%s<w:t xml:space=\"preserve\">%s</w:t></w:r></w:p>"
+            % (rpr, xesc(text)))
+
+
+_EMU_MAX = 5400000  # 约 5.9 英寸页宽
+
+
+def _p_image(rid, idx, cx, cy):
+    return (
+        '<w:p><w:r><w:drawing>'
+        '<wp:inline distT="0" distB="0" distL="0" distR="0" '
+        'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">'
+        '<wp:extent cx="%d" cy="%d"/><wp:docPr id="%d" name="img%d"/>'
+        '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+        '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+        '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+        '<pic:nvPicPr><pic:cNvPr id="%d" name="img%d"/><pic:cNvPicPr/></pic:nvPicPr>'
+        '<pic:blipFill><a:blip r:embed="%s"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+        '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="%d" cy="%d"/></a:xfrm>'
+        '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>'
+        '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>'
+        % (cx, cy, idx, idx, idx, idx, rid, cx, cy))
+
+
+def build_paper_docx(paper, questions_map):
+    """paper: {title, note, questionIds}; questions_map: id -> body。返回 docx 字节。"""
+    paras = []
+    rels = []          # (rid, target)
+    media = []         # (arcname, bytes)
+    img_idx = 0
+
+    paras.append(_p_text(paper.get("title") or "试卷", bold=True, sz=32))
+    if paper.get("note"):
+        paras.append(_p_text(paper["note"], sz=20))
+    paras.append(_p_text("", sz=12))
+
+    ids = paper.get("questionIds") or []
+    for i, qid in enumerate(ids, 1):
+        qb = questions_map.get(qid) or {}
+        head = "%d. %s%s" % (i, qb.get("type") or "", ("　" + qb["qid"]) if qb.get("qid") else "")
+        paras.append(_p_text(head, bold=True, sz=22))
+        for kind, val in (_content_segments(qb.get("content") or "")
+                          + _content_segments(qb.get("answer") or "")
+                          + _content_segments(qb.get("analysis") or "")):
+            if kind == "text":
+                paras.append(_p_text(val))
+            else:
+                try:
+                    with open(val, "rb") as f:
+                        data = f.read()
+                except Exception:
+                    continue
+                ext = os.path.splitext(val)[1].lstrip(".").lower() or "png"
+                if ext == "jpg":
+                    ext = "jpeg"
+                img_idx += 1
+                w, h = _img_dims(data)
+                cx = _EMU_MAX
+                cy = int(_EMU_MAX * h / max(w, 1))
+                rid = "rId%d" % (100 + img_idx)
+                arc = "word/media/img%d.%s" % (img_idx, ext)
+                rels.append((rid, "media/img%d.%s" % (img_idx, ext)))
+                media.append((arc, data))
+                paras.append(_p_image(rid, img_idx, cx, cy))
+        paras.append(_p_text("", sz=12))
+
+    doc = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+           '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+           'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+           '<w:body>' + "".join(paras) +
+           '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>'
+           '<w:pgMar w:top="1200" w:right="1100" w:bottom="1200" w:left="1100"/></w:sectPr>'
+           '</w:body></w:document>')
+
+    rels_xml = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                + "".join('<Relationship Id="%s" Type="http://schemas.openxmlformats.org/officeDocument/'
+                          '2006/relationships/image" Target="%s"/>' % (rid, tgt)
+                          for rid, tgt in rels)
+                + "</Relationships>")
+
+    default_exts = {"rels": "application/vnd.openxmlformats-package.relationships+xml",
+                    "xml": "application/xml", "png": "image/png", "jpeg": "image/jpeg",
+                    "gif": "image/gif", "webp": "image/webp", "bmp": "image/bmp"}
+    used_exts = {os.path.splitext(a)[1].lstrip(".") for a, _ in media}
+    ct = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+          '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+          + "".join('<Default Extension="%s" ContentType="%s"/>' % (e, default_exts.get(e, "application/octet-stream"))
+                    for e in sorted(set(default_exts) | used_exts))
+          + '<Override PartName="/word/document.xml" ContentType="' + DOCX_CTYPE + '.main+xml"/>'
+          "</Types>")
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("[Content_Types].xml", ct)
+        z.writestr("_rels/.rels",
+                   '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                   '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                   '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+                   'relationships/officeDocument" Target="word/document.xml"/></Relationships>')
+        z.writestr("word/document.xml", doc)
+        z.writestr("word/_rels/document.xml.rels", rels_xml)
+        for arc, data in media:
+            z.writestr(arc, data)
+    return buf.getvalue()
 
 
 def store_delete(module, id):
@@ -266,6 +440,22 @@ class H(BaseHTTPRequestHandler):
             if fp.startswith(MEDIA_DIR):
                 return send_file(self, fp)
             self.send_response(403); self.send_cors(); self.end_headers(); return
+        m = re.match(r"^/api/papers/([^/]+)/docx$", p)
+        if m:
+            paper, _ = store_get("papers", m.group(1))
+            if not paper:
+                self.send_response(404); self.send_cors(); self.end_headers(); return
+            qmap = {qid: body for qid, body in
+                    ((i["id"], i["body"]) for i in store_list("questions", limit=5000))}
+            data = build_paper_docx(paper, qmap)
+            fname = urlquote((paper.get("title") or "试卷") + ".docx")
+            self.send_response(200)
+            self.send_header("Content-Type", DOCX_CTYPE)
+            self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + fname)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_cors(); self.end_headers()
+            self.wfile.write(data)
+            return
         if not p.startswith("/api/"):
             self.send_response(404); self.send_cors(); self.end_headers(); return
         self.api_get(p)
