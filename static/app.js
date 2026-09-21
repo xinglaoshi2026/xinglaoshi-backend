@@ -954,11 +954,15 @@
     { ico: "🏠", label: "首页", act: () => switchTab("dashboard") },
     { ico: "📚", label: "题库", act: () => switchTab("questions") },
     { ico: "📕", label: "错题", act: () => switchTab("wrong") },
-    { ico: "📄", label: "试卷", act: () => switchTab("papers") },
-    { ico: "🧩", label: "组卷", act: () => switchTab("compose") },
-    { ico: "👥", label: "学生", act: () => switchTab("students") },
-    { ico: "📅", label: "排课", act: () => switchTab("schedule") },
-    { ico: "📝", label: "课时", act: () => switchTab("records") },
+    { ico: "🧩", label: "组卷/试卷", subs: [
+        { label: "组卷", act: () => switchTab("compose") },
+        { label: "试卷", act: () => switchTab("papers") },
+    ] },
+    { ico: "👥", label: "学生/排课/课时", subs: [
+        { label: "学生", act: () => switchTab("students") },
+        { label: "排课", act: () => switchTab("schedule") },
+        { label: "课时", act: () => switchTab("records") },
+    ] },
     { ico: "📋", label: "考试", act: () => switchTab("exams") },
     { ico: "💡", label: "知识点", act: () => switchTab("knowledgePoints") },
     { ico: "➕", label: "新建", act: () => { closeArc(); openFab(); } },
@@ -967,14 +971,20 @@
   const navFab = document.getElementById("navFab");
   const arcLayer = document.getElementById("arcLayer");
   const arcBackdrop = document.getElementById("arcBackdrop");
+  const arcSub = document.getElementById("arcSub");
   let arcOpen = false;
+  let subOpen = false;
 
   function buildArcItems() {
     NAV_ITEMS.forEach((it) => {
       const el = document.createElement("div");
       el.className = "arc-item";
       el.innerHTML = '<span class="ico">' + it.ico + '</span><span class="lbl">' + it.label + "</span>";
-      el.addEventListener("click", (e) => { e.stopPropagation(); closeArc(); it.act(); });
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (it.subs) openSub(it);
+        else { closeArc(); it.act(); }
+      });
       arcLayer.appendChild(el);
       it.el = el;
     });
@@ -1020,8 +1030,8 @@
       ax = Math.max(32, Math.min(window.innerWidth - 32, ax));
       ay = Math.max(84, Math.min(window.innerHeight - 32, ay));
       const el = it.el;
-      el.style.left = (ax - 23) + "px";   // arc-item 46px，向左上偏移使其居中
-      el.style.top = (ay - 23) + "px";
+      el.style.left = (ax - 27) + "px";   // arc-item 54px，向左上偏移使其居中
+      el.style.top = (ay - 27) + "px";
       el.style.setProperty("--dx", (fx - ax) + "px");
       el.style.setProperty("--dy", (fy - ay) + "px");
       el.style.transitionDelay = (i * 0.03) + "s";   // 错峰展开，更灵动
@@ -1044,14 +1054,41 @@
     arcBackdrop.classList.remove("show");
     navFab.classList.remove("active");
     navFab.textContent = "☰";
+    if (arcSub) { arcSub.classList.remove("show"); arcSub.innerHTML = ""; }
+    subOpen = false;
+  }
+  function openSub(item) {
+    // 收起主菜单圆形按钮，仅保留并展示子菜单气泡
+    NAV_ITEMS.forEach(it => it.el && it.el.classList.remove("open"));
+    arcSub.innerHTML = "";
+    (item.subs || []).forEach(s => {
+      const b = document.createElement("button");
+      b.className = "arc-sub-btn";
+      b.textContent = s.label;
+      b.addEventListener("click", (e) => { e.stopPropagation(); closeArc(); s.act(); });
+      arcSub.appendChild(b);
+    });
+    const fr = navFab.getBoundingClientRect();
+    const fx = fr.left + fr.width / 2, fy = fr.top + fr.height / 2;
+    const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
+    const ang = Math.atan2(cy - fy, cx - fx);
+    const R = 64;
+    let px = fx + R * Math.cos(ang), py = fy + R * Math.sin(ang);
+    px = Math.max(72, Math.min(window.innerWidth - 72, px));
+    py = Math.max(100, Math.min(window.innerHeight - 72, py));
+    arcSub.style.left = px + "px";
+    arcSub.style.top = py + "px";
+    void arcSub.offsetWidth;
+    arcSub.classList.add("show");
+    subOpen = true;
   }
   function toggleArc() { if (arcOpen) closeArc(); else openArc(); }
 
   // 拖动 / 长按移动：短按=展开收起；长按或拖动=移动按钮（位置持久化）
-  let pressTimer = null, dragging = false, moved = false, sx = 0, sy = 0, sl = 0, stp = 0;
+  let pressTimer = null, dragging = false, moved = false, pressOnFab = false, sx = 0, sy = 0, sl = 0, stp = 0;
   navFab.addEventListener("pointerdown", (e) => {
     e.preventDefault();
-    moved = false; dragging = false;
+    moved = false; dragging = false; pressOnFab = true;
     sx = e.clientX; sy = e.clientY;
     const p = navPos(); sl = p.left; stp = p.top;
     pressTimer = setTimeout(() => { dragging = true; navFab.classList.add("dragging"); }, 350);
@@ -1074,11 +1111,17 @@
   });
   window.addEventListener("pointerup", () => {
     clearTimeout(pressTimer); pressTimer = null;
+    const wasOnFab = pressOnFab;
+    pressOnFab = false;
     if (dragging) {
       dragging = false; navFab.classList.remove("dragging");
       if (moved) { saveNavPos(); closeArc(); return; }
     }
-    if (!moved) toggleArc();   // 短按 = 展开 / 收起
+    if (wasOnFab && !moved) toggleArc();   // 仅在 FAB 上短按才展开/收起，点别处不触发
+  });
+  window.addEventListener("pointercancel", () => {
+    clearTimeout(pressTimer); pressTimer = null;
+    dragging = false; pressOnFab = false; navFab.classList.remove("dragging");
   });
   window.addEventListener("pointercancel", () => {
     clearTimeout(pressTimer); pressTimer = null;

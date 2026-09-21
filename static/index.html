@@ -204,15 +204,24 @@
   .arc-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.35);z-index:43;opacity:0;pointer-events:none;transition:opacity .2s}
   .arc-backdrop.show{opacity:1;pointer-events:auto}
   .arc-layer{position:fixed;inset:0;z-index:44;pointer-events:none}
-  .arc-item{position:fixed;width:46px;height:46px;border-radius:50%;background:#fff;color:var(--text);
+  .arc-item{position:fixed;width:54px;height:54px;border-radius:50%;background:#fff;color:var(--text);
     box-shadow:var(--shadow-lg);display:flex;flex-direction:column;align-items:center;justify-content:center;
-    font-size:19px;line-height:1;pointer-events:auto;opacity:0;
+    font-size:20px;line-height:1;pointer-events:none;opacity:0;
     transform:translate(var(--dx,0),var(--dy,0)) scale(0);
     transition:transform .34s cubic-bezier(.34,1.56,.64,1), opacity .22s ease;
     will-change:transform,opacity}
-  .arc-item.open{opacity:1;transform:translate(0,0) scale(1)}
-  .arc-item .lbl{font-size:9px;margin-top:2px;line-height:1;color:var(--text-muted);transform:scale(.92)}
+  .arc-item.open{opacity:1;transform:translate(0,0) scale(1);pointer-events:auto}
+  .arc-item .lbl{font-size:9px;margin-top:3px;line-height:1.05;color:var(--text-muted);
+    white-space:normal;width:50px;text-align:center}
   .arc-item:active{background:var(--primary-bg);color:var(--primary)}
+  .arc-sub{position:fixed;z-index:45;display:flex;flex-direction:column;gap:8px;
+    background:#fff;padding:10px;border-radius:16px;box-shadow:0 12px 32px rgba(15,23,42,.28);
+    opacity:0;pointer-events:none;transform:translate(-50%,-50%) scale(.82);
+    transition:opacity .16s ease, transform .2s cubic-bezier(.34,1.56,.64,1)}
+  .arc-sub.show{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1)}
+  .arc-sub-btn{appearance:none;border:0;background:var(--primary-bg);color:var(--primary);
+    font-size:14px;font-weight:600;padding:11px 20px;border-radius:11px;white-space:nowrap}
+  .arc-sub-btn:active{background:var(--primary);color:#fff}
 
   /* ===== 弹窗（对应桌面版 .modal-overlay / .modal） ===== */
   .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-start;justify-content:center;
@@ -424,6 +433,7 @@
     <!-- 可移动弧形导航 FAB（取代左上角抽屉展开） -->
     <div id="arcBackdrop" class="arc-backdrop" onclick="closeArc()"></div>
     <div id="arcLayer" class="arc-layer"></div>
+    <div id="arcSub" class="arc-sub"></div>
     <div id="navFab" class="nav-fab">☰</div>
   </div>
 
