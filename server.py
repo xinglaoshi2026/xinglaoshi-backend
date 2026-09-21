@@ -79,7 +79,7 @@ def now_ts():
 
 # ---------------- 存储层 ----------------
 MODULES = ["questions", "papers", "exams", "students", "schedule",
-           "records", "knowledgePoints", "examCategories"]
+           "records", "knowledgePoints", "examCategories", "wrongNotes"]
 
 
 def store_get(module, id):

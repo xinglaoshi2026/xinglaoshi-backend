@@ -13,6 +13,39 @@
   let qMap = {};            // id -> question item
   let qFiltered = [], qShown = 0;   // 题库本地过滤 + 分页
   let lastPull = 0;
+  let qf = { kw: "", type: "", kpId: "" };          // 题库筛选：关键词/题型/知识点
+  let kpMap = {}, kpKids = {};                      // 知识点索引：id->body / id->[childIds]
+  const Q_TYPE_CHIPS = ["选择题", "多选题", "填空题", "解答题", "计算题", "实验题", "作图题", "综合题"];
+
+  // ---------- 知识点索引 ----------
+  function buildKpIndex() {
+    kpMap = {}; kpKids = {};
+    (DB.data.knowledgePoints || []).forEach(it => {
+      const b = it.body || {};
+      kpMap[it.id] = b;
+      const p = b.parentId || "";
+      (kpKids[p] = kpKids[p] || []).push(it.id);
+    });
+  }
+  function kpName(id) { return (kpMap[id] && kpMap[id].name) || id; }
+  function kpPath(id) {
+    const parts = []; let cur = id, guard = 0;
+    while (cur && kpMap[cur] && guard++ < 10) { parts.unshift(kpName(cur)); cur = kpMap[cur].parentId || ""; }
+    return parts.join(" / ") || id;
+  }
+  function kpSubtreeIds(id) {
+    const out = new Set([id]); const stack = [id];
+    while (stack.length) {
+      const cur = stack.pop();
+      (kpKids[cur] || []).forEach(c => { if (!out.has(c)) { out.add(c); stack.push(c); } });
+    }
+    return out;
+  }
+  // 某知识点（含后代）下的题目数
+  function kpCount(id) {
+    const ids = kpSubtreeIds(id);
+    return (DB.data.questions || []).filter(it => ids.has(it.body && it.body.kpId)).length;
+  }
 
   // ---------- 工具 ----------
   function api(method, path, body, isRaw, fname) {
@@ -70,6 +103,7 @@
       lastPull = now;
       qMap = {};
       (DB.data.questions || []).forEach(it => { qMap[it.id] = it; });
+      buildKpIndex();
       cachePut("pull", DB);
       return true;
     } catch (e) {
@@ -79,6 +113,7 @@
           DB = c; lastPull = now;
           qMap = {};
           (DB.data.questions || []).forEach(it => { qMap[it.id] = it; });
+          buildKpIndex();
           toast("离线缓存数据");
         } else {
           toast("加载失败：" + e.message);
@@ -114,49 +149,237 @@
     switchTab("dashboard");
   }
 
-  // ---------- 题库（本地过滤 + 分页） ----------
+  // ---------- 题库（题型/知识点/关键词 筛选 + 本地分页） ----------
+  function wrongQIds() {
+    const s = new Set();
+    (DB.data.wrongNotes || []).forEach(it => { const b = it.body || {}; if (!b.resolved && b.questionId) s.add(b.questionId); });
+    return s;
+  }
   function applyFilter() {
-    const q = $("#qSearch").value.trim().toLowerCase();
+    qf.kw = ($("#qSearch").value || "").trim().toLowerCase();
     const all = DB.data.questions || [];
-    qFiltered = q ? all.filter(it => {
+    const kpIds = qf.kpId ? kpSubtreeIds(qf.kpId) : null;
+    qFiltered = all.filter(it => {
       const b = it.body || {};
-      return ((b.content || "") + " " + (b.answer || "") + " " + (b.kpId || "") + " " + (b.qid || ""))
-        .toLowerCase().includes(q);
-    }) : all.slice();
+      if (qf.type && (b.type || "") !== qf.type) return false;
+      if (kpIds && !kpIds.has(b.kpId || "")) return false;
+      if (qf.kw) {
+        const hay = ((b.content || "") + " " + (b.answer || "") + " " + (b.kpId || "") + " " + (b.qid || "") + " " + (b.tags || "") + " " + kpPath(b.kpId || "")).toLowerCase();
+        if (!hay.includes(qf.kw)) return false;
+      }
+      return true;
+    });
+    // 新知识点优先、同知识点按编号
+    qFiltered.sort((a, b) => String(a.body && a.body.kpId).localeCompare(String(b.body && b.body.kpId)) || String(a.body && a.body.qid).localeCompare(String(b.body && b.body.qid), "zh-CN", { numeric: true }));
     qShown = 0;
+    renderFilterBar();
     $("#qList").innerHTML = "";
+    if (!qFiltered.length) {
+      $("#qList").innerHTML = '<div class="center">没有符合条件的题目<br><span style="font-size:12px">试试调整关键词或筛选条件</span></div>';
+      $("#qCount").textContent = "共 0 题";
+      return;
+    }
     showMore();
   }
+  function renderFilterBar() {
+    const chips = ['<button class="chip' + (qf.type ? "" : " on") + '" onclick="setTypeFilter(\'\')">全部</button>']
+      .concat(Q_TYPE_CHIPS.map(t => '<button class="chip' + (qf.type === t ? " on" : "") + '" onclick="setTypeFilter(\'' + t + '\')">' + t + "</button>"));
+    $("#qTypeChips").innerHTML = chips.join("");
+    const kpChip = $("#qKpChip");
+    if (qf.kpId) {
+      kpChip.classList.add("on");
+      kpChip.innerHTML = "💡 " + esc(kpPath(qf.kpId)) + ' <span class="x">✕</span>';
+    } else {
+      kpChip.classList.remove("on");
+      kpChip.textContent = "💡 全部知识点";
+    }
+    $("#qCount").textContent = "共 " + qFiltered.length + " 题" + (qf.kpId ? " · " + kpPath(qf.kpId) : "") + (qf.type ? " · " + qf.type : "");
+  }
+  function setTypeFilter(t) { qf.type = t; applyFilter(); }
+  function setKpFilter(id) { qf.kpId = id || ""; applyFilter(); }
   function showMore() {
     if (qShown >= qFiltered.length) {
       if (qShown > 0) toast("已全部加载 " + qFiltered.length + " 题");
       return;
     }
-    const slice = qFiltered.slice(qShown, qShown + 30);
-    slice.forEach(addQCard);
+    const slice = qFiltered.slice(qShown, qShown + 20);
+    const wrongSet = wrongQIds();
+    const frag = document.createDocumentFragment();
+    slice.forEach(it => frag.appendChild(qCard(it, wrongSet)));
     qShown += slice.length;
+    $("#qList").appendChild(frag);
   }
-  function plainText(html) {
-    const d = document.createElement("div");
-    d.innerHTML = String(html || "");
-    return (d.textContent || "").trim().replace(/\s+/g, " ");
-  }
-  function addQCard(it) {
+  const TYPE_BADGE = { "选择题": "tag", "多选题": "badge badge-info", "填空题": "badge badge-success", "解答题": "badge badge-warning", "计算题": "badge badge-warning", "实验题": "badge badge-info", "作图题": "badge badge-info", "综合题": "badge badge-danger" };
+  function qCard(it, wrongSet) {
     const b = it.body || {};
-    const cHtml = renderRich(b.content);
-    const aText = plainText(b.answer);
-    let aShow;
-    if (aText) aShow = esc(aText.slice(0, 60)) + (aText.length > 60 ? "…" : "");
-    else if (b.answer) aShow = "（图片答案，点击查看）";
-    else aShow = "—";
+    const typeCls = TYPE_BADGE[b.type] || "tag";
+    const diff = b.difficulty || "";
+    const inCompose = composeSet.includes(it.id);
+    const isWrong = wrongSet && wrongSet.has(it.id);
+    const badges = [];
+    if (b.grade) badges.push('<span class="badge badge-gray">' + esc(b.grade) + "</span>");
+    if (diff) badges.push('<span class="badge ' + (diff === "基础" ? "badge-success" : diff === "拔高" ? "badge-danger" : "badge-warning") + '">' + esc(diff) + "</span>");
+    if (b.qid) badges.push('<span class="badge badge-gray">' + esc(b.qid) + "</span>");
     const div = document.createElement("div");
-    div.className = "card";
-    div.innerHTML = `<div class="row"><span class="tag">${esc(b.type || "题")}</span>
-      <span class="muted">${esc(b.kpId || "")}${b.qid ? " · " + esc(b.qid) : ""}</span></div>
-      <div style="margin:6px 0">${cHtml}</div>
-      <div class="muted">答案：${aShow}</div>`;
-    div.onclick = () => openDetail(it.id);
-    $("#qList").appendChild(div);
+    div.className = "card q";
+    div.innerHTML =
+      '<div class="q-head">' +
+        '<span class="' + typeCls + '">' + esc(b.type || "题") + "</span>" +
+        '<span class="grow"></span>' + badges.join("") +
+        (isWrong ? '<span class="badge badge-danger">错题</span>' : "") +
+      "</div>" +
+      (b.kpId ? '<div class="q-kp-line"><span class="q-kp" data-act="kp" data-id="' + esc(b.kpId) + '" data-kp="' + esc(b.kpId) + '">💡 ' + esc(kpPath(b.kpId)) + "</span></div>" : "") +
+      '<div class="q-body-wrap" data-act="detail" data-id="' + it.id + '"><div class="q-content">' + renderRich(b.content) + "</div></div>" +
+      '<button class="q-ans-toggle" data-act="answer" data-id="' + it.id + '">👁 查看答案 / 解析</button>' +
+      '<div class="q-ans-box" id="ans-' + it.id + '"><div class="ans-label">答案 / 解析</div>' + (renderRich(b.answer) || "—") + (b.analysis ? '<div style="margin-top:6px">' + renderRich(b.analysis) + "</div>" : "") + "</div>" +
+      '<div class="q-actions">' +
+        '<button class="btn sec sm" data-act="detail" data-id="' + it.id + '">🔍 详情</button>' +
+        '<button class="btn sm' + (inCompose ? " ok" : "") + '" data-act="compose" data-id="' + it.id + '">' + (inCompose ? "✓ 已加入组卷" : "🧩 加入组卷") + "</button>" +
+        '<button class="btn danger sm' + (isWrong ? " marked" : "") + '" data-act="wrong" data-id="' + it.id + '">' + (isWrong ? "✓ 已标错题" : "📕 标记错题") + "</button>" +
+      "</div>";
+    return div;
+  }
+  // 题库列表统一事件委托（详情/答案/组卷/错题/知识点/图片放大）
+  function qListClick(e) {
+    const img = e.target.closest("img");
+    if (img && $("#qList").contains(img)) { showLightbox(img.src); return; }
+    const t = e.target.closest("[data-act]");
+    if (!t) return;
+    e.stopPropagation();
+    const act = t.getAttribute("data-act"), id = t.getAttribute("data-id");
+    if (act === "detail") openDetail(id);
+    else if (act === "answer") {
+      const box = document.getElementById("ans-" + id);
+      box.classList.toggle("open");
+      t.innerHTML = box.classList.contains("open") ? "🙈 收起答案 / 解析" : "👁 查看答案 / 解析";
+    }
+    else if (act === "compose") quickCompose(id);
+    else if (act === "wrong") markWrong(id);
+    else if (act === "kp") { setKpFilter(t.getAttribute("data-kp")); window.scrollTo(0, 0); }
+  }
+  function quickCompose(id) {
+    if (composeSet.includes(id)) { toast("该题已在组卷清单中"); return; }
+    composeSet.push(id);
+    toast("已加入组卷（共 " + composeSet.length + " 题）");
+    applyFilter();
+  }
+  function showLightbox(src) {
+    $("#lightboxImg").src = src;
+    $("#lightbox").classList.remove("hidden");
+  }
+
+  // ---------- 知识点选择抽屉 ----------
+  function openKpSheet() { $("#kpSearch").value = ""; renderKpTree(); $("#kpSheet").classList.remove("hidden"); }
+  function closeKpSheet() { $("#kpSheet").classList.add("hidden"); }
+  function renderKpTree() {
+    const kw = ($("#kpSearch").value || "").trim().toLowerCase();
+    const box = $("#kpTree");
+    const allBtn = '<div class="kp-row' + (qf.kpId ? "" : " sel") + '" data-kp="" onclick="pickKp(\'\')">' +
+      '<span class="kp-toggle leaf">·</span><span class="kp-name">📚 全部知识点</span>' +
+      '<span class="kp-cnt">' + (DB.data.questions || []).length + " 题</span></div>";
+    function nodeHtml(id) {
+      const b = kpMap[id] || {};
+      const kids = (kpKids[id] || []).slice().sort((a, c) => String(kpMap[a].name).localeCompare(String(kpMap[c].name), "zh-CN"));
+      const cnt = kpCount(id);
+      if (kw && !String(b.name || "").toLowerCase().includes(kw) && !kids.some(k => String(kpMap[k].name || "").toLowerCase().includes(kw))) return "";
+      const hasKids = kids.length > 0;
+      return '<div><div class="kp-row' + (qf.kpId === id ? " sel" : "") + '" data-kp="' + esc(id) + '" onclick="pickKp(\'' + esc(id) + '\')">' +
+        '<span class="kp-toggle' + (hasKids ? "" : " leaf") + '" onclick="event.stopPropagation();this.classList.toggle(\'open\');this.closest(\'.kp-row\').parentElement.querySelector(\':scope > .kp-kids\').classList.toggle(\'open\')">' + (hasKids ? "▶" : "") + "</span>" +
+        '<span class="kp-name">' + esc(b.name || id) + "</span>" +
+        '<span class="kp-cnt">' + cnt + " 题</span></div>" +
+        (hasKids ? '<div class="kp-kids">' + kids.map(nodeHtml).join("") + "</div>" : "") +
+        "</div>";
+    }
+    const roots = (kpKids[""] || []).slice().sort((a, c) => String(kpMap[a].name).localeCompare(String(kpMap[c].name), "zh-CN"));
+    box.innerHTML = allBtn + roots.map(nodeHtml).join("");
+  }
+  function pickKp(id) { closeKpSheet(); setKpFilter(id); window.scrollTo(0, 0); }
+
+  // ---------- 标记错题 ----------
+  function markWrong(qId) {
+    const students = DB.data.students || [];
+    const existing = (DB.data.wrongNotes || []).find(it => (it.body || {}).questionId === qId && !(it.body || {}).resolved);
+    const box = $("#modalBox");
+    box.innerHTML =
+      "<h3>📕 标记错题</h3>" +
+      '<div style="margin:8px 0">' + renderRich((qMap[qId] && qMap[qId].body || {}).content) + "</div>" +
+      '<label class="kv">哪位学生做错（可先不选）</label>' +
+      '<select id="wnStudent"><option value="">— 暂不指定 —</option>' +
+      students.map(s => '<option value="' + esc(s.id) + '">' + esc((s.body || {}).name || s.id) + "</option>").join("") +
+      "</select>" +
+      '<label class="kv">备注（错因等，可选）</label>' +
+      '<textarea id="wnNote" style="min-height:60px">' + esc(existing ? (existing.body.note || "") : "") + "</textarea>" +
+      '<div class="row" style="margin-top:12px">' +
+      '<button class="btn ok" onclick="saveWrong(\'' + qId + '\')">保存错题</button>' +
+      '<button class="btn sec" onclick="closeModal()">取消</button></div>';
+    if (existing && existing.body.studentId) $("#wnStudent").value = existing.body.studentId;
+    openModal();
+  }
+  async function saveWrong(qId) {
+    const studentId = $("#wnStudent").value || "";
+    const stu = (DB.data.students || []).find(s => s.id === studentId);
+    const body = {
+      id: "wn_" + Date.now().toString(36),
+      questionId: qId,
+      studentId, studentName: stu ? ((stu.body || {}).name || "") : "",
+      source: "手机端", note: ($("#wnNote").value || "").trim(),
+      resolved: false, createdAt: Math.floor(Date.now() / 1000),
+      updatedAt: Math.floor(Date.now() / 1000)
+    };
+    try {
+      await api("POST", "/api/wrongNotes", body);
+      DB.data.wrongNotes = DB.data.wrongNotes || [];
+      DB.data.wrongNotes.push({ id: body.id, updated_at: body.updatedAt, body });
+      toast("已标记错题 ✓"); closeModal(); applyFilter();
+    } catch (e) { toast("标记失败：" + e.message); }
+  }
+
+  // ---------- 错题本 ----------
+  function loadWrong() {
+    const box = $("#wrongList");
+    const kw = ($("#wrongSearch") ? $("#wrongSearch").value : "").trim().toLowerCase();
+    let items = (DB.data.wrongNotes || []).slice().reverse();
+    if (kw) items = items.filter(it => { const b = it.body || {}; return ((b.studentName || "") + " " + (b.note || "")).toLowerCase().includes(kw); });
+    if (!items.length) { box.innerHTML = '<div class="center">还没有错题记录<br><span style="font-size:12px">在题库里点「📕 标记错题」即可添加</span></div>'; return; }
+    box.innerHTML = "";
+    items.forEach(it => {
+      const b = it.body || {};
+      const q = qMap[b.questionId] || {};
+      const qb = q.body || {};
+      const div = document.createElement("div");
+      div.className = "card wn-card";
+      div.innerHTML =
+        '<div class="wn-meta">' +
+          '<span class="badge ' + (b.resolved ? "badge-success" : "badge-danger") + '">' + (b.resolved ? "已掌握" : "未掌握") + "</span>" +
+          (b.studentName ? '<span class="badge badge-gray">👤 ' + esc(b.studentName) + "</span>" : "") +
+          (qb.type ? '<span class="tag">' + esc(qb.type) + "</span>" : "") +
+          (qb.qid ? '<span class="badge badge-gray">' + esc(qb.qid) + "</span>" : "") +
+        "</div>" +
+        '<div onclick="openDetail(\'' + esc(b.questionId) + '\')">' + (renderRich(qb.content) || '<span class="muted">（题目已删除或未同步）</span>') + "</div>" +
+        (b.note ? '<div class="wn-note">📝 ' + esc(b.note) + "</div>" : "") +
+        '<div class="row" style="margin-top:8px">' +
+          '<button class="btn sm ' + (b.resolved ? "sec" : "ok") + '" onclick="toggleWrongResolved(\'' + it.id + '\')">' + (b.resolved ? "标为未掌握" : "✓ 已掌握") + "</button>" +
+          '<button class="btn danger sm" onclick="delWrong(\'' + it.id + '\')">删除</button>' +
+        "</div>";
+      box.appendChild(div);
+    });
+  }
+  async function toggleWrongResolved(id) {
+    const it = (DB.data.wrongNotes || []).find(x => x.id === id);
+    if (!it) return;
+    const body = Object.assign({}, it.body, { resolved: !it.body.resolved, updatedAt: Math.floor(Date.now() / 1000) });
+    try {
+      await api("PUT", "/api/wrongNotes/" + id, body);
+      it.body = body; toast(body.resolved ? "已标为掌握 ✓" : "已标为未掌握"); loadWrong(); 
+    } catch (e) { toast("操作失败：" + e.message); }
+  }
+  async function delWrong(id) {
+    if (!confirm("确认删除该错题记录？")) return;
+    try {
+      await api("DELETE", "/api/wrongNotes/" + id);
+      DB.data.wrongNotes = (DB.data.wrongNotes || []).filter(x => x.id !== id);
+      toast("已删除"); loadWrong();
+    } catch (e) { toast("删除失败：" + e.message); }
   }
 
   async function openDetail(id) {
@@ -166,13 +389,18 @@
       catch (e) { return toast("加载失败：" + e.message); }
     }
     const box = $("#modalBox");
+    const inCompose = composeSet.includes(id);
     box.innerHTML = `
       <h3>题目详情</h3>
-      <div class="kv">ID: ${esc(id)} · ${esc(b.kpId || "")} · ${esc(b.type || "")}</div>
+      <div class="kv">${esc(kpPath(b.kpId || ""))}${b.qid ? " · " + esc(b.qid) : ""} · ${esc(b.type || "")}</div>
       <div style="margin:8px 0">${renderRich(b.content)}</div>
       <div class="kv">答案</div><div>${renderRich(b.answer) || "—"}</div>
       <div class="kv" style="margin-top:6px">解析</div><div>${renderRich(b.analysis) || "—"}</div>
       <div class="row" style="margin-top:14px">
+        <button class="btn sm ${inCompose ? "ok" : ""}" onclick="quickCompose('${id}');openDetail('${id}')">${inCompose ? "✓ 已加入组卷" : "🧩 加入组卷"}</button>
+        <button class="btn danger sm" onclick="markWrong('${id}')">📕 标记错题</button>
+      </div>
+      <div class="row" style="margin-top:8px">
         <button class="btn" onclick="openEditor('${id}')">编辑</button>
         <button class="btn danger" onclick="delQ('${id}')">删除</button>
         <button class="btn sec" onclick="closeModal()">关闭</button>
@@ -327,6 +555,7 @@
   }
   function renderTab() {
     if (tab === "questions") applyFilter();
+    if (tab === "wrong") loadWrong();
     if (tab === "papers") loadPapers();
     if (tab === "students") loadStudents();
     if (tab === "compose") { renderComposePool(); renderCompose(); }
@@ -340,9 +569,9 @@
     tab = t;
     // 侧栏高亮（与桌面版 nav-btn.active 一致）
     document.querySelectorAll(".sb-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === t));
-    ["dashboard","questions","papers","compose","students","schedule","records","exams","knowledgePoints"]
+    ["dashboard","questions","wrong","papers","compose","students","schedule","records","exams","knowledgePoints"]
       .forEach(id => $("#tab-" + id).classList.toggle("hidden", id !== t));
-    $("#title").textContent = { dashboard: "首页", questions: "题库", papers: "试卷", compose: "组卷",
+    $("#title").textContent = { dashboard: "首页", questions: "题库", wrong: "错题本", papers: "试卷", compose: "组卷",
       students: "学生", schedule: "排课", records: "课时", exams: "考试", knowledgePoints: "知识点" }[t];
     $(".fab").style.display = (t === "dashboard") ? "none" : "flex";
     closeSidebar();
@@ -613,6 +842,11 @@
   window.doLogin = doLogin; window.switchTab = switchTab; window.loadQuestions = () => applyFilter();
   window.refreshData = refreshData;
   window.loadMore = showMore;
+  window.setTypeFilter = setTypeFilter; window.openKpSheet = openKpSheet; window.closeKpSheet = closeKpSheet;
+  window.renderKpTree = renderKpTree; window.pickKp = pickKp;
+  window.quickCompose = quickCompose; window.markWrong = markWrong; window.saveWrong = saveWrong;
+  window.loadWrong = loadWrong; window.toggleWrongResolved = toggleWrongResolved; window.delWrong = delWrong;
+  window.showLightbox = showLightbox;
   window.openDetail = openDetail; window.openEditor = openEditor; window.saveQ = saveQ;
   window.delQ = delQ; window.closeModal = closeModal; window.openPaper = openPaper;
   window.openStudent = openStudent; window.saveStudent = saveStudent;
@@ -623,6 +857,13 @@
   window.openModuleEditor = openModuleEditor; window.saveModule = saveModule; window.delModule = delModule;
   window.openFab = openFab;
   window.openSidebar = openSidebar; window.closeSidebar = closeSidebar; window.renderDashboard = renderDashboard;
+
+  // 全局事件委托：题库卡片（详情/答案/组卷/错题/知识点/图片放大）
+  document.getElementById("qList").addEventListener("click", qListClick);
+  document.getElementById("modalBox").addEventListener("click", (e) => {
+    const img = e.target.closest("img");
+    if (img) showLightbox(img.src);
+  });
 
   // 启动
   if (token) enterMain();
