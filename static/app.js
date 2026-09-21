@@ -229,16 +229,16 @@
     typeSel.innerHTML = '<option value="">全部题型</option>' +
       Q_TYPE_CHIPS.map(t => '<option value="' + t + '"' + (t === curType ? " selected" : "") + ">" + t + "</option>").join("");
     typeSel.classList.toggle("on", !!curType);
-    // 知识点下拉（按路径排序，展示完整路径）
-    const kpSel = $("#qKpSel");
+    // 知识点：用按钮触发层级树抽屉（与电脑端一致的父级/子级形式）
+    const kpBtn = $("#qKpBtn");
     const curKp = qf.kpId || "";
-    const paths = Object.keys(kpMap)
-      .map(id => ({ id, path: kpPath(id) }))
-      .sort((a, b) => a.path.localeCompare(b.path, "zh-CN"));
-    kpSel.innerHTML = '<option value="">全部知识点</option>' +
-      paths.map(p => '<option value="' + esc(p.id) + '"' + (p.id === curKp ? " selected" : "") + ">" + esc(p.path) + "</option>").join("");
-    if (curKp && !kpMap[curKp]) { kpSel.value = ""; } else { kpSel.value = curKp; }
-    kpSel.classList.toggle("on", !!curKp);
+    if (curKp && kpMap[curKp]) {
+      kpBtn.textContent = "💡 " + kpPath(curKp);
+      kpBtn.classList.add("on");
+    } else {
+      kpBtn.textContent = "全部知识点";
+      kpBtn.classList.remove("on");
+    }
     $("#qCount").textContent = "共 " + qFiltered.length + " 题" + (qf.kpId ? " · " + kpPath(qf.kpId) : "") + (qf.type ? " · " + qf.type : "");
   }
   function setTypeFilter(t) { qf.type = t; applyFilter(); }
