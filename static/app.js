@@ -818,14 +818,14 @@
     const div = document.createElement("div"); div.className = "card pa-card";
     div.innerHTML =
       '<div class="pa-main"><div class="pa-title">' + esc(b.title || "未命名试卷") + "</div>" +
-      '<div class="pa-sub">题数：' + ((b.questionIds || []).length) + (b.note ? " · " + esc(b.note) : "") + (b.source === "mobile" ? " · 📱手机组" : "") + "</div></div>" +
+      '<div class="pa-sub">题数：' + ((b.questionIds || []).length) + (b.note ? " · " + esc(b.note) : "") + (b.source === "mobile" ? " · 📱手机组" : b.source === "desktop" ? " · 🖥电脑组" : "") + "</div></div>" +
       '<div class="pa-actions"><button class="btn sm" onclick="openPaper(\'' + esc(it.id) + '\')">查看</button>' +
       '<button class="btn ok sm" onclick="downloadPaper(\'' + esc(it.id) + '\')">下载</button></div>';
     return div;
   }
   function renderMyPapers() {
     const box = $("#myPapers");
-    const items = (DB.data.papers || []).filter(p => (p.body || {}).source === "mobile");
+    const items = (DB.data.papers || []).filter(p => { const s = (p.body || {}).source; return s === "mobile" || s === "desktop"; });
     box.innerHTML = items.length ? "" : '<div class="center">还没有组卷<br><span style="font-size:12px">去「题库」选题目加入组卷</span></div>';
     items.forEach(it => box.appendChild(paperCard(it)));
   }
