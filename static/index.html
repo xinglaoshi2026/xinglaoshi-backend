@@ -192,10 +192,27 @@
   .q-content img,.q-ans-box img,.q-preview-card img,.modal img,.wn-card img{
     max-width:100%!important;height:auto!important;width:auto!important}
 
-  /* ===== 悬浮新建按钮（对应桌面版 + 操作） ===== */
-  .fab{position:fixed;right:16px;bottom:20px;width:54px;height:54px;border-radius:50%;background:var(--primary);
-    color:#fff;font-size:26px;border:0;box-shadow:0 4px 14px rgba(79,70,229,.4);z-index:35;display:flex;align-items:center;justify-content:center}
-  .fab:active{transform:scale(.94)}
+  /* ===== 可移动弧形导航 FAB（取代左上角抽屉） ===== */
+  .nav-fab{position:fixed;z-index:46;width:56px;height:56px;border-radius:50%;
+    background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;
+    display:flex;align-items:center;justify-content:center;font-size:22px;
+    box-shadow:0 6px 18px rgba(79,70,229,.45);touch-action:none;user-select:none;-webkit-user-select:none;
+    cursor:grab;transition:box-shadow .2s, transform .12s, background .25s}
+  .nav-fab:active{transform:scale(.94)}
+  .nav-fab.dragging{cursor:grabbing;box-shadow:0 12px 30px rgba(79,70,229,.6);transform:scale(1.06)}
+  .nav-fab.active{background:linear-gradient(135deg,var(--danger),#b91c1c)}
+  .arc-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.35);z-index:43;opacity:0;pointer-events:none;transition:opacity .2s}
+  .arc-backdrop.show{opacity:1;pointer-events:auto}
+  .arc-layer{position:fixed;inset:0;z-index:44;pointer-events:none}
+  .arc-item{position:fixed;width:46px;height:46px;border-radius:50%;background:#fff;color:var(--text);
+    box-shadow:var(--shadow-lg);display:flex;flex-direction:column;align-items:center;justify-content:center;
+    font-size:19px;line-height:1;pointer-events:auto;opacity:0;
+    transform:translate(var(--dx,0),var(--dy,0)) scale(0);
+    transition:transform .34s cubic-bezier(.34,1.56,.64,1), opacity .22s ease;
+    will-change:transform,opacity}
+  .arc-item.open{opacity:1;transform:translate(0,0) scale(1)}
+  .arc-item .lbl{font-size:9px;margin-top:2px;line-height:1;color:var(--text-muted);transform:scale(.92)}
+  .arc-item:active{background:var(--primary-bg);color:var(--primary)}
 
   /* ===== 弹窗（对应桌面版 .modal-overlay / .modal） ===== */
   .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-start;justify-content:center;
@@ -269,7 +286,6 @@
   <!-- 主界面 -->
   <div id="mainView" class="hidden">
     <header class="topbar">
-      <button class="hamburger" onclick="openSidebar()">☰</button>
       <div class="top-title" id="title">首页</div>
       <button class="btn sec sm" onclick="refreshData()">刷新</button>
       <span class="who" id="who"></span>
@@ -405,7 +421,10 @@
       </div>
     </main>
 
-    <button class="fab" onclick="openFab()">＋</button>
+    <!-- 可移动弧形导航 FAB（取代左上角抽屉展开） -->
+    <div id="arcBackdrop" class="arc-backdrop" onclick="closeArc()"></div>
+    <div id="arcLayer" class="arc-layer"></div>
+    <div id="navFab" class="nav-fab">☰</div>
   </div>
 
   <!-- 编辑/详情 弹窗 -->

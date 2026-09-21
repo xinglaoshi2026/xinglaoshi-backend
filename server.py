@@ -50,6 +50,9 @@ def init_db():
     CREATE TABLE IF NOT EXISTS store(
         module TEXT, id TEXT, body TEXT, updated_at INTEGER,
         PRIMARY KEY(module, id));
+    CREATE TABLE IF NOT EXISTS tombstones(
+        module TEXT, id TEXT, deleted_at INTEGER,
+        PRIMARY KEY(module, id));
     CREATE TABLE IF NOT EXISTS meta(
         k TEXT PRIMARY KEY, v TEXT);
     """)
@@ -293,11 +296,23 @@ def build_paper_docx(paper, questions_map):
     return buf.getvalue()
 
 
+def store_tombstone(module, id, ts=None):
+    """记录删除墓碑（用于双向删除同步）。删除时间取 ts 或当前时间。"""
+    ts = ts or now_ts()
+    cx = db()
+    cx.execute("INSERT INTO tombstones(module,id,deleted_at) VALUES(?,?,?) "
+               "ON CONFLICT(module,id) DO UPDATE SET deleted_at=excluded.deleted_at",
+               (module, id, ts))
+    cx.commit()
+    cx.close()
+
+
 def store_delete(module, id):
     cx = db()
     cx.execute("DELETE FROM store WHERE module=? AND id=?", (module, id))
     cx.commit()
     cx.close()
+    store_tombstone(module, id)
 
 
 # ---------------- 认证 ----------------
@@ -508,7 +523,17 @@ class H(BaseHTTPRequestHandler):
             out = {}
             for m in MODULES:
                 out[m] = store_list(m, since=since, limit=5000)
-            return send_json(self, {"server_ts": now_ts(), "data": out})
+            # 墓碑：已删除条目的 id 与删除时间，供另一端本地删除（since 之后的）
+            dels = {}
+            cx = db()
+            for m in MODULES:
+                rows = cx.execute(
+                    "SELECT id,deleted_at FROM tombstones WHERE module=? AND deleted_at>=?",
+                    (m, int(since))).fetchall()
+                if rows:
+                    dels[m] = {r["id"]: r["deleted_at"] for r in rows}
+            cx.close()
+            return send_json(self, {"server_ts": now_ts(), "data": out, "deletions": dels})
         send_json(self, {"error": "未知接口 " + p}, 404)
 
     # ---- POST ----
@@ -599,6 +624,14 @@ class H(BaseHTTPRequestHandler):
                 if m not in MODULES: continue
                 for it in items:
                     ts = it.get("updated_at") or now_ts()
+                    if it.get("deleted"):
+                        # 删除型同步：仅当删除时间不早于本地更新才生效
+                        existing, old_ts = store_get(m, it["id"])
+                        if old_ts and old_ts > ts:
+                            continue
+                        store_delete(m, it["id"])
+                        applied += 1
+                        continue
                     existing, old_ts = store_get(m, it["id"])
                     if existing and old_ts and old_ts > ts:
                         continue  # 服务端更新更新 -> last write wins

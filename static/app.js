@@ -551,11 +551,30 @@
     $("#modalBox").innerHTML = `<div class="modal-header"><span class="modal-title">📄 ${esc(b.title || "试卷")}</span><button class="modal-close" onclick="closeModal()">✕</button></div>
       <div class="modal-body"><div class="muted">${esc(b.note || "")}</div>${qs}</div>
       <div class="modal-footer">
-        <a class="btn ok" style="display:block;text-align:center;text-decoration:none;flex:1"
-           href="/api/papers/${esc(id)}/docx" download="${esc(b.title || "试卷")}.docx">⬇ 下载 Word 试卷</a>
+        <button class="btn ok" style="flex:1" onclick="downloadPaper('${esc(id)}')">⬇ 下载 Word 试卷</button>
         <button class="btn sec" style="flex:1" onclick="closeModal()">关闭</button>
       </div>`;
     openModal();
+  }
+  // 用 JS fetch+blob 触发下载，兼容手机端浏览器（直接 <a download> 在部分 webview 不生效）
+  async function downloadPaper(id) {
+    try {
+      const it = (DB.data.papers || []).find(x => x.id === id);
+      const title = (it && it.body && it.body.title) || "试卷";
+      const base = localStorage.getItem(LS_BASE) || "";
+      toast("正在生成试卷…");
+      const r = await fetch(base + "/api/papers/" + encodeURIComponent(id) + "/docx", {
+        headers: token ? { Authorization: "Bearer " + token } : {}
+      });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = title + ".docx";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      toast("已开始下载");
+    } catch (e) { toast("下载失败：" + e.message); }
   }
 
   // ---------- 学生（本地缓存） ----------
@@ -621,8 +640,8 @@
       .forEach(id => $("#tab-" + id).classList.toggle("hidden", id !== t));
     $("#title").textContent = { dashboard: "首页", questions: "题库", wrong: "错题本", papers: "试卷", compose: "组卷",
       students: "学生", schedule: "排课", records: "课时", exams: "考试", knowledgePoints: "知识点" }[t];
-    $(".fab").style.display = (t === "dashboard") ? "none" : "flex";
     closeSidebar();
+    closeArc();
     renderTab();   // 仅用本地缓存渲染，秒开；不再自动后台重拉，避免免费服务器冷启卡顿
   }
   function openSidebar() { $("#sidebar").classList.add("open"); $("#backdrop").classList.add("show"); }
@@ -795,9 +814,9 @@
       title: b => b.name || b.id || "知识点",
       sub: b => b.parentId ? ("父: " + b.parentId) : "顶级",
       fields: [
-        { k: "id", label: "ID", type: "text" },
+        { k: "id", label: "知识点ID(kpId)", type: "text" },
         { k: "name", label: "名称", type: "text" },
-        { k: "parentId", label: "父ID", type: "text" },
+        { k: "parentId", label: "父级知识点", type: "parent" },
       ],
     },
     records: {
@@ -862,6 +881,18 @@
     (ui.fields || []).forEach(f => {
       const v = b[f.k] == null ? "" : b[f.k];
       if (f.type === "textarea") html += `<label class="kv">${esc(f.label)}</label><textarea id="mf_${f.k}">${esc(v)}</textarea>`;
+      else if (f.type === "parent") {
+        // 从现有知识点里选父级（排除自身，避免成环）
+        const opts = ['<option value="">（顶级，无父级）</option>'];
+        (DB.data.knowledgePoints || []).forEach(kp => {
+          if (kp.id === id) return;
+          const kb = kp.body || {};
+          const nm = kb.name || kp.id;
+          const label = (nm === kp.id) ? kp.id : (nm + "（" + kp.id + "）");
+          opts.push('<option value="' + esc(kp.id) + '"' + (kp.id === v ? " selected" : "") + ">" + esc(label) + "</option>");
+        });
+        html += '<label class="kv">' + esc(f.label) + '</label><select id="mf_' + f.k + '">' + opts.join("") + "</select>";
+      }
       else html += `<label class="kv">${esc(f.label)}</label><input id="mf_${f.k}" type="${f.type === "number" ? "number" : "text"}" value="${esc(v)}">`;
     });
     html += `<div class="row" style="margin-top:12px"><button class="btn ok" onclick="saveModule()">保存</button><button class="btn sec" onclick="closeModal()">取消</button></div>`;
@@ -901,6 +932,7 @@
   window.showLightbox = showLightbox;
   window.openDetail = openDetail; window.openEditor = openEditor; window.saveQ = saveQ;
   window.delQ = delQ; window.closeModal = closeModal; window.openPaper = openPaper;
+  window.downloadPaper = downloadPaper;
   window.openStudent = openStudent; window.saveStudent = saveStudent;
   window.renderComposePool = renderComposePool; window.addToCompose = addToCompose;
   window.removeFromCompose = removeFromCompose; window.clearCompose = clearCompose;
@@ -917,6 +949,145 @@
     if (img) showLightbox(img.src);
   });
 
+  // ---------- 可移动弧形导航 FAB（取代左上角抽屉） ----------
+  const NAV_ITEMS = [
+    { ico: "🏠", label: "首页", act: () => switchTab("dashboard") },
+    { ico: "📚", label: "题库", act: () => switchTab("questions") },
+    { ico: "📕", label: "错题", act: () => switchTab("wrong") },
+    { ico: "📄", label: "试卷", act: () => switchTab("papers") },
+    { ico: "🧩", label: "组卷", act: () => switchTab("compose") },
+    { ico: "👥", label: "学生", act: () => switchTab("students") },
+    { ico: "📅", label: "排课", act: () => switchTab("schedule") },
+    { ico: "📝", label: "课时", act: () => switchTab("records") },
+    { ico: "📋", label: "考试", act: () => switchTab("exams") },
+    { ico: "💡", label: "知识点", act: () => switchTab("knowledgePoints") },
+    { ico: "➕", label: "新建", act: () => { closeArc(); openFab(); } },
+    { ico: "⏻", label: "退出", act: () => { closeArc(); logout(); } },
+  ];
+  const navFab = document.getElementById("navFab");
+  const arcLayer = document.getElementById("arcLayer");
+  const arcBackdrop = document.getElementById("arcBackdrop");
+  let arcOpen = false;
+
+  function buildArcItems() {
+    NAV_ITEMS.forEach((it) => {
+      const el = document.createElement("div");
+      el.className = "arc-item";
+      el.innerHTML = '<span class="ico">' + it.ico + '</span><span class="lbl">' + it.label + "</span>";
+      el.addEventListener("click", (e) => { e.stopPropagation(); closeArc(); it.act(); });
+      arcLayer.appendChild(el);
+      it.el = el;
+    });
+  }
+  function navPos() {
+    let left = parseFloat(navFab.style.left);
+    let top = parseFloat(navFab.style.top);
+    if (isNaN(left)) left = window.innerWidth - 74;
+    if (isNaN(top)) top = window.innerHeight - 92;
+    return { left, top };
+  }
+  function saveNavPos() {
+    const p = navPos();
+    try { localStorage.setItem("navFabPos", JSON.stringify(p)); } catch (e) {}
+  }
+  function restoreNavPos() {
+    try {
+      const s = JSON.parse(localStorage.getItem("navFabPos") || "null");
+      if (s && typeof s.left === "number" && typeof s.top === "number") {
+        navFab.style.left = s.left + "px";
+        navFab.style.top = s.top + "px";
+        return;
+      }
+    } catch (e) {}
+    navFab.style.left = (window.innerWidth - 74) + "px";
+    navFab.style.top = (window.innerHeight - 92) + "px";
+  }
+  function openArc() {
+    if (arcOpen) return;
+    arcOpen = true;
+    const fr = navFab.getBoundingClientRect();
+    const fx = fr.left + fr.width / 2, fy = fr.top + fr.height / 2;
+    const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
+    // 从 FAB 指向屏幕中心的“外向”方向展开，保证按钮朝屏幕内侧、不易溢出
+    const ang0 = Math.atan2(cy - fy, cx - fx);
+    const n = NAV_ITEMS.length;
+    const fan = Math.min(2.7, Math.max(1.4, (n - 1) * 0.2));   // 总张角(弧度)
+    const R = Math.min(210, Math.max(150, n * 14 + 40));
+    const start = ang0 - fan / 2;
+    NAV_ITEMS.forEach((it, i) => {
+      const a = start + fan * (i / Math.max(1, n - 1));
+      let ax = fx + R * Math.cos(a), ay = fy + R * Math.sin(a);
+      ax = Math.max(32, Math.min(window.innerWidth - 32, ax));
+      ay = Math.max(84, Math.min(window.innerHeight - 32, ay));
+      const el = it.el;
+      el.style.left = (ax - 23) + "px";   // arc-item 46px，向左上偏移使其居中
+      el.style.top = (ay - 23) + "px";
+      el.style.setProperty("--dx", (fx - ax) + "px");
+      el.style.setProperty("--dy", (fy - ay) + "px");
+      el.style.transitionDelay = (i * 0.03) + "s";   // 错峰展开，更灵动
+      void el.offsetWidth;                            // 强制重排，确保过渡触发
+      el.classList.add("open");
+    });
+    arcBackdrop.classList.add("show");
+    navFab.classList.add("active");
+    navFab.textContent = "✕";
+  }
+  function closeArc() {
+    if (!arcOpen) return;
+    arcOpen = false;
+    const n = NAV_ITEMS.length;
+    NAV_ITEMS.forEach((it, i) => {
+      const el = it.el;
+      el.style.transitionDelay = ((n - 1 - i) * 0.02) + "s";  // 收起也错峰
+      el.classList.remove("open");
+    });
+    arcBackdrop.classList.remove("show");
+    navFab.classList.remove("active");
+    navFab.textContent = "☰";
+  }
+  function toggleArc() { if (arcOpen) closeArc(); else openArc(); }
+
+  // 拖动 / 长按移动：短按=展开收起；长按或拖动=移动按钮（位置持久化）
+  let pressTimer = null, dragging = false, moved = false, sx = 0, sy = 0, sl = 0, stp = 0;
+  navFab.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    moved = false; dragging = false;
+    sx = e.clientX; sy = e.clientY;
+    const p = navPos(); sl = p.left; stp = p.top;
+    pressTimer = setTimeout(() => { dragging = true; navFab.classList.add("dragging"); }, 350);
+  });
+  window.addEventListener("pointermove", (e) => {
+    if (!pressTimer && !dragging) return;
+    if (pressTimer && !dragging) {
+      if (Math.hypot(e.clientX - sx, e.clientY - sy) > 8) {
+        dragging = true; clearTimeout(pressTimer); navFab.classList.add("dragging");
+      }
+    }
+    if (dragging) {
+      moved = true;
+      let nl = sl + (e.clientX - sx), nt = stp + (e.clientY - sy);
+      nl = Math.max(4, Math.min(window.innerWidth - 60, nl));
+      nt = Math.max(4, Math.min(window.innerHeight - 60, nt));
+      navFab.style.left = nl + "px";
+      navFab.style.top = nt + "px";
+    }
+  });
+  window.addEventListener("pointerup", () => {
+    clearTimeout(pressTimer); pressTimer = null;
+    if (dragging) {
+      dragging = false; navFab.classList.remove("dragging");
+      if (moved) { saveNavPos(); closeArc(); return; }
+    }
+    if (!moved) toggleArc();   // 短按 = 展开 / 收起
+  });
+  window.addEventListener("pointercancel", () => {
+    clearTimeout(pressTimer); pressTimer = null;
+    dragging = false; navFab.classList.remove("dragging");
+  });
+  window.addEventListener("resize", () => { if (!arcOpen) restoreNavPos(); });
+
   // 启动
+  buildArcItems();
+  restoreNavPos();
   if (token) enterMain();
 })();
