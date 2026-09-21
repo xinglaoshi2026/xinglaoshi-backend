@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>邢老师工作台·手机端</title>
 <style>
   /* ===== 与桌面版一致的配色与组件体系 ===== */
@@ -15,6 +15,7 @@
     --radius:12px; --radius-sm:8px; --radius-lg:16px;
     --shadow-sm:0 1px 2px rgba(0,0,0,.06); --shadow:0 1px 3px rgba(0,0,0,.1),0 1px 2px rgba(0,0,0,.04);
     --shadow-lg:0 10px 30px rgba(0,0,0,.08),0 4px 12px rgba(0,0,0,.04);
+    --tabbar-h:58px;
   }
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   html,body{height:100%}
@@ -28,45 +29,24 @@
   .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .center{text-align:center;padding:40px 10px;color:var(--text-muted)}
 
-  /* ===== 顶部栏（对应桌面版 app-logo 风格） ===== */
+  /* ===== 顶部栏 ===== */
   .topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:10px;
     background:#fff;border-bottom:1px solid var(--border);padding:10px 12px;box-shadow:var(--shadow-sm)}
-  .hamburger{width:38px;height:38px;border-radius:var(--radius-sm);font-size:20px;color:var(--primary);
-    display:flex;align-items:center;justify-content:center}
-  .hamburger:active{background:var(--primary-bg)}
   .top-title{flex:1;font-size:16px;font-weight:600;color:var(--text)}
   .who{font-size:12px;color:var(--text-muted);white-space:nowrap}
   .who:active{color:var(--danger)}
 
-  /* ===== 左侧抽屉导航（对应桌面版 app-sidebar） ===== */
-  .backdrop{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:40;opacity:0;pointer-events:none;transition:opacity .2s}
-  .backdrop.show{opacity:1;pointer-events:auto}
-  .sidebar{position:fixed;top:0;left:0;height:100vh;width:250px;z-index:50;
-    background:linear-gradient(180deg,var(--primary) 0%,var(--primary-dark) 100%);color:#fff;
-    display:flex;flex-direction:column;transform:translateX(-100%);transition:transform .22s ease;box-shadow:var(--shadow-lg)}
-  .sidebar.open{transform:translateX(0)}
-  .sb-logo{display:flex;align-items:center;gap:8px;padding:20px 18px;font-size:17px;font-weight:700;
-    white-space:nowrap;border-bottom:1px solid rgba(255,255,255,.12)}
-  .sb-logo .icon{font-size:22px}
-  .sb-nav{display:flex;flex-direction:column;gap:4px;padding:14px 12px;flex:1;overflow-y:auto}
-  .sb-btn{display:flex;align-items:center;gap:12px;width:100%;color:rgba(255,255,255,.72);
-    padding:12px 14px;border-radius:var(--radius-sm);font-size:15px;font-weight:500;text-align:left;transition:all .2s}
-  .sb-btn .ico{font-size:18px;width:22px;text-align:center}
-  .sb-btn:active{background:rgba(255,255,255,.12)}
-  .sb-btn.active{color:#fff;background:rgba(255,255,255,.2)}
-  .sb-foot{border-top:1px solid rgba(255,255,255,.12);padding:12px}
-  .sb-foot .sb-btn{color:rgba(255,255,255,.6);font-size:14px}
+  /* ===== 内容区（底部留出 tabbar 空间） ===== */
+  .content{flex:1;padding:12px 12px calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 12px);max-width:1100px;width:100%;margin:0 auto}
+  .main-view{}
 
-  /* ===== 内容区 ===== */
-  .content{flex:1;padding:12px;max-width:1100px;width:100%;margin:0 auto}
-
-  /* ===== 卡片（对应桌面版 .card） ===== */
+  /* ===== 卡片 ===== */
   .card{background:var(--card-bg);border-radius:var(--radius);box-shadow:var(--shadow-sm);
     overflow:hidden;padding:14px 16px;margin-bottom:10px}
   .card h3{margin:0 0 6px;font-size:16px;font-weight:600;color:var(--text)}
   .card.page{padding:0;overflow:visible}
 
-  /* ===== 标签/徽章（对应桌面版 .badge-primary） ===== */
+  /* ===== 标签/徽章 ===== */
   .tag{display:inline-flex;align-items:center;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:500;
     background:var(--primary-bg);color:var(--primary);margin-right:5px}
   .badge{display:inline-flex;align-items:center;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:500}
@@ -76,7 +56,7 @@
   .badge-info{background:var(--info-bg);color:var(--info)}
   .badge-gray{background:#F3F4F6;color:var(--text-muted)}
 
-  /* ===== 按钮（对应桌面版 .btn 体系） ===== */
+  /* ===== 按钮 ===== */
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 16px;
     border-radius:var(--radius-sm);font-size:14px;font-weight:500;background:var(--primary);color:#fff;transition:all .15s;white-space:nowrap}
   .btn:active{opacity:.85}
@@ -100,44 +80,11 @@
   .seg button{flex:1;background:#fff;border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;font-size:14px}
   .seg button.on{background:var(--primary);color:#fff;border-color:var(--primary)}
 
-  /* ===== 首页仪表盘（对应桌面版 .stats-grid / .stat-card） ===== */
-  .stats-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:14px}
-  .stat-card{background:var(--card-bg);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow-sm);
-    display:flex;align-items:center;gap:14px}
-  .stat-icon{width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;
-    font-size:22px;flex-shrink:0;background:var(--primary-bg);color:var(--primary)}
-  .stat-info{flex:1;min-width:0}
-  .stat-label{font-size:13px;color:var(--text-muted)}
-  .stat-value{font-size:24px;font-weight:700;line-height:1.2}
-  .stat-sub{font-size:12px;color:var(--text-muted)}
-  .quick-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
-  .quick-card{background:var(--card-bg);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow-sm);
-    display:flex;flex-direction:column;gap:6px;align-items:flex-start;transition:all .15s}
-  .quick-card:active{transform:translateY(1px);box-shadow:var(--shadow)}
-  .quick-card .qc-ico{width:40px;height:40px;border-radius:10px;background:var(--primary-bg);color:var(--primary);
-    display:flex;align-items:center;justify-content:center;font-size:20px}
-  .quick-card .qc-title{font-size:15px;font-weight:600}
-  .quick-card .qc-sub{font-size:12px;color:var(--text-muted)}
-
-  /* ===== 题目卡片左侧强调条（对应桌面版 question-card） ===== */
+  /* ===== 题目卡片 ===== */
   .card.q{border-left:4px solid var(--primary);padding:0}
   .q-content{font-size:14px;line-height:1.7;margin:8px 0;white-space:pre-wrap;word-break:break-word}
   .q-answer{font-size:13px;color:var(--text-muted);background:#F9FAFB;padding:10px 14px;border-radius:var(--radius-sm);
     margin-top:8px;white-space:pre-wrap;border:1px dashed var(--border)}
-
-  /* ===== v6：筛选栏 / 题型 chips ===== */
-  .filter-bar{background:var(--bg);padding:2px 0 6px}
-  .chips{display:flex;gap:8px;overflow-x:auto;padding:2px 0 2px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
-  .chips::-webkit-scrollbar{display:none}
-  .chip{flex-shrink:0;display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border-radius:20px;
-    background:#fff;border:1px solid var(--border-dark);font-size:13px;color:var(--text-muted);font-weight:500;transition:all .15s}
-  .chip:active{transform:scale(.96)}
-  .chip.on{background:var(--primary);border-color:var(--primary);color:#fff;box-shadow:0 2px 8px rgba(79,70,229,.28)}
-  .chip.kp{max-width:56vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .chip .x{font-size:12px;opacity:.8}
-  .q-count{font-size:12px;color:var(--text-muted);margin:4px 2px 8px;display:flex;align-items:center;gap:6px}
-
-  /* ===== v6：题目卡片 v6 ===== */
   .q-head{display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap;padding:12px 14px 2px}
   .q-head .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .q-kp-line{padding:2px 14px 0}
@@ -156,7 +103,19 @@
   .q-actions .btn{flex:1;padding:8px 2px;font-size:13px;gap:4px}
   .q-actions .btn.marked{background:var(--danger);color:#fff;border-color:var(--danger)}
 
-  /* ===== v6：知识点选择底部抽屉 ===== */
+  /* ===== 筛选栏 / chips ===== */
+  .filter-bar{background:var(--bg);padding:2px 0 6px}
+  .chips{display:flex;gap:8px;overflow-x:auto;padding:2px 0 2px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .chips::-webkit-scrollbar{display:none}
+  .chip{flex-shrink:0;display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border-radius:20px;
+    background:#fff;border:1px solid var(--border-dark);font-size:13px;color:var(--text-muted);font-weight:500;transition:all .15s}
+  .chip:active{transform:scale(.96)}
+  .chip.on{background:var(--primary);border-color:var(--primary);color:#fff;box-shadow:0 2px 8px rgba(79,70,229,.28)}
+  .chip.kp{max-width:56vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chip .x{font-size:12px;opacity:.8}
+  .q-count{font-size:12px;color:var(--text-muted);margin:4px 2px 8px;display:flex;align-items:center;gap:6px}
+
+  /* ===== 知识点选择底部抽屉 ===== */
   .sheet-overlay{position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:70;display:flex;align-items:flex-end;animation:fadeIn .15s}
   .sheet{background:#fff;width:100%;max-height:80vh;border-radius:20px 20px 0 0;display:flex;flex-direction:column;
     box-shadow:var(--shadow-lg);animation:sheetUp .22s ease}
@@ -176,54 +135,96 @@
   .kp-kids{margin-left:16px;border-left:1px dashed var(--border-dark);padding-left:4px;display:none}
   .kp-kids.open{display:block}
 
-  /* ===== v6：图片灯箱 ===== */
+  /* ===== 图片灯箱 ===== */
   .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:100;display:flex;align-items:center;justify-content:center;
     padding:16px;animation:fadeIn .15s}
   .lightbox img{max-width:100%;max-height:92vh;border-radius:8px;object-fit:contain}
 
-  /* ===== v6：错题本 ===== */
+  /* ===== 错题本 ===== */
   .wn-card{border-left:4px solid var(--danger)}
   .wn-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px}
   .wn-note{font-size:12px;color:var(--danger);background:var(--danger-bg);border-radius:6px;padding:4px 8px;margin-top:6px}
 
-  /* ===== 图片 ===== */
+  /* ===== 图片兜底 ===== */
   .qimg{max-width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);margin:6px 0;display:block}
-  /* 兜底：任何内容区的图片都不允许溢出（覆盖无约束/内联宽高的 img） */
   .q-content img,.q-ans-box img,.q-preview-card img,.modal img,.wn-card img{
     max-width:100%!important;height:auto!important;width:auto!important}
 
-  /* ===== 可移动弧形导航 FAB（取代左上角抽屉） ===== */
-  .nav-fab{position:fixed;z-index:46;width:56px;height:56px;border-radius:50%;
-    background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;
-    display:flex;align-items:center;justify-content:center;font-size:22px;
-    box-shadow:0 6px 18px rgba(79,70,229,.45);touch-action:none;user-select:none;-webkit-user-select:none;
-    cursor:grab;transition:box-shadow .2s, transform .12s, background .25s}
-  .nav-fab:active{transform:scale(.94)}
-  .nav-fab.dragging{cursor:grabbing;box-shadow:0 12px 30px rgba(79,70,229,.6);transform:scale(1.06)}
-  .nav-fab.active{background:linear-gradient(135deg,var(--danger),#b91c1c)}
-  .arc-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.35);z-index:43;opacity:0;pointer-events:none;transition:opacity .2s}
-  .arc-backdrop.show{opacity:1;pointer-events:auto}
-  .arc-layer{position:fixed;inset:0;z-index:44;pointer-events:none}
-  .arc-item{position:fixed;width:54px;height:54px;border-radius:50%;background:#fff;color:var(--text);
-    box-shadow:var(--shadow-lg);display:flex;flex-direction:column;align-items:center;justify-content:center;
-    font-size:20px;line-height:1;pointer-events:none;opacity:0;
-    transform:translate(var(--dx,0),var(--dy,0)) scale(0);
-    transition:transform .34s cubic-bezier(.34,1.56,.64,1), opacity .22s ease;
-    will-change:transform,opacity}
-  .arc-item.open{opacity:1;transform:translate(0,0) scale(1);pointer-events:auto}
-  .arc-item .lbl{font-size:9px;margin-top:3px;line-height:1.05;color:var(--text-muted);
-    white-space:normal;width:50px;text-align:center}
-  .arc-item:active{background:var(--primary-bg);color:var(--primary)}
-  .arc-sub{position:fixed;z-index:45;display:flex;flex-direction:column;gap:8px;
-    background:#fff;padding:10px;border-radius:16px;box-shadow:0 12px 32px rgba(15,23,42,.28);
-    opacity:0;pointer-events:none;transform:translate(-50%,-50%) scale(.82);
-    transition:opacity .16s ease, transform .2s cubic-bezier(.34,1.56,.64,1)}
-  .arc-sub.show{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1)}
-  .arc-sub-btn{appearance:none;border:0;background:var(--primary-bg);color:var(--primary);
-    font-size:14px;font-weight:600;padding:11px 20px;border-radius:11px;white-space:nowrap}
-  .arc-sub-btn:active{background:var(--primary);color:#fff}
+  /* ===== 底部四主菜单 tabbar ===== */
+  .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:42;height:var(--tabbar-h);
+    display:flex;background:#fff;border-top:1px solid var(--border);
+    padding-bottom:env(safe-area-inset-bottom);box-shadow:0 -2px 10px rgba(0,0,0,.05)}
+  .tab-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+    color:var(--text-muted);font-size:11px;font-weight:500;transition:color .15s}
+  .tab-btn .ico{font-size:22px;line-height:1}
+  .tab-btn.active{color:var(--primary)}
+  .tab-btn.active .ico{transform:translateY(-1px)}
 
-  /* ===== 弹窗（对应桌面版 .modal-overlay / .modal） ===== */
+  /* ===== 主视图内的 sub-tab 条（顶部平铺） ===== */
+  .subtabs{position:sticky;top:52px;z-index:25;display:flex;gap:6px;overflow-x:auto;padding:8px 0 10px;
+    background:var(--bg);-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .subtabs::-webkit-scrollbar{display:none}
+  .subtab{flex-shrink:0;padding:7px 15px;border-radius:20px;background:#fff;border:1px solid var(--border-dark);
+    font-size:13px;font-weight:600;color:var(--text-muted);transition:all .15s}
+  .subtab:active{transform:scale(.96)}
+  .subtab.on{background:var(--primary);border-color:var(--primary);color:#fff;box-shadow:0 2px 8px rgba(79,70,229,.28)}
+  .subpane{}
+
+  /* ===== 组卷底部浮条 ===== */
+  .compose-bar{position:fixed;left:0;right:0;bottom:var(--tabbar-h);z-index:41;
+    display:flex;gap:10px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:#fff;
+    border-top:1px solid var(--border);box-shadow:0 -2px 10px rgba(0,0,0,.06)}
+  .compose-bar .btn{flex:1}
+  .compose-bar .btn.ok{background:var(--primary)}
+
+  /* ===== 试卷/组卷卡片 ===== */
+  .pa-card{display:flex;align-items:center;gap:10px}
+  .pa-card .pa-main{flex:1;min-width:0}
+  .pa-card .pa-title{font-size:15px;font-weight:600}
+  .pa-card .pa-sub{font-size:12px;color:var(--text-muted);margin-top:2px}
+  .pa-card .pa-actions{display:flex;gap:6px;flex-shrink:0}
+
+  /* ===== 周课表网格（复刻电脑版） ===== */
+  .week-nav{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .week-range{display:flex;flex-direction:column;align-items:center;flex:1;min-width:120px}
+  .wr-title{font-size:13px;font-weight:600}
+  .wr-sub{font-size:12px;color:var(--text-muted)}
+  .schedule-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .schedule-table{display:grid;grid-template-columns:54px repeat(7,minmax(76px,1fr));gap:1px;
+    background:var(--border);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;min-width:600px}
+  .schedule-table>div{background:var(--card-bg);padding:5px 4px;text-align:center;display:flex;
+    align-items:center;justify-content:center;min-height:46px;font-size:12px;line-height:1.25}
+  .st-corner,.st-time{background:var(--primary-bg)!important;color:var(--primary);font-weight:600}
+  .st-day{background:var(--primary)!important;color:#fff;font-weight:600;flex-direction:column;gap:1px}
+  .st-day .sd-date{font-size:10px;opacity:.85;font-weight:400}
+  .st-cell.empty{color:var(--text-muted);background:#FBFBFD}
+  .st-cell.has-class{background:var(--primary-bg);cursor:pointer;flex-direction:column;gap:2px;padding:4px 3px}
+  .st-names{display:flex;flex-direction:column;gap:2px;width:100%}
+  .st-name-wrap{display:flex;align-items:center;justify-content:center;gap:3px;background:#fff;border-radius:6px;padding:3px 2px;
+    box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  .st-name{font-size:12px;font-weight:600;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .st-del{color:var(--danger);font-weight:700;font-size:13px;padding:0 2px}
+
+  /* ===== 学生卡片 ===== */
+  .stu-card{display:flex;align-items:center;gap:10px}
+  .stu-avatar{width:42px;height:42px;border-radius:50%;background:var(--primary-bg);color:var(--primary);
+    display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;flex-shrink:0}
+  .stu-main{flex:1;min-width:0}
+  .stu-name{font-size:15px;font-weight:600}
+  .stu-sub{font-size:12px;color:var(--text-muted);margin-top:2px}
+  .stu-hours{text-align:right;flex-shrink:0}
+  .stu-hours .h{font-size:18px;font-weight:700;color:var(--primary)}
+  .stu-hours .l{font-size:11px;color:var(--text-muted)}
+
+  /* ===== 设置 ===== */
+  .set-group{margin-bottom:14px}
+  .set-item{display:flex;align-items:center;gap:10px;padding:13px 14px;background:#fff;border-radius:var(--radius);
+    box-shadow:var(--shadow-sm);margin-bottom:8px;font-size:14px}
+  .set-item .si-ico{font-size:18px}
+  .set-item .si-main{flex:1}
+  .set-item .si-sub{font-size:12px;color:var(--text-muted)}
+
+  /* ===== 弹窗 ===== */
   .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-start;justify-content:center;
     z-index:60;padding:24px 14px;overflow-y:auto;animation:fadeIn .15s ease}
   .modal{background:#fff;border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);width:100%;max-width:560px;margin:auto;
@@ -237,25 +238,20 @@
     display:flex;flex-direction:column;gap:10px;flex-shrink:0;background:#fff}
   .modal-footer .row-2,.modal-footer .row-3{display:flex;gap:10px}
   .modal-footer .row-2 .btn,.modal-footer .row-3 .btn{flex:1;margin:0}
-  @keyframes sheetUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
 
-  /* ===== 弹窗内：题目预览卡片（标记错题等） ===== */
   .q-preview-card{border:1px solid var(--border);background:var(--bg);border-radius:var(--radius-sm);
     padding:12px 14px;max-height:32vh;overflow-y:auto;margin-bottom:16px}
   .form-group{margin-bottom:12px}
   .kv .opt{font-weight:400;color:var(--text-muted);font-size:12px}
 
-  /* ===== 弹窗内：题目详情分区 ===== */
   .dt-badges{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
-  .dt-sec{margin-bottom:14px}
   .dt-label{display:inline-block;font-size:12px;font-weight:700;color:var(--primary);background:var(--primary-bg);
     padding:3px 12px;border-radius:999px;margin-bottom:8px}
   .dt-label.ans{color:var(--info);background:var(--info-bg)}
   .dt-content{font-size:14px;line-height:1.75;white-space:pre-wrap;word-break:break-word}
   .dt-content.ans-box{background:var(--info-bg);border-left:3px solid var(--info);padding:10px 14px;border-radius:var(--radius-sm)}
-  @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 
-  /* ===== 登录（对应桌面版 .auth-overlay） ===== */
+  /* ===== 登录 ===== */
   .auth-screen{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;
     background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%);padding:16px}
   .auth-card{width:360px;max-width:92vw;background:var(--card-bg);border-radius:var(--radius);box-shadow:0 24px 60px rgba(0,0,0,.45);padding:28px 26px}
@@ -264,18 +260,19 @@
   .auth-title{font-size:16px;font-weight:600;margin-bottom:14px}
   .auth-hint{font-size:12px;color:var(--text-muted);margin-top:14px;line-height:1.6}
 
-  /* ===== Toast（对应桌面版 .toast） ===== */
+  /* ===== Toast ===== */
   .toast{position:fixed;left:50%;top:64px;transform:translateX(-50%) translateY(-8px);background:var(--text);color:#fff;
     padding:9px 16px;border-radius:var(--radius-sm);z-index:80;opacity:0;transition:.2s;font-size:14px;box-shadow:var(--shadow-lg);max-width:90vw}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   .toast.success{background:var(--success)}
   .toast.error{background:var(--danger)}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 </style>
 </head>
 <body>
 <div class="app" id="app">
 
-  <!-- 登录（与桌面版 auth 一致） -->
+  <!-- 登录 -->
   <div id="loginView" class="auth-screen">
     <div class="auth-card">
       <div class="auth-brand"><span class="auth-logo">📘</span>邢老师工作台</div>
@@ -295,146 +292,118 @@
   <!-- 主界面 -->
   <div id="mainView" class="hidden">
     <header class="topbar">
-      <div class="top-title" id="title">首页</div>
+      <div class="top-title" id="title">题库</div>
       <button class="btn sec sm" onclick="refreshData()">刷新</button>
       <span class="who" id="who"></span>
     </header>
 
-    <!-- 左侧抽屉导航（与桌面版一致） -->
-    <div class="backdrop" id="backdrop" onclick="closeSidebar()"></div>
-    <aside class="sidebar" id="sidebar">
-      <div class="sb-logo"><span class="icon">📘</span>邢老师工作台</div>
-      <nav class="sb-nav">
-        <button class="sb-btn active" data-tab="dashboard" onclick="switchTab('dashboard')"><span class="ico">🏠</span><span>首页</span></button>
-        <button class="sb-btn" data-tab="questions" onclick="switchTab('questions')"><span class="ico">📚</span><span>题库</span></button>
-        <button class="sb-btn" data-tab="wrong" onclick="switchTab('wrong')"><span class="ico">📕</span><span>错题本</span></button>
-        <button class="sb-btn" data-tab="papers" onclick="switchTab('papers')"><span class="ico">📄</span><span>试卷</span></button>
-        <button class="sb-btn" data-tab="compose" onclick="switchTab('compose')"><span class="ico">🧩</span><span>组卷</span></button>
-        <button class="sb-btn" data-tab="students" onclick="switchTab('students')"><span class="ico">👥</span><span>学生</span></button>
-        <button class="sb-btn" data-tab="schedule" onclick="switchTab('schedule')"><span class="ico">📅</span><span>排课</span></button>
-        <button class="sb-btn" data-tab="records" onclick="switchTab('records')"><span class="ico">📝</span><span>课时</span></button>
-        <button class="sb-btn" data-tab="exams" onclick="switchTab('exams')"><span class="ico">📋</span><span>考试</span></button>
-        <button class="sb-btn" data-tab="knowledgePoints" onclick="switchTab('knowledgePoints')"><span class="ico">💡</span><span>知识点</span></button>
-      </nav>
-      <div class="sb-foot">
-        <button class="sb-btn" onclick="logout()"><span class="ico">⏻</span><span>退出登录</span></button>
-      </div>
-    </aside>
-
     <main class="content" id="body">
-      <!-- 首页仪表盘 -->
-      <div id="tab-dashboard">
-        <div class="stats-grid" id="dashStats"></div>
-        <div class="quick-grid">
-          <button class="quick-card" onclick="switchTab('compose')"><span class="qc-ico">🧩</span><span class="qc-title">智能组卷</span><span class="qc-sub">按条件抽取题目成卷</span></button>
-          <button class="quick-card" onclick="switchTab('schedule')"><span class="qc-ico">📅</span><span class="qc-title">本周排课</span><span class="qc-sub">查看课程安排</span></button>
-          <button class="quick-card" onclick="switchTab('questions')"><span class="qc-ico">📚</span><span class="qc-title">题库检索</span><span class="qc-sub">搜索 / 查看题目</span></button>
-          <button class="quick-card" onclick="switchTab('students')"><span class="qc-ico">👥</span><span class="qc-title">学生管理</span><span class="qc-sub">课时 / 联系信息</span></button>
-        </div>
-      </div>
 
-      <!-- 题库 -->
-      <div id="tab-questions" class="hidden">
-        <div class="search">
-          <input id="qSearch" placeholder="搜索题干/答案/编号…" oninput="debounce(loadQuestions,400)()">
-          <button class="btn sec" onclick="loadQuestions()">搜</button>
+      <!-- 题库主视图 -->
+      <section id="view-questions" class="main-view">
+        <div class="subtabs" id="qSubTabs">
+          <button class="subtab on" data-sub="q" onclick="qSub('q')">题库</button>
+          <button class="subtab" data-sub="compose" onclick="qSub('compose')">组卷</button>
+          <button class="subtab" data-sub="paper" onclick="qSub('paper')">试卷</button>
+          <button class="subtab" data-sub="wrong" onclick="qSub('wrong')">错题</button>
+          <button class="subtab" data-sub="add" onclick="qSub('add')">添加题目</button>
         </div>
-        <div class="filter-bar">
-          <div class="chips" id="qTypeChips"></div>
-          <div class="chips" style="margin-top:8px">
-            <button class="chip kp" id="qKpChip" onclick="openKpSheet()">💡 全部知识点</button>
+
+        <div id="sub-q" class="subpane">
+          <div class="search">
+            <input id="qSearch" placeholder="搜索题干/答案/编号…" oninput="debounce(applyFilter,400)()">
+            <button class="btn sec" onclick="applyFilter()">搜</button>
+          </div>
+          <div class="filter-bar">
+            <div class="chips" id="qTypeChips"></div>
+            <div class="chips" style="margin-top:8px">
+              <button class="chip kp" id="qKpChip" onclick="openKpSheet()">💡 全部知识点</button>
+            </div>
+          </div>
+          <div class="q-count" id="qCount"></div>
+          <div id="qList"></div>
+          <div class="center"><button class="btn sec" onclick="loadMore()">加载更多</button></div>
+        </div>
+
+        <div id="sub-compose" class="subpane hidden">
+          <div class="row" style="margin-bottom:10px">
+            <button class="btn" style="flex:1" onclick="openComposeModal()">＋ 新建组卷</button>
+          </div>
+          <div id="myPapers"></div>
+        </div>
+
+        <div id="sub-paper" class="subpane hidden">
+          <div id="allPapers"></div>
+        </div>
+
+        <div id="sub-wrong" class="subpane hidden">
+          <div class="search">
+            <input id="wrongSearch" placeholder="搜索学生/备注…" oninput="debounce(loadWrong,300)()">
+            <button class="btn sec" onclick="loadWrong()">搜</button>
+          </div>
+          <div id="wrongList"></div>
+        </div>
+
+        <div id="sub-add" class="subpane hidden">
+          <div class="card">
+            <h3>添加题目</h3>
+            <div class="muted" style="margin:6px 0 10px">填写题干、答案、解析与知识点，保存后同步到云端。</div>
+            <div id="addQForm"></div>
+            <button class="btn ok" style="width:100%;margin-top:8px" onclick="saveNewQuestion()">保存题目</button>
           </div>
         </div>
-        <div class="q-count" id="qCount"></div>
-        <div id="qList"></div>
-        <div class="center"><button class="btn sec" onclick="loadMore()">加载更多</button></div>
-      </div>
-      <!-- 错题本 -->
-      <div id="tab-wrong" class="hidden">
-        <div class="search">
-          <input id="wrongSearch" placeholder="搜索学生/备注…" oninput="debounce(loadWrong,300)()">
-          <button class="btn sec" onclick="loadWrong()">搜</button>
+
+        <!-- 组卷底部浮条（题库子视图选题目后出现） -->
+        <div id="composeBar" class="compose-bar hidden">
+          <button class="btn ok" onclick="doComposeSave()">组卷（<span id="cSelCount">0</span>）</button>
+          <button class="btn sec" onclick="clearComposeSel()">清空选择</button>
         </div>
-        <div id="wrongList"></div>
-      </div>
-      <!-- 试卷 -->
-      <div id="tab-papers" class="hidden"><div id="pList"></div></div>
-      <!-- 学生 -->
-      <div id="tab-students" class="hidden"><div id="sList"></div></div>
-      <!-- 组卷 -->
-      <div id="tab-compose" class="hidden">
-        <div class="card">
-          <label class="kv">试卷标题</label>
-          <input id="cTitle" placeholder="如：高二动能定理专题卷">
-          <label class="kv">备注</label>
-          <input id="cNote" placeholder="可选">
-          <div class="kv" style="margin-top:6px">智能抽取规则</div>
-          <div class="search"><input id="cKw" placeholder="题干关键词（可空）" oninput="debounce(renderComposePool,300)()"></div>
-          <div class="row" style="gap:6px;margin-bottom:6px">
-            <select id="cType"><option value="">全部题型</option><option>选择题</option><option>多选题</option><option>填空题</option><option>解答题</option></select>
-            <input id="cKp" placeholder="知识点ID(可空)" style="flex:1">
-          </div>
-          <div class="row" style="gap:6px;flex-wrap:wrap">
-            <label class="kv" style="flex:1">选择题<input id="cN_choice" type="number" value="0" min="0" style="margin-top:2px"></label>
-            <label class="kv" style="flex:1">多选题<input id="cN_multi" type="number" value="0" min="0" style="margin-top:2px"></label>
-            <label class="kv" style="flex:1">填空题<input id="cN_blank" type="number" value="0" min="0" style="margin-top:2px"></label>
-            <label class="kv" style="flex:1">解答题<input id="cN_solve" type="number" value="0" min="0" style="margin-top:2px"></label>
-          </div>
-          <div class="row" style="margin-top:8px">
-            <button class="btn" onclick="smartCompose()">智能抽取</button>
-            <button class="btn sec" onclick="clearCompose()">清空</button>
-          </div>
+      </section>
+
+      <!-- 排课主视图 -->
+      <section id="view-schedule" class="main-view hidden">
+        <div class="subtabs" id="schedSubTabs">
+          <button class="subtab on" data-sub="grid" onclick="schedSub('grid')">排课</button>
+          <button class="subtab" data-sub="records" onclick="schedSub('records')">课时</button>
         </div>
-        <div class="card">
-          <div class="row" style="justify-content:space-between">
-            <span class="kv">已选题目（<span id="cCount">0</span>）</span>
-            <button class="btn sec sm" onclick="previewCompose()">预览试卷</button>
-          </div>
-          <div id="composeList"></div>
-          <button class="btn ok" style="width:100%;margin-top:8px" onclick="saveCompose()">保存为试卷</button>
+        <div id="sub-grid" class="subpane"></div>
+        <div id="sub-records" class="subpane hidden"></div>
+      </section>
+
+      <!-- 学生主视图 -->
+      <section id="view-students" class="main-view hidden">
+        <div class="row" style="margin-bottom:10px">
+          <button class="btn" style="flex:1" onclick="openStudentEditor(null)">＋ 添加学生</button>
         </div>
-        <div class="kv">从题库手动添加（点 ＋ 加入）</div>
-        <div id="composePool"></div>
-      </div>
-      <!-- 排课 -->
-      <div id="tab-schedule" class="hidden">
-        <div class="search">
-          <input id="scheduleSearch" placeholder="搜索学生/科目…" oninput="debounce(()=>renderModuleList('schedule'),300)()">
-          <button class="btn sec" onclick="renderModuleList('schedule')">搜</button>
+        <div id="studentList"></div>
+      </section>
+
+      <!-- 设置主视图 -->
+      <section id="view-settings" class="main-view hidden">
+        <div class="set-group">
+          <div class="set-item" onclick="refreshData()"><span class="si-ico">🔄</span><div class="si-main">同步刷新<small class="si-sub">从云端拉取最新数据</small></div><span>›</span></div>
+          <div class="set-item" onclick="openBaseUrlEditor()"><span class="si-ico">🌐</span><div class="si-main">后端地址<small class="si-sub" id="setBase">—</small></div><span>›</span></div>
         </div>
-        <div id="scheduleList"></div>
-      </div>
-      <!-- 课时 -->
-      <div id="tab-records" class="hidden">
-        <div class="search">
-          <input id="recordsSearch" placeholder="搜索学生/类型/主题…" oninput="debounce(()=>renderModuleList('records'),300)()">
-          <button class="btn sec" onclick="renderModuleList('records')">搜</button>
+        <div class="set-group">
+          <div class="set-item" onclick="switchMain('questions');qSub('compose')"><span class="si-ico">🧩</span><div class="si-main">我的组卷 / 试卷</div><span>›</span></div>
+          <div class="set-item" onclick="openModuleListEditor('knowledgePoints')"><span class="si-ico">💡</span><div class="si-main">知识点管理</div><span>›</span></div>
+          <div class="set-item" onclick="openModuleListEditor('exams')"><span class="si-ico">📋</span><div class="si-main">考试管理</div><span>›</span></div>
         </div>
-        <div id="recordsList"></div>
-      </div>
-      <!-- 考试 -->
-      <div id="tab-exams" class="hidden">
-        <div class="search">
-          <input id="examsSearch" placeholder="搜索标题/来源/标签…" oninput="debounce(()=>renderModuleList('exams'),300)()">
-          <button class="btn sec" onclick="renderModuleList('exams')">搜</button>
+        <div class="set-group">
+          <div class="set-item" onclick="logout()"><span class="si-ico">⏻</span><div class="si-main">退出登录</div><span>›</span></div>
         </div>
-        <div id="examsList"></div>
-      </div>
-      <!-- 知识点 -->
-      <div id="tab-knowledgePoints" class="hidden">
-        <div class="search">
-          <input id="knowledgePointsSearch" placeholder="搜索知识点名称/ID…" oninput="debounce(()=>renderModuleList('knowledgePoints'),300)()">
-          <button class="btn sec" onclick="renderModuleList('knowledgePoints')">搜</button>
-        </div>
-        <div id="knowledgePointsList"></div>
-      </div>
+        <div class="muted center">邢老师工作台·手机端 · 与电脑端实时同步</div>
+      </section>
+
     </main>
 
-    <!-- 可移动弧形导航 FAB（取代左上角抽屉展开） -->
-    <div id="arcBackdrop" class="arc-backdrop" onclick="closeArc()"></div>
-    <div id="arcLayer" class="arc-layer"></div>
-    <div id="arcSub" class="arc-sub"></div>
-    <div id="navFab" class="nav-fab">☰</div>
+    <!-- 底部四主菜单 -->
+    <nav class="tabbar" id="tabbar">
+      <button class="tab-btn active" data-main="questions" onclick="switchMain('questions')"><span class="ico">📚</span><span>题库</span></button>
+      <button class="tab-btn" data-main="schedule" onclick="switchMain('schedule')"><span class="ico">📅</span><span>排课</span></button>
+      <button class="tab-btn" data-main="students" onclick="switchMain('students')"><span class="ico">👥</span><span>学生</span></button>
+      <button class="tab-btn" data-main="settings" onclick="switchMain('settings')"><span class="ico">⚙️</span><span>设置</span></button>
+    </nav>
   </div>
 
   <!-- 编辑/详情 弹窗 -->

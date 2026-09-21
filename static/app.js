@@ -94,6 +94,49 @@
   function cachePut(k, v) { try { localStorage.setItem("cache_" + k, JSON.stringify(v)); } catch (e) {} }
   function cacheGet(k) { try { return JSON.parse(localStorage.getItem("cache_" + k)); } catch (e) { return null; } }
 
+  // ---------- 通用辅助：日期 / 课时 / 确认弹窗 ----------
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function dateKey(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+  function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
+  function todayStr() { return dateKey(new Date()); }
+  const DAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+  const WD = ["日", "一", "二", "三", "四", "五", "六"];
+  const SCHEDULE_SLOTS = [
+    { start: "08:00", end: "10:00", label: "8-10" },
+    { start: "10:00", end: "12:00", label: "10-12" },
+    { start: "13:00", end: "15:00", label: "1-3" },
+    { start: "15:00", end: "17:00", label: "3-5" },
+    { start: "17:00", end: "19:00", label: "5-7" },
+    { start: "19:00", end: "21:00", label: "7-9" },
+    { start: "21:00", end: "23:00", label: "9-11" },
+  ];
+  /* 返回所查看周的周一（以周一为一周起点）；offset=0 为本周，正负为未来/过去周 */
+  function startOfWeekDate(offset) {
+    const now = new Date(); now.setHours(0, 0, 0, 0);
+    const day = now.getDay(); // 0=周日 .. 6=周六
+    const diffToMon = (day === 0 ? -6 : 1 - day);
+    return addDays(now, diffToMon + (offset || 0) * 7);
+  }
+  /* 课时换算：2 小时 = 1 次课 */
+  function hoursToLessons(h) { return (parseFloat(h) || 0) / 2; }
+  function fmtLessons(n) {
+    const v = parseFloat(n) || 0;
+    if (Number.isInteger(v)) return String(v);
+    const fixed = (Math.round(v * 100) / 100).toFixed(2);
+    return fixed.replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+  }
+  /* 通用确认弹窗（移动端友好，替代原生 confirm） */
+  function confirmModal(title, html, onOk) {
+    const box = $("#modalBox");
+    box.innerHTML =
+      '<div class="modal-header"><span class="modal-title">' + esc(title) + '</span><button class="modal-close" onclick="closeModal()">✕</button></div>' +
+      '<div class="modal-body">' + html + "</div>" +
+      '<div class="modal-footer"><button class="btn sec" style="flex:1" onclick="closeModal()">取消</button>' +
+      '<button class="btn danger" style="flex:1" onclick="closeModal();__cfmOk()">确定</button></div>';
+    window.__cfmOk = onOk;
+    openModal();
+  }
+
   // ---------- 全量拉取 ----------
   async function loadPull(force) {
     const now = Date.now() / 1000;
@@ -147,7 +190,7 @@
     $("#who").onclick = logout;
     $("#qList").innerHTML = '<div class="center">正在同步数据…</div>';
     await loadPull(true);
-    switchTab("dashboard");
+    switchMain("questions");
   }
 
   // ---------- 题库（题型/知识点/关键词 筛选 + 本地分页） ----------
@@ -268,6 +311,7 @@
       toast("已加入组卷（共 " + composeSet.length + " 题）");
     }
     syncComposeBtn(id);
+    updateComposeBar();
   }
   // 原地同步某题的组卷按钮状态（列表卡片 + 详情弹窗），不整页刷新
   function syncComposeBtn(id) {
@@ -486,21 +530,21 @@
       $("#etype").value = b.type || "选择题"; $("#ekp").value = b.kpId || "";
       $("#econtent").value = b.content || ""; $("#eanswer").value = b.answer || ""; $("#eanalysis").value = b.analysis || "";
     }
-    $("#upC").onclick = () => pickImg(id, "c");
-    $("#upA").onclick = () => pickImg(id, "a");
+    $("#upC").onclick = () => pickImg("econtent", "c");
+    $("#upA").onclick = () => pickImg("eanswer", "a");
     openModal();
   }
-  function pickImg(id, kind) {
+  function pickImg(targetId, kind) {
     const inp = document.createElement("input");
     inp.type = "file"; inp.accept = "image/*";
     inp.onchange = async () => {
       const f = inp.files[0]; if (!f) return;
-      const sub = "questions/" + (id || ("new_" + Date.now())) + "/" + kind;
+      const sub = "questions/" + (targetId || ("new_" + Date.now())) + "/" + kind;
       try {
         await api("POST", "/api/media?sub=" + encodeURIComponent(sub), f, true, "img_1.png");
         const ref = "media://" + sub + "/img_1.png";
-        const ta = kind === "c" ? $("#econtent") : $("#eanswer");
-        ta.value = (ta.value ? ta.value + "\n" : "") + ref;
+        const ta = $("#" + targetId);
+        if (ta) ta.value = (ta.value ? ta.value + "\n" : "") + ref;
         toast("图片已添加：" + ref);
       } catch (e) { toast("上传失败：" + e.message); }
     };
@@ -554,12 +598,13 @@
       <div class="modal-body"><div class="muted">${esc(b.note || "")}</div>${qs}</div>
       <div class="modal-footer" style="flex-wrap:wrap;gap:8px">
         <button class="btn ok" style="flex:1 1 100%" onclick="downloadPaper('${esc(id)}')">⬇ 下载 Word 试卷</button>
-        <a class="btn sec" style="flex:1;text-align:center;text-decoration:none"
-           href="${base}/api/papers/${esc(id)}/docx" target="_blank" rel="noopener"
-           onclick="closeModal()">用浏览器打开下载</a>
-        <button class="btn sec" style="flex:1" onclick="closeModal()">关闭</button>
+        <button class="btn sec" style="flex:1 1 100%" onclick="closeModal()">关闭</button>
       </div>`;
     openModal();
+    // 微信/企业微信等 webview 常拦截自动下载，提示用浏览器打开本页再下载
+    const ua = navigator.userAgent || "";
+    if (/MicroMessenger|WXWork|QQ\/|Weibo|Alipay/i.test(ua))
+      toast("若没自动保存，点右上角 ⋯ 选「用浏览器打开」本页后再下载", 2600);
   }
   // docx 接口无需鉴权且返回 Content-Disposition: attachment；直接用真实 URL 触发系统原生下载，
   // 这样文件会落到 Downloads 目录（文件管理器可见）。blob 方案在微信等 webview 会被拦截、找不到文件。
@@ -570,49 +615,99 @@
     const url = base + "/api/papers/" + encodeURIComponent(id) + "/docx";
     toast("正在下载…");
     const a = document.createElement("a");
-    a.href = url; a.download = title + ".docx";
-    a.target = "_blank"; a.rel = "noopener";
+    a.href = url; a.download = (title || "试卷") + ".docx";
+    a.rel = "noopener";
     document.body.appendChild(a); a.click(); a.remove();
-    // webview（微信/企业微信）常常拦截自动下载；1.5s 后提示用浏览器直链兜底
     const ua = navigator.userAgent || "";
-    const inWebview = /MicroMessenger|WXWork|QQ\/|Weibo|Alipay/i.test(ua);
-    if (inWebview) setTimeout(() => toast("若未自动保存，请点弹窗底部「用浏览器打开下载」"), 1500);
+    if (/MicroMessenger|WXWork|QQ\/|Weibo|Alipay/i.test(ua))
+      setTimeout(() => toast("若没自动保存，点右上角 ⋯ 「用浏览器打开」本页后再下载", 2600), 1200);
   }
 
-  // ---------- 学生（本地缓存） ----------
-  function loadStudents() {
+  // ---------- 学生（手机端增删改 + 充值，云端同步） ----------
+  function renderStudents() {
+    const box = $("#studentList");
     const items = DB.data.students || [];
-    $("#sList").innerHTML = items.length ? "" : '<div class="center">暂无学生</div>';
+    box.innerHTML = items.length ? "" : '<div class="center">暂无学生<br><span style="font-size:12px">点上方「＋ 添加学生」</span></div>';
     items.forEach(it => {
       const b = it.body || {};
-      const div = document.createElement("div"); div.className = "card";
-      div.innerHTML = `<h3>${esc(b.name || "未命名")}</h3>
-        <div class="muted">${esc(b.grade || "")} · ${esc(b.school || "")} · 课时余 ${esc(b.hours || "")}</div>`;
-      div.onclick = () => openStudent(it.id);
-      $("#sList").appendChild(div);
+      const div = document.createElement("div"); div.className = "card stu-card";
+      div.innerHTML =
+        '<div class="stu-avatar">' + esc((b.name || "?").slice(0, 1)) + "</div>" +
+        '<div class="stu-main"><div class="stu-name">' + esc(b.name || "未命名") + "</div>" +
+        '<div class="stu-sub">' + esc(b.grade || "") + (b.school ? " · " + esc(b.school) : "") + "</div></div>" +
+        '<div class="stu-hours"><div class="h">' + esc(b.hours == null ? "0" : b.hours) + '</div><div class="l">剩余课时</div></div>';
+      div.onclick = () => openStudentEditor(it.id);
+      box.appendChild(div);
     });
   }
-  function openStudent(id) {
-    const it = (DB.data.students || []).find(x => x.id === id);
+  function openStudentEditor(id) {
+    const it = id ? (DB.data.students || []).find(x => x.id === id) : null;
     const b = (it && it.body) || {};
+    const isEdit = !!id;
     $("#modalBox").innerHTML = `
-      <h3>学生信息</h3>
-      <label class="kv">姓名</label><input id="sname" value="${esc(b.name || "")}">
-      <label class="kv">年级</label><input id="sgrade" value="${esc(b.grade || "")}">
-      <label class="kv">学校</label><input id="sschool" value="${esc(b.school || "")}">
-      <label class="kv">剩余课时</label><input id="shours" value="${esc(b.hours || "")}">
-      <label class="kv">电话</label><input id="sphone" value="${esc(b.phone || "")}">
-      <div class="row" style="margin-top:10px">
-        <button class="btn ok" onclick="saveStudent('${id}')">保存</button>
-        <button class="btn sec" onclick="closeModal()">取消</button>
-      </div>`;
+      <div class="modal-header"><span class="modal-title">${isEdit ? "学生信息" : "添加学生"}</span><button class="modal-close" onclick="closeModal()">✕</button></div>
+      <div class="modal-body">
+        <input type="hidden" id="sId" value="${esc(id || "")}">
+        <label class="kv">姓名</label><input id="sName" value="${esc(b.name || "")}">
+        <label class="kv">年级</label><input id="sGrade" value="${esc(b.grade || "")}">
+        <label class="kv">学校</label><input id="sSchool" value="${esc(b.school || "")}">
+        <label class="kv">电话</label><input id="sPhone" value="${esc(b.phone || "")}">
+        <label class="kv">家长姓名</label><input id="sParentName" value="${esc(b.parentName || "")}">
+        <label class="kv">家长电话</label><input id="sParentPhone" value="${esc(b.parentPhone || "")}">
+        <label class="kv">单价（元/课时）</label><input id="sPrice" type="number" value="${esc(b.price == null ? "" : b.price)}">
+        <label class="kv">剩余课时</label><input id="sHours" type="number" value="${esc(b.hours == null ? "" : b.hours)}">
+        <label class="kv">欠费（元）</label><input id="sArrears" type="number" value="${esc(b.arrears == null ? "" : b.arrears)}">
+        <label class="kv">备注</label><textarea id="sNote">${esc(b.note || "")}</textarea>
+        ${isEdit ? `<div class="form-group" style="margin-top:12px"><label class="kv">充值课时</label><div class="row"><input id="sRecharge" type="number" placeholder="本次充值课时数"><button class="btn sec" onclick="doRecharge()">充值</button></div><div class="muted">充值将增加剩余课时，并写入课时记录（电脑端同步可见）。</div></div>` : ""}
+      </div>
+      <div class="modal-footer"><button class="btn sec" style="flex:1" onclick="closeModal()">取消</button><button class="btn ok" style="flex:1" onclick="saveStudentEditor()">保存</button></div>`;
     openModal();
   }
-  async function saveStudent(id) {
-    const body = { id, name: $("#sname").value, grade: $("#sgrade").value, school: $("#sschool").value,
-      hours: $("#shours").value, phone: $("#sphone").value, updatedAt: Math.floor(Date.now() / 1000) };
-    try { if (id) await api("PUT", "/api/students/" + id, body); else await api("POST", "/api/students", body); toast("已保存"); closeModal(); await loadPull(true); renderTab(); }
-    catch (e) { toast("保存失败：" + e.message); }
+  async function saveStudentEditor() {
+    const id = $("#sId").value || ("stu_" + Date.now().toString(36));
+    const body = {
+      id,
+      name: $("#sName").value.trim(),
+      grade: $("#sGrade").value.trim(),
+      school: $("#sSchool").value.trim(),
+      phone: $("#sPhone").value.trim(),
+      parentName: $("#sParentName").value.trim(),
+      parentPhone: $("#sParentPhone").value.trim(),
+      price: $("#sPrice").value === "" ? 0 : Number($("#sPrice").value),
+      hours: $("#sHours").value === "" ? 0 : Number($("#sHours").value),
+      arrears: $("#sArrears").value === "" ? 0 : Number($("#sArrears").value),
+      note: $("#sNote").value.trim(),
+      updatedAt: Math.floor(Date.now() / 1000)
+    };
+    if (!body.name) return toast("姓名不能为空");
+    try {
+      if ($("#sId").value) await api("PUT", "/api/students/" + id, body);
+      else await api("POST", "/api/students", body);
+      toast("已保存 ✓"); closeModal();
+      await loadPull(true); renderStudents();
+    } catch (e) { toast("保存失败：" + e.message); }
+  }
+  async function doRecharge() {
+    const id = $("#sId").value;
+    const hours = parseInt($("#sRecharge").value, 10);
+    if (!hours || hours <= 0) return toast("请输入有效的充值课时数");
+    const it = (DB.data.students || []).find(x => x.id === id);
+    if (!it) return;
+    const b = it.body || {};
+    const newHours = (Number(b.hours) || 0) + hours;
+    const studentBody = Object.assign({}, b, { hours: newHours, updatedAt: Math.floor(Date.now() / 1000) });
+    const rec = {
+      id: "rec_" + Date.now().toString(36), studentId: id, studentName: b.name || "",
+      type: "recharge", hours: hours, date: todayStr(), topic: "充值 " + hours + " 课时",
+      note: "手机端充值", createdAt: Math.floor(Date.now() / 1000)
+    };
+    try {
+      await api("PUT", "/api/students/" + id, studentBody);
+      await api("POST", "/api/records", rec);
+      toast("已充值 " + hours + " 课时 ✓");
+      closeModal();
+      await loadPull(true); renderStudents();
+    } catch (e) { toast("充值失败：" + e.message); }
   }
 
   // ---------- 弹窗/切换 ----------
@@ -622,164 +717,394 @@
     toast("正在同步…");
     loadPull(true).then(ok => { if (ok) { renderTab(); toast("已刷新"); } else toast("刷新失败"); });
   }
+  // ---------- 底部四主菜单导航 ----------
+  const MAIN_TITLE = { questions: "题库", schedule: "排课", students: "学生", settings: "设置" };
+  let mainTab = "questions";
+  let qSubPane = "q";
+  let schedSubPane = "grid";
   function renderTab() {
-    if (tab === "questions") applyFilter();
-    if (tab === "wrong") loadWrong();
-    if (tab === "papers") loadPapers();
-    if (tab === "students") loadStudents();
-    if (tab === "compose") { renderComposePool(); renderCompose(); }
-    if (tab === "schedule") renderModuleList("schedule");
-    if (tab === "exams") renderModuleList("exams");
-    if (tab === "knowledgePoints") renderModuleList("knowledgePoints");
-    if (tab === "records") renderModuleList("records");
-    if (tab === "dashboard") renderDashboard();
+    if (mainTab === "questions") qSub(qSubPane);
+    else if (mainTab === "schedule") schedSub(schedSubPane);
+    else if (mainTab === "students") renderStudents();
+    else if (mainTab === "settings") renderSettings();
   }
-  function switchTab(t) {
-    tab = t;
-    // 侧栏高亮（与桌面版 nav-btn.active 一致）
-    document.querySelectorAll(".sb-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === t));
-    ["dashboard","questions","wrong","papers","compose","students","schedule","records","exams","knowledgePoints"]
-      .forEach(id => $("#tab-" + id).classList.toggle("hidden", id !== t));
-    $("#title").textContent = { dashboard: "首页", questions: "题库", wrong: "错题本", papers: "试卷", compose: "组卷",
-      students: "学生", schedule: "排课", records: "课时", exams: "考试", knowledgePoints: "知识点" }[t];
-    closeSidebar();
-    closeArc();
-    renderTab();   // 仅用本地缓存渲染，秒开；不再自动后台重拉，避免免费服务器冷启卡顿
+  function switchMain(m) {
+    mainTab = m;
+    ["questions", "schedule", "students", "settings"].forEach(id =>
+      $("#view-" + id).classList.toggle("hidden", id !== m));
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.main === m));
+    $("#title").textContent = MAIN_TITLE[m] || m;
+    if (m === "questions") qSub(qSubPane);
+    else if (m === "schedule") schedSub(schedSubPane);
+    else if (m === "students") renderStudents();
+    else if (m === "settings") renderSettings();
   }
-  function openSidebar() { $("#sidebar").classList.add("open"); $("#backdrop").classList.add("show"); }
-  function closeSidebar() { $("#sidebar").classList.remove("open"); $("#backdrop").classList.remove("show"); }
-  // 首页仪表盘（与桌面版 stats-grid / stat-card 一致）
-  function renderDashboard() {
-    const d = DB.data || {};
-    const stats = [
-      { ico: "📚", label: "题库题目", value: (d.questions || []).length, color: "" },
-      { ico: "📄", label: "试卷", value: (d.papers || []).length },
-      { ico: "👥", label: "学生", value: (d.students || []).length },
-      { ico: "📝", label: "课时记录", value: (d.records || []).length },
-      { ico: "📋", label: "考试", value: (d.exams || []).length },
-      { ico: "💡", label: "知识点", value: (d.knowledgePoints || []).length },
-    ];
-    $("#dashStats").innerHTML = stats.map(s => `
-      <div class="stat-card">
-        <div class="stat-icon">${s.ico}</div>
-        <div class="stat-info">
-          <div class="stat-label">${s.label}</div>
-          <div class="stat-value">${s.value}</div>
-        </div>
-      </div>`).join("");
+  function qSub(s) {
+    qSubPane = s;
+    document.querySelectorAll("#qSubTabs .subtab").forEach(b => b.classList.toggle("on", b.dataset.sub === s));
+    ["q", "compose", "paper", "wrong", "add"].forEach(id => $("#sub-" + id).classList.toggle("hidden", id !== s));
+    if (s === "q") applyFilter();
+    else if (s === "compose") renderMyPapers();
+    else if (s === "paper") renderAllPapers();
+    else if (s === "wrong") loadWrong();
+    else if (s === "add") renderAddQForm();
+    updateComposeBar();
   }
-  function openFab() {
-    if (tab === "questions") return openEditor();
-    if (MOD_UI[tab]) return openModuleEditor(tab, null);
-    toast("当前页不支持新建");
+  function schedSub(s) {
+    schedSubPane = s;
+    document.querySelectorAll("#schedSubTabs .subtab").forEach(b => b.classList.toggle("on", b.dataset.sub === s));
+    $("#sub-grid").classList.toggle("hidden", s !== "grid");
+    $("#sub-records").classList.toggle("hidden", s !== "records");
+    if (s === "grid") renderScheduleGrid();
+    else renderRecordsList();
   }
+  function openSidebar() {} function closeSidebar() {} function closeArc() {}
 
-  // ---------- 组卷 ----------
+  // ---------- 组卷（在题库点「加入组卷」收集，底部浮条保存） ----------
   let composeSet = [];   // 已选题目 id（有序）
-  const TYPE_KEYS = [
-    { label: "选择题", input: "cN_choice" },
-    { label: "多选题", input: "cN_multi" },
-    { label: "填空题", input: "cN_blank" },
-    { label: "解答题", input: "cN_solve" },
-  ];
-  function composePool() {
-    const kw = ($("#cKw").value || "").trim().toLowerCase();
-    const type = $("#cType").value || "";
-    const kp = ($("#cKp").value || "").trim();
-    return (DB.data.questions || []).filter(it => {
-      const b = it.body || {};
-      if (type && b.type !== type) return false;
-      if (kp && !String(b.kpId || "").includes(kp)) return false;
-      if (kw && !((b.content || "") + " " + (b.answer || "")).toLowerCase().includes(kw)) return false;
-      return true;
-    });
+  // 底部浮条：仅当在「题库」子视图且已选题目时显示
+  function updateComposeBar() {
+    const bar = $("#composeBar");
+    if (!bar) return;
+    if (qSubPane === "q" && composeSet.length > 0) {
+      bar.classList.remove("hidden");
+      $("#cSelCount").textContent = composeSet.length;
+    } else {
+      bar.classList.add("hidden");
+    }
   }
-  function renderComposePool() {
-    if (tab !== "compose") return;
-    const pool = composePool().slice(0, 60);
-    const box = $("#composePool");
-    box.innerHTML = pool.length ? "" : '<div class="center">无匹配题目</div>';
-    pool.forEach(it => {
-      const b = it.body || {};
-      const div = document.createElement("div"); div.className = "card";
-      const inSet = composeSet.includes(it.id);
-      div.innerHTML = `<div class="row"><span class="tag">${esc(b.type || "题")}</span>
-        <span class="muted">${esc(b.kpId || "")}${b.qid ? " · " + esc(b.qid) : ""}</span></div>
-        <div style="margin:6px 0">${renderRich(b.content)}</div>
-        <button class="btn ${inSet ? "sec" : ""}" style="width:100%" ${inSet ? "disabled" : ""} onclick="addToCompose('${it.id}')">${inSet ? "已加入" : "＋ 加入组卷"}</button>`;
-      box.appendChild(div);
-    });
+  function clearComposeSel() {
+    composeSet = [];
+    if (qSubPane === "q") applyFilter();
+    updateComposeBar();
+    toast("已清空选择");
   }
-  function addToCompose(id) { if (!composeSet.includes(id)) { composeSet.push(id); renderComposePool(); renderCompose(); } }
-  function removeFromCompose(id) { composeSet = composeSet.filter(x => x !== id); renderComposePool(); renderCompose(); }
-  function clearCompose() { composeSet = []; renderComposePool(); renderCompose(); }
-  function renderCompose() {
-    $("#cCount").textContent = composeSet.length;
-    const box = $("#composeList");
-    if (!composeSet.length) { box.innerHTML = '<div class="center">还没有选题目，用上方「智能抽取」或手动 ＋ 加入</div>'; return; }
-    box.innerHTML = "";
-    composeSet.forEach((id, i) => {
-      const it = qMap[id]; const b = (it && it.body) || {};
-      const div = document.createElement("div"); div.className = "card";
-      div.innerHTML = `<div class="row"><span class="muted">${i + 1}.</span>
-        <span class="tag">${esc(b.type || "题")}</span>
-        <span style="flex:1">${esc(b.qid || id)}</span>
-        <button class="btn danger" style="padding:4px 9px;font-size:13px" onclick="removeFromCompose('${id}')">移除</button></div>`;
-      box.appendChild(div);
-    });
+  function openComposeModal() {
+    toast("去「题库」点题目上的「🧩 加入组卷」");
+    switchMain("questions"); qSub("q");
   }
-  function smartCompose() {
-    const pool = composePool();
-    const want = {};
-    TYPE_KEYS.forEach(t => { want[t.label] = Math.max(0, parseInt($("#" + t.input).value, 10) || 0); });
-    const total = Object.values(want).reduce((a, c) => a + c, 0);
-    if (total === 0) return toast("请先设置每种题型要抽几道");
-    const byType = {};
-    pool.forEach(it => { const tp = (it.body || {}).type || "其他"; (byType[tp] = byType[tp] || []).push(it); });
-    const added = [];
-    TYPE_KEYS.forEach(t => {
-      const n = want[t.label]; if (!n) return;
-      const src = (byType[t.label] || []).filter(it => !composeSet.includes(it.id));
-      for (let i = src.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [src[i], src[j]] = [src[j], src[i]]; }
-      src.slice(0, n).forEach(it => { if (!composeSet.includes(it.id)) { composeSet.push(it.id); added.push(it.id); } });
-    });
-    if (added.length === 0) return toast("没有更多可抽取的题目（可能已全部加入）");
-    renderComposePool(); renderCompose();
-    toast("已抽取 " + added.length + " 道，共 " + composeSet.length + " 道");
-  }
-  function previewCompose() {
+  async function doComposeSave() {
     if (!composeSet.length) return toast("还没有选题目");
-    let html = `<h3>${esc($("#cTitle").value || "未命名试卷")}</h3><div class="muted">${esc($("#cNote").value || "")}</div>`;
-    composeSet.forEach((id, i) => {
-      const it = qMap[id]; const b = (it && it.body) || {};
-      html += `<div class="card" style="margin:6px 0"><b>${i + 1}.</b> ${renderRich(b.content)}
-        <div class="muted">答：${renderRich(b.answer) || "—"}</div></div>`;
-    });
-    html += `<button class="btn sec" onclick="closeModal()">关闭</button>`;
-    $("#modalBox").innerHTML = html; openModal();
+    $("#modalBox").innerHTML = `
+      <div class="modal-header"><span class="modal-title">🧩 保存组卷</span><button class="modal-close" onclick="closeModal()">✕</button></div>
+      <div class="modal-body">
+        <div class="muted" style="margin-bottom:10px">已选 ${composeSet.length} 道题，给这份试卷起个名字：</div>
+        <label class="kv">试卷标题</label><input id="cTitle" placeholder="如：2026秋季高三力学测试">
+        <label class="kv">备注（可选）</label><textarea id="cNote" placeholder="如：周末作业 / 期中复习"></textarea>
+      </div>
+      <div class="modal-footer"><button class="btn sec" style="flex:1" onclick="closeModal()">取消</button><button class="btn ok" style="flex:1" onclick="commitComposeSave()">保存并生成试卷</button></div>`;
+    openModal();
   }
-  async function saveCompose() {
-    if (!composeSet.length) return toast("还没有选题目");
+  async function commitComposeSave() {
+    const title = ($("#cTitle").value || "").trim() || ("组卷_" + new Date().toLocaleString("zh-CN"));
     const body = {
       id: "p_" + Date.now().toString(36),
-      title: $("#cTitle").value.trim() || ("组卷_" + new Date().toLocaleString("zh-CN")),
-      note: $("#cNote").value.trim(),
+      title,
+      note: ($("#cNote").value || "").trim(),
       questionIds: composeSet.slice(),
+      source: "mobile",
       createdAt: Math.floor(Date.now() / 1000)
     };
     try {
       await api("POST", "/api/papers", body);
-      toast("试卷已保存，可在试卷页下载 Word");
-      closeModal();
-      // 重置组卷清单：所有题目恢复为「加入组卷」，方便再次挑题组卷
-      composeSet = [];
-      renderComposePool(); renderCompose();
-      await loadPull(true); switchTab("papers");
+      toast("试卷已保存 ✓"); closeModal();
+      composeSet = []; updateComposeBar();
+      if (qSubPane === "q") applyFilter();
+      await loadPull(true); qSub("compose");
+    } catch (e) { toast("保存失败：" + e.message); }
+  }
+  function paperCard(it) {
+    const b = it.body || {};
+    const div = document.createElement("div"); div.className = "card pa-card";
+    div.innerHTML =
+      '<div class="pa-main"><div class="pa-title">' + esc(b.title || "未命名试卷") + "</div>" +
+      '<div class="pa-sub">题数：' + ((b.questionIds || []).length) + (b.note ? " · " + esc(b.note) : "") + (b.source === "mobile" ? " · 📱手机组" : "") + "</div></div>" +
+      '<div class="pa-actions"><button class="btn sm" onclick="openPaper(\'' + esc(it.id) + '\')">查看</button>' +
+      '<button class="btn ok sm" onclick="downloadPaper(\'' + esc(it.id) + '\')">下载</button></div>';
+    return div;
+  }
+  function renderMyPapers() {
+    const box = $("#myPapers");
+    const items = (DB.data.papers || []).filter(p => (p.body || {}).source === "mobile");
+    box.innerHTML = items.length ? "" : '<div class="center">还没有组卷<br><span style="font-size:12px">去「题库」选题目加入组卷</span></div>';
+    items.forEach(it => box.appendChild(paperCard(it)));
+  }
+  function renderAllPapers() {
+    const box = $("#allPapers");
+    const items = DB.data.papers || [];
+    box.innerHTML = items.length ? "" : '<div class="center">暂无试卷</div>';
+    items.forEach(it => box.appendChild(paperCard(it)));
+  }
+
+  // ---------- 排课（周课表网格，复刻电脑版，云端同步） ----------
+  let scheduleWeekOffset = 0;
+  let scheduleFormDay = 1, scheduleFormStart = "08:00", scheduleFormEnd = "10:00";
+  function renderScheduleGrid() {
+    const schedule = DB.data.schedule || [];
+    const students = DB.data.students || [];
+    const ws = startOfWeekDate(scheduleWeekOffset);
+    const we = addDays(ws, 6);
+    const weekKey = dateKey(ws);
+    const todayKey = todayStr();
+    const weekSchedule = schedule.filter(s => (s.body || {}).weekStart === weekKey);
+    const cellMap = {};
+    weekSchedule.forEach(s => {
+      const b = s.body || {};
+      const key = (b.dayOfWeek || 1) + "-" + (b.startTime || "");
+      (cellMap[key] = cellMap[key] || []).push(s);
+    });
+    const offsetLabel = scheduleWeekOffset === 0 ? "本周"
+      : (scheduleWeekOffset > 0 ? "未来第 " + scheduleWeekOffset + " 周" : "过去第 " + Math.abs(scheduleWeekOffset) + " 周");
+    let html = `<div class="week-nav">
+        <button class="btn sec sm" onclick="schedulePrevWeek()">‹ 上一周</button>
+        <div class="week-range"><div class="wr-title">${ws.getFullYear()}年${ws.getMonth()+1}月${ws.getDate()}日 – ${we.getMonth()+1}月${we.getDate()}日</div>
+        <div class="wr-sub">${offsetLabel}</div></div>
+        <button class="btn sec sm" onclick="scheduleNextWeek()">下周 ›</button>
+        ${scheduleWeekOffset !== 0 ? `<button class="btn sec sm" onclick="scheduleGotoThisWeek()">回到本周</button>` : ""}
+        <button class="btn sm" onclick="scheduleCopyWeekToNext()" title="把当前周排课复制到下一邻近周">📋 复制到下周</button>
+      </div>`;
+    if (students.length === 0)
+      html += `<div class="card"><div class="muted" style="padding:14px">还没有学生，请先到「学生」添加，之后即可在课表里点时间段排课。</div></div>`;
+    html += `<div class="schedule-scroll"><div class="schedule-table">`;
+    html += `<div class="st-corner">时间</div>`;
+    for (let day = 1; day <= 7; day++) {
+      const dayDate = addDays(ws, day - 1);
+      const isToday = dateKey(dayDate) === todayKey;
+      html += `<div class="st-day${isToday ? " today" : ""}"><span>${DAYS[day-1]}</span><span class="sd-date">${dayDate.getMonth()+1}/${dayDate.getDate()}</span></div>`;
+    }
+    SCHEDULE_SLOTS.forEach(slot => {
+      html += `<div class="st-time">${esc(slot.label)}</div>`;
+      for (let day = 1; day <= 7; day++) {
+        const key = day + "-" + slot.start;
+        const items = cellMap[key];
+        if (items && items.length) {
+          const rows = items.map(s => {
+            const b = s.body || {};
+            const full = b.studentName || ""; const sur = full.charAt(0);
+            return `<span class="st-name-wrap" title="点姓名：上课消课；点 ×：取消排课">
+              <span class="st-name" onclick="event.stopPropagation();scheduleCheckin('${esc(s.id)}')">${esc(items.length === 1 ? full : sur)}</span>
+              <span class="st-del" title="取消这节排课" onclick="event.stopPropagation();scheduleDelete('${esc(s.id)}')">×</span></span>`;
+          }).join("");
+          html += `<div class="st-cell has-class" onclick="scheduleOpenAddFor(${day},'${slot.start}','${slot.end}')" title="点空白处追加排课；点姓名上课消课；点 × 取消">
+            <div class="st-names">${rows}</div></div>`;
+        } else {
+          html += `<div class="st-cell empty" onclick="scheduleOpenAddFor(${day},'${slot.start}','${slot.end}')" title="点击在此时间段添加排课"></div>`;
+        }
+      }
+    });
+    html += `</div></div>`;
+    $("#sub-grid").innerHTML = html;
+  }
+  function schedulePrevWeek() { scheduleWeekOffset--; renderScheduleGrid(); }
+  function scheduleNextWeek() { scheduleWeekOffset++; renderScheduleGrid(); }
+  function scheduleGotoThisWeek() { scheduleWeekOffset = 0; renderScheduleGrid(); }
+  async function scheduleCopyWeekToNext() {
+    const schedule = DB.data.schedule || [];
+    const srcKey = dateKey(startOfWeekDate(scheduleWeekOffset));
+    const dstKey = dateKey(startOfWeekDate(scheduleWeekOffset + 1));
+    const src = schedule.filter(s => (s.body || {}).weekStart === srcKey);
+    if (src.length === 0) return toast("当前周没有可复制的排课");
+    const dst = schedule.filter(s => (s.body || {}).weekStart === dstKey);
+    let added = 0;
+    for (const s of src) {
+      const b = s.body || {};
+      const dup = dst.some(d => { const db = d.body || {}; return db.dayOfWeek === b.dayOfWeek && db.startTime === b.startTime && db.studentName === b.studentName; });
+      if (dup) continue;
+      const copy = Object.assign({}, b, { id: "sch_" + Date.now().toString(36) + "_" + added, weekStart: dstKey, createdAt: Math.floor(Date.now() / 1000) });
+      try { await api("POST", "/api/schedule", copy); added++; } catch (e) { toast("复制失败：" + e.message); }
+    }
+    if (added === 0) return toast("下一邻近周已有相同排课，无需复制");
+    toast("已将 " + added + " 节排课复制到下周 ✓");
+    scheduleWeekOffset += 1;
+    await loadPull(true); renderScheduleGrid();
+  }
+  async function scheduleCheckin(id) {
+    const s = (DB.data.schedule || []).find(x => x.id === id);
+    if (!s) return;
+    const b = s.body || {};
+    const student = (DB.data.students || []).find(x => (x.body || {}).name === b.studentName);
+    if (!student) return toast("未找到学生：" + b.studentName);
+    const sb = student.body || {};
+    const base = new Date((b.weekStart || todayStr()) + "T00:00:00");
+    const classDate = addDays(base, (b.dayOfWeek || 1) - 1);
+    const dateStr = dateKey(classDate);
+    const duration = 2; const lessons = hoursToLessons(duration);
+    const remain = parseFloat(sb.hours) || 0;
+    const arrears = parseFloat(sb.arrears) || 0;
+    confirmModal("上课消课",
+      `确认给 <b>${esc(sb.name || "")}</b> 在 <b>${dateStr}</b> 消课 <b>${fmtLessons(lessons)} 次</b>？`,
+      async () => {
+        try {
+          if (remain < lessons) {
+            const newArrears = remain > 0 ? arrears + (lessons - remain) : arrears + lessons;
+            await api("PUT", "/api/students/" + student.id, Object.assign({}, sb, { hours: 0, arrears: newArrears, updatedAt: Math.floor(Date.now() / 1000) }));
+            await api("POST", "/api/records", { id: "rec_" + Date.now().toString(36), studentId: student.id, studentName: sb.name || "", type: "arrears", hours: lessons, durationHours: duration, date: dateStr, topic: "", note: "从排课表一键消课", createdAt: Math.floor(Date.now() / 1000) });
+            toast("已记录欠费上课，欠费 " + fmtLessons(newArrears) + " 次课");
+          } else {
+            await api("PUT", "/api/students/" + student.id, Object.assign({}, sb, { hours: remain - lessons, updatedAt: Math.floor(Date.now() / 1000) }));
+            await api("POST", "/api/records", { id: "rec_" + Date.now().toString(36), studentId: student.id, studentName: sb.name || "", type: "consume", hours: lessons, durationHours: duration, date: dateStr, topic: "", note: "从排课表一键消课", createdAt: Math.floor(Date.now() / 1000) });
+            toast("上课成功，消耗 " + fmtLessons(lessons) + " 次课");
+          }
+          await loadPull(true); renderScheduleGrid();
+          if (mainTab === "students") renderStudents();
+        } catch (e) { toast("操作失败：" + e.message); }
+      });
+  }
+  async function scheduleDelete(id) {
+    confirmModal("删除排课", "确定要删除这节排课吗？", async () => {
+      try { await api("DELETE", "/api/schedule/" + id); toast("排课已删除"); await loadPull(true); renderScheduleGrid(); }
+      catch (e) { toast("删除失败：" + e.message); }
+    });
+  }
+  function scheduleOpenAddFor(day, start, end) {
+    scheduleFormDay = day; scheduleFormStart = start; scheduleFormEnd = end;
+    scheduleShowForm(null);
+  }
+  function scheduleShowForm(s) {
+    const isEdit = !!s;
+    const b = (s && s.body) || {};
+    const students = DB.data.students || [];
+    const studentOpts = ['<option value="">（选择学生）</option>'].concat(
+      students.map(st => { const stb = st.body || {}; return `<option value="${esc(stb.name || "")}" ${b.studentName === stb.name ? "selected" : ""}>${esc(stb.name || "")}${stb.grade ? " (" + esc(stb.grade) + ")" : ""}</option>`; })
+    ).join("");
+    const dayOpts = DAYS.map((d, i) => `<option value="${i+1}" ${(b.dayOfWeek || scheduleFormDay || 1) === i+1 ? "selected" : ""}>${d}</option>`).join("");
+    const timeOpts = SCHEDULE_SLOTS.map(t => `<option value="${t.start}" ${(b.startTime || scheduleFormStart || t.start) === t.start ? "selected" : ""}>${t.start}</option>`).join("");
+    const endTimeOpts = SCHEDULE_SLOTS.map(t => `<option value="${t.end}" ${(b.endTime || scheduleFormEnd || t.end) === t.end ? "selected" : ""}>${t.end}</option>`).join("");
+    $("#modalBox").innerHTML = `
+      <div class="modal-header"><span class="modal-title">${isEdit ? "编辑排课" : "添加排课"}</span><button class="modal-close" onclick="closeModal()">✕</button></div>
+      <div class="modal-body">
+        <input type="hidden" id="schId" value="${esc(s ? s.id : "")}">
+        <label class="kv">学生 *</label><select id="schStudent">${studentOpts}</select>
+        <label class="kv">星期 *</label><select id="schDay">${dayOpts}</select>
+        <label class="kv">开始时间 *</label><select id="schStart">${timeOpts}</select>
+        <label class="kv">结束时间 *</label><select id="schEnd">${endTimeOpts}</select>
+        <label class="kv">辅导内容</label><input id="schSubject" value="${esc(b.subject || "")}" placeholder="如：力学综合、期末复习">
+        <label class="kv">上课地点</label><input id="schLocation" value="${esc(b.location || "")}" placeholder="如：学生家、线上、自习室">
+        <label class="kv">备注</label><textarea id="schNote">${esc(b.note || "")}</textarea>
+      </div>
+      <div class="modal-footer">
+        ${isEdit ? `<button class="btn danger" style="flex:1" onclick="scheduleDelete('${esc(s.id)}')">删除</button>` : ""}
+        <button class="btn sec" style="flex:1" onclick="closeModal()">取消</button>
+        <button class="btn ok" style="flex:1" onclick="scheduleSaveForm()">保存</button>
+      </div>`;
+    $("#schStart").addEventListener("change", function () {
+      const pr = this.value.split(":"); const ev = pad(parseInt(pr[0], 10) + 2) + ":" + pad(parseInt(pr[1], 10));
+      const sel = $("#schEnd"); if (SCHEDULE_SLOTS.some(t => t.end === ev)) sel.value = ev;
+    });
+    openModal();
+  }
+  async function scheduleSaveForm() {
+    const sId = $("#schId").value;
+    const studentName = ($("#schStudent").value || "").trim();
+    if (!studentName) return toast("请选择学生");
+    const startTime = $("#schStart").value, endTime = $("#schEnd").value;
+    if (!startTime || !endTime) return toast("请选择上课时间");
+    if (startTime >= endTime) return toast("结束时间必须晚于开始时间");
+    const base = {
+      dayOfWeek: parseInt($("#schDay").value, 10),
+      startTime, endTime,
+      studentName,
+      subject: ($("#schSubject").value || "").trim(),
+      location: ($("#schLocation").value || "").trim(),
+      note: ($("#schNote").value || "").trim(),
+      weekStart: dateKey(startOfWeekDate(scheduleWeekOffset))
+    };
+    try {
+      if (sId) { await api("PUT", "/api/schedule/" + sId, Object.assign({ id: sId }, base)); toast("排课已更新"); }
+      else { await api("POST", "/api/schedule", Object.assign({ id: "sch_" + Date.now().toString(36) }, base)); toast("排课已添加"); }
+      closeModal(); await loadPull(true); renderScheduleGrid();
+    } catch (e) { toast("保存失败：" + e.message); }
+  }
+  function renderRecordsList() {
+    const box = $("#sub-records");
+    const recs = (DB.data.records || []).slice().sort((a, c) => String((c.body || {}).date || "").localeCompare(String((a.body || {}).date || "")));
+    if (!recs.length) { box.innerHTML = '<div class="center">暂无课时记录</div>'; return; }
+    let html = "";
+    recs.forEach(it => {
+      const b = it.body || {};
+      const typeBadge = b.type === "recharge" ? "badge-success" : b.type === "arrears" ? "badge-danger" : "badge-info";
+      const typeLabel = b.type === "recharge" ? "充值" : b.type === "arrears" ? "欠费消课" : "消课";
+      html += `<div class="card"><div class="row"><span class="badge ${typeBadge}">${typeLabel}</span>
+        <span style="flex:1;font-weight:600">${esc(b.studentName || "")}</span>
+        <span class="muted">${esc(b.date || "")}</span></div>
+        <div class="muted" style="margin-top:4px">${fmtLessons(b.hours || 0)} 次${b.topic ? (" · " + esc(b.topic)) : ""}${b.durationHours ? (" · " + esc(b.durationHours) + " 小时") : ""}</div></div>`;
+    });
+    box.innerHTML = html;
+  }
+
+  // ---------- 添加题目（手机端新建题目，云端同步） ----------
+  function renderAddQForm() {
+    const box = $("#addQForm");
+    box.innerHTML = `
+      <label class="kv">题型</label>
+      <select id="nq_type"><option>选择题</option><option>多选题</option><option>填空题</option><option>解答题</option><option>计算题</option><option>实验题</option><option>作图题</option><option>综合题</option></select>
+      <label class="kv">知识点ID(kpId)</label>
+      <input id="nq_kp" placeholder="如 qb3_1_1_1_T1">
+      <label class="kv">题干（可含 media://questions/&lt;id&gt;/c/img_1.png 引用图片）</label>
+      <textarea id="nq_content"></textarea>
+      <label class="kv">答案</label>
+      <textarea id="nq_answer" style="min-height:50px"></textarea>
+      <label class="kv">解析</label>
+      <textarea id="nq_analysis"></textarea>
+      <div class="seg">
+        <button type="button" id="nq_upC">上传题干图</button>
+        <button type="button" id="nq_upA">上传答案图</button>
+      </div>`;
+    $("#nq_upC").onclick = () => pickImg("nq_content", "c");
+    $("#nq_upA").onclick = () => pickImg("nq_answer", "a");
+  }
+  async function saveNewQuestion() {
+    const body = {
+      id: "q_" + Date.now().toString(36),
+      type: $("#nq_type").value,
+      kpId: ($("#nq_kp").value || "").trim(),
+      content: ($("#nq_content").value || "").trim(),
+      answer: ($("#nq_answer").value || "").trim(),
+      analysis: ($("#nq_analysis").value || "").trim(),
+      createdAt: Math.floor(Date.now() / 1000)
+    };
+    if (!body.content) return toast("题干不能为空");
+    try {
+      await api("POST", "/api/questions", body);
+      toast("已保存 ✓"); await loadPull(true); qSub("q");
     } catch (e) { toast("保存失败：" + e.message); }
   }
 
+  // ---------- 设置（含后端地址 / 模块列表） ----------
+  function renderSettings() {
+    const base = localStorage.getItem(LS_BASE) || "(同源/默认)";
+    const el = $("#setBase"); if (el) el.textContent = base;
+  }
+  function openBaseUrlEditor() {
+    const cur = localStorage.getItem(LS_BASE) || "";
+    $("#modalBox").innerHTML = `
+      <div class="modal-header"><span class="modal-title">🌐 后端地址</span><button class="modal-close" onclick="closeModal()">✕</button></div>
+      <div class="modal-body">
+        <div class="muted" style="margin-bottom:8px">默认同源即可。若手机访问的是独立域名，请填写部署后的后端地址（如 https://xxx.up.railway.app）。</div>
+        <label class="kv">后端地址</label><input id="baseUrlEdit" value="${esc(cur)}" placeholder="https://your-app.up.railway.app">
+      </div>
+      <div class="modal-footer"><button class="btn sec" style="flex:1" onclick="closeModal()">取消</button><button class="btn ok" style="flex:1" onclick="saveBaseUrl()">保存</button></div>`;
+    openModal();
+  }
+  function saveBaseUrl() {
+    const v = ($("#baseUrlEdit").value || "").trim().replace(/\/+$/, "");
+    if (v) localStorage.setItem(LS_BASE, v); else localStorage.removeItem(LS_BASE);
+    toast("已保存后端地址"); closeModal(); renderSettings();
+  }
+  async function openModuleListEditor(mod) {
+    const ui = MOD_UI[mod]; if (!ui) return;
+    $("#modalBox").innerHTML = `
+      <div class="modal-header"><span class="modal-title">${ui.label}管理</span><button class="modal-close" onclick="closeModal()">✕</button></div>
+      <div class="modal-body">
+        <div class="search"><input id="${mod}Search" placeholder="搜索${ui.label}…" oninput="renderModuleList('${mod}')"><button class="btn sec" onclick="renderModuleList('${mod}')">搜</button></div>
+        <div id="${mod}List"></div>
+      </div>
+      <div class="modal-footer"><button class="btn sec" style="flex:1" onclick="closeModal()">关闭</button><button class="btn ok" style="flex:1" onclick="openModuleEditor('${mod}',null)">＋ 新建</button></div>`;
+    openModal();
+    renderModuleList(mod);
+  }
+
   // ---------- 通用模块（课时/考试/知识点/记录）----------
-  const WD = ["日", "一", "二", "三", "四", "五", "六"];
   const MOD_UI = {
     schedule: {
       label: "排课",
@@ -924,8 +1249,8 @@
   }
 
   // 暴露给 inline onclick
-  window.doLogin = doLogin; window.switchTab = switchTab; window.loadQuestions = () => applyFilter();
-  window.refreshData = refreshData;
+  window.doLogin = doLogin;
+  window.refreshData = refreshData; window.applyFilter = applyFilter; window.debounce = debounce;
   window.loadMore = showMore;
   window.setTypeFilter = setTypeFilter; window.openKpSheet = openKpSheet; window.closeKpSheet = closeKpSheet;
   window.renderKpTree = renderKpTree; window.pickKp = pickKp;
@@ -935,14 +1260,18 @@
   window.openDetail = openDetail; window.openEditor = openEditor; window.saveQ = saveQ;
   window.delQ = delQ; window.closeModal = closeModal; window.openPaper = openPaper;
   window.downloadPaper = downloadPaper;
-  window.openStudent = openStudent; window.saveStudent = saveStudent;
-  window.renderComposePool = renderComposePool; window.addToCompose = addToCompose;
-  window.removeFromCompose = removeFromCompose; window.clearCompose = clearCompose;
-  window.smartCompose = smartCompose; window.previewCompose = previewCompose; window.saveCompose = saveCompose;
+  window.switchMain = switchMain; window.qSub = qSub; window.schedSub = schedSub;
+  window.renderStudents = renderStudents; window.openStudentEditor = openStudentEditor; window.saveStudentEditor = saveStudentEditor; window.doRecharge = doRecharge;
+  window.doComposeSave = doComposeSave; window.commitComposeSave = commitComposeSave; window.clearComposeSel = clearComposeSel; window.openComposeModal = openComposeModal;
+  window.renderMyPapers = renderMyPapers; window.renderAllPapers = renderAllPapers;
+  window.renderScheduleGrid = renderScheduleGrid; window.schedulePrevWeek = schedulePrevWeek; window.scheduleNextWeek = scheduleNextWeek;
+  window.scheduleGotoThisWeek = scheduleGotoThisWeek; window.scheduleCopyWeekToNext = scheduleCopyWeekToNext;
+  window.scheduleOpenAddFor = scheduleOpenAddFor; window.scheduleCheckin = scheduleCheckin; window.scheduleDelete = scheduleDelete; window.scheduleSaveForm = scheduleSaveForm;
+  window.renderAddQForm = renderAddQForm; window.saveNewQuestion = saveNewQuestion;
+  window.renderSettings = renderSettings; window.openBaseUrlEditor = openBaseUrlEditor; window.saveBaseUrl = saveBaseUrl; window.openModuleListEditor = openModuleListEditor;
   window.renderModuleList = renderModuleList; window.openModuleDetail = openModuleDetail;
   window.openModuleEditor = openModuleEditor; window.saveModule = saveModule; window.delModule = delModule;
-  window.openFab = openFab;
-  window.openSidebar = openSidebar; window.closeSidebar = closeSidebar; window.renderDashboard = renderDashboard;
+  window.logout = logout;
 
   // 全局事件委托：题库卡片（详情/答案/组卷/错题/知识点/图片放大）
   document.getElementById("qList").addEventListener("click", qListClick);
@@ -951,188 +1280,5 @@
     if (img) showLightbox(img.src);
   });
 
-  // ---------- 可移动弧形导航 FAB（取代左上角抽屉） ----------
-  const NAV_ITEMS = [
-    { ico: "🏠", label: "首页", act: () => switchTab("dashboard") },
-    { ico: "📚", label: "题库", act: () => switchTab("questions") },
-    { ico: "📕", label: "错题", act: () => switchTab("wrong") },
-    { ico: "🧩", label: "组卷/试卷", subs: [
-        { label: "组卷", act: () => switchTab("compose") },
-        { label: "试卷", act: () => switchTab("papers") },
-    ] },
-    { ico: "👥", label: "学生/排课/课时", subs: [
-        { label: "学生", act: () => switchTab("students") },
-        { label: "排课", act: () => switchTab("schedule") },
-        { label: "课时", act: () => switchTab("records") },
-    ] },
-    { ico: "📋", label: "考试", act: () => switchTab("exams") },
-    { ico: "💡", label: "知识点", act: () => switchTab("knowledgePoints") },
-    { ico: "➕", label: "新建", act: () => { closeArc(); openFab(); } },
-    { ico: "⏻", label: "退出", act: () => { closeArc(); logout(); } },
-  ];
-  const navFab = document.getElementById("navFab");
-  const arcLayer = document.getElementById("arcLayer");
-  const arcBackdrop = document.getElementById("arcBackdrop");
-  const arcSub = document.getElementById("arcSub");
-  let arcOpen = false;
-  let subOpen = false;
-
-  function buildArcItems() {
-    NAV_ITEMS.forEach((it) => {
-      const el = document.createElement("div");
-      el.className = "arc-item";
-      el.innerHTML = '<span class="ico">' + it.ico + '</span><span class="lbl">' + it.label + "</span>";
-      el.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (it.subs) openSub(it);
-        else { closeArc(); it.act(); }
-      });
-      arcLayer.appendChild(el);
-      it.el = el;
-    });
-  }
-  function navPos() {
-    let left = parseFloat(navFab.style.left);
-    let top = parseFloat(navFab.style.top);
-    if (isNaN(left)) left = window.innerWidth - 74;
-    if (isNaN(top)) top = window.innerHeight - 92;
-    return { left, top };
-  }
-  function saveNavPos() {
-    const p = navPos();
-    try { localStorage.setItem("navFabPos", JSON.stringify(p)); } catch (e) {}
-  }
-  function restoreNavPos() {
-    try {
-      const s = JSON.parse(localStorage.getItem("navFabPos") || "null");
-      if (s && typeof s.left === "number" && typeof s.top === "number") {
-        navFab.style.left = s.left + "px";
-        navFab.style.top = s.top + "px";
-        return;
-      }
-    } catch (e) {}
-    navFab.style.left = (window.innerWidth - 74) + "px";
-    navFab.style.top = (window.innerHeight - 92) + "px";
-  }
-  function openArc() {
-    if (arcOpen) return;
-    arcOpen = true;
-    const fr = navFab.getBoundingClientRect();
-    const fx = fr.left + fr.width / 2, fy = fr.top + fr.height / 2;
-    const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
-    // 从 FAB 指向屏幕中心的“外向”方向展开，保证按钮朝屏幕内侧、不易溢出
-    const ang0 = Math.atan2(cy - fy, cx - fx);
-    const n = NAV_ITEMS.length;
-    const fan = Math.min(2.7, Math.max(1.4, (n - 1) * 0.2));   // 总张角(弧度)
-    const R = Math.min(210, Math.max(150, n * 14 + 40));
-    const start = ang0 - fan / 2;
-    NAV_ITEMS.forEach((it, i) => {
-      const a = start + fan * (i / Math.max(1, n - 1));
-      let ax = fx + R * Math.cos(a), ay = fy + R * Math.sin(a);
-      ax = Math.max(32, Math.min(window.innerWidth - 32, ax));
-      ay = Math.max(84, Math.min(window.innerHeight - 32, ay));
-      const el = it.el;
-      el.style.left = (ax - 27) + "px";   // arc-item 54px，向左上偏移使其居中
-      el.style.top = (ay - 27) + "px";
-      el.style.setProperty("--dx", (fx - ax) + "px");
-      el.style.setProperty("--dy", (fy - ay) + "px");
-      el.style.transitionDelay = (i * 0.03) + "s";   // 错峰展开，更灵动
-      void el.offsetWidth;                            // 强制重排，确保过渡触发
-      el.classList.add("open");
-    });
-    arcBackdrop.classList.add("show");
-    navFab.classList.add("active");
-    navFab.textContent = "✕";
-  }
-  function closeArc() {
-    if (!arcOpen) return;
-    arcOpen = false;
-    const n = NAV_ITEMS.length;
-    NAV_ITEMS.forEach((it, i) => {
-      const el = it.el;
-      el.style.transitionDelay = ((n - 1 - i) * 0.02) + "s";  // 收起也错峰
-      el.classList.remove("open");
-    });
-    arcBackdrop.classList.remove("show");
-    navFab.classList.remove("active");
-    navFab.textContent = "☰";
-    if (arcSub) { arcSub.classList.remove("show"); arcSub.innerHTML = ""; }
-    subOpen = false;
-  }
-  function openSub(item) {
-    // 收起主菜单圆形按钮，仅保留并展示子菜单气泡
-    NAV_ITEMS.forEach(it => it.el && it.el.classList.remove("open"));
-    arcSub.innerHTML = "";
-    (item.subs || []).forEach(s => {
-      const b = document.createElement("button");
-      b.className = "arc-sub-btn";
-      b.textContent = s.label;
-      b.addEventListener("click", (e) => { e.stopPropagation(); closeArc(); s.act(); });
-      arcSub.appendChild(b);
-    });
-    const fr = navFab.getBoundingClientRect();
-    const fx = fr.left + fr.width / 2, fy = fr.top + fr.height / 2;
-    const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
-    const ang = Math.atan2(cy - fy, cx - fx);
-    const R = 64;
-    let px = fx + R * Math.cos(ang), py = fy + R * Math.sin(ang);
-    px = Math.max(72, Math.min(window.innerWidth - 72, px));
-    py = Math.max(100, Math.min(window.innerHeight - 72, py));
-    arcSub.style.left = px + "px";
-    arcSub.style.top = py + "px";
-    void arcSub.offsetWidth;
-    arcSub.classList.add("show");
-    subOpen = true;
-  }
-  function toggleArc() { if (arcOpen) closeArc(); else openArc(); }
-
-  // 拖动 / 长按移动：短按=展开收起；长按或拖动=移动按钮（位置持久化）
-  let pressTimer = null, dragging = false, moved = false, pressOnFab = false, sx = 0, sy = 0, sl = 0, stp = 0;
-  navFab.addEventListener("pointerdown", (e) => {
-    e.preventDefault();
-    moved = false; dragging = false; pressOnFab = true;
-    sx = e.clientX; sy = e.clientY;
-    const p = navPos(); sl = p.left; stp = p.top;
-    pressTimer = setTimeout(() => { dragging = true; navFab.classList.add("dragging"); }, 350);
-  });
-  window.addEventListener("pointermove", (e) => {
-    if (!pressTimer && !dragging) return;
-    if (pressTimer && !dragging) {
-      if (Math.hypot(e.clientX - sx, e.clientY - sy) > 8) {
-        dragging = true; clearTimeout(pressTimer); navFab.classList.add("dragging");
-      }
-    }
-    if (dragging) {
-      moved = true;
-      let nl = sl + (e.clientX - sx), nt = stp + (e.clientY - sy);
-      nl = Math.max(4, Math.min(window.innerWidth - 60, nl));
-      nt = Math.max(4, Math.min(window.innerHeight - 60, nt));
-      navFab.style.left = nl + "px";
-      navFab.style.top = nt + "px";
-    }
-  });
-  window.addEventListener("pointerup", () => {
-    clearTimeout(pressTimer); pressTimer = null;
-    const wasOnFab = pressOnFab;
-    pressOnFab = false;
-    if (dragging) {
-      dragging = false; navFab.classList.remove("dragging");
-      if (moved) { saveNavPos(); closeArc(); return; }
-    }
-    if (wasOnFab && !moved) toggleArc();   // 仅在 FAB 上短按才展开/收起，点别处不触发
-  });
-  window.addEventListener("pointercancel", () => {
-    clearTimeout(pressTimer); pressTimer = null;
-    dragging = false; pressOnFab = false; navFab.classList.remove("dragging");
-  });
-  window.addEventListener("pointercancel", () => {
-    clearTimeout(pressTimer); pressTimer = null;
-    dragging = false; navFab.classList.remove("dragging");
-  });
-  window.addEventListener("resize", () => { if (!arcOpen) restoreNavPos(); });
-
-  // 启动
-  buildArcItems();
-  restoreNavPos();
   if (token) enterMain();
 })();
