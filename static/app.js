@@ -537,6 +537,8 @@
   async function openPaper(id) {
     const it = (DB.data.papers || []).find(x => x.id === id);
     const b = (it && it.body) || {};
+    const base = localStorage.getItem(LS_BASE) || "";
+    const title = b.title || "试卷";
     const ids = b.questionIds || [];
     let qs = "";
     for (const qid of ids.slice(0, 50)) {
@@ -550,31 +552,31 @@
     }
     $("#modalBox").innerHTML = `<div class="modal-header"><span class="modal-title">📄 ${esc(b.title || "试卷")}</span><button class="modal-close" onclick="closeModal()">✕</button></div>
       <div class="modal-body"><div class="muted">${esc(b.note || "")}</div>${qs}</div>
-      <div class="modal-footer">
-        <button class="btn ok" style="flex:1" onclick="downloadPaper('${esc(id)}')">⬇ 下载 Word 试卷</button>
+      <div class="modal-footer" style="flex-wrap:wrap;gap:8px">
+        <button class="btn ok" style="flex:1 1 100%" onclick="downloadPaper('${esc(id)}')">⬇ 下载 Word 试卷</button>
+        <a class="btn sec" style="flex:1;text-align:center;text-decoration:none"
+           href="${base}/api/papers/${esc(id)}/docx" target="_blank" rel="noopener"
+           onclick="closeModal()">用浏览器打开下载</a>
         <button class="btn sec" style="flex:1" onclick="closeModal()">关闭</button>
       </div>`;
     openModal();
   }
-  // 用 JS fetch+blob 触发下载，兼容手机端浏览器（直接 <a download> 在部分 webview 不生效）
-  async function downloadPaper(id) {
-    try {
-      const it = (DB.data.papers || []).find(x => x.id === id);
-      const title = (it && it.body && it.body.title) || "试卷";
-      const base = localStorage.getItem(LS_BASE) || "";
-      toast("正在生成试卷…");
-      const r = await fetch(base + "/api/papers/" + encodeURIComponent(id) + "/docx", {
-        headers: token ? { Authorization: "Bearer " + token } : {}
-      });
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      const blob = await r.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = title + ".docx";
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 4000);
-      toast("已开始下载");
-    } catch (e) { toast("下载失败：" + e.message); }
+  // docx 接口无需鉴权且返回 Content-Disposition: attachment；直接用真实 URL 触发系统原生下载，
+  // 这样文件会落到 Downloads 目录（文件管理器可见）。blob 方案在微信等 webview 会被拦截、找不到文件。
+  function downloadPaper(id) {
+    const it = (DB.data.papers || []).find(x => x.id === id);
+    const title = (it && it.body && it.body.title) || "试卷";
+    const base = localStorage.getItem(LS_BASE) || "";
+    const url = base + "/api/papers/" + encodeURIComponent(id) + "/docx";
+    toast("正在下载…");
+    const a = document.createElement("a");
+    a.href = url; a.download = title + ".docx";
+    a.target = "_blank"; a.rel = "noopener";
+    document.body.appendChild(a); a.click(); a.remove();
+    // webview（微信/企业微信）常常拦截自动下载；1.5s 后提示用浏览器直链兜底
+    const ua = navigator.userAgent || "";
+    const inWebview = /MicroMessenger|WXWork|QQ\/|Weibo|Alipay/i.test(ua);
+    if (inWebview) setTimeout(() => toast("若未自动保存，请点弹窗底部「用浏览器打开下载」"), 1500);
   }
 
   // ---------- 学生（本地缓存） ----------
