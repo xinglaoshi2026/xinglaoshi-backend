@@ -1,3 +1,5 @@
 data/
 _shot_*.png
 pull_sample.json
+pull_*.json
+*.docx
