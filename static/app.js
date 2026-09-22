@@ -298,34 +298,21 @@
     qShown += slice.length;
     $("#qList").appendChild(frag);
   }
-  const TYPE_BADGE = { "选择题": "tag", "多选题": "badge badge-info", "填空题": "badge badge-success", "解答题": "badge badge-warning", "计算题": "badge badge-warning", "实验题": "badge badge-info", "作图题": "badge badge-info", "综合题": "badge badge-danger" };
   function qCard(it, wrongSet) {
     const b = it.body || {};
-    const typeCls = TYPE_BADGE[b.type] || "tag";
-    const diff = b.difficulty || "";
     const inCompose = composeSet.includes(it.id);
     const isWrong = wrongSet && wrongSet.has(it.id);
-    const badges = [];
-    if (b.grade) badges.push('<span class="badge badge-gray">' + esc(b.grade) + "</span>");
-    if (diff) badges.push('<span class="badge ' + (diff === "基础" ? "badge-success" : diff === "拔高" ? "badge-danger" : "badge-warning") + '">' + esc(diff) + "</span>");
-    if (b.qid) badges.push('<span class="badge badge-gray">' + esc(b.qid) + "</span>");
     const div = document.createElement("div");
     div.className = "card q";
     div.innerHTML =
-      '<div class="q-head">' +
-        '<span class="' + typeCls + '">' + esc(b.type || "题") + "</span>" +
-        '<span class="grow"></span>' + badges.join("") +
-        (isWrong ? '<span class="badge badge-danger">错题</span>' : "") +
-      "</div>" +
-      (b.kpId ? '<div class="q-kp-line"><span class="q-kp" data-act="kp" data-id="' + esc(b.kpId) + '" data-kp="' + esc(b.kpId) + '">💡 ' + esc(kpPath(b.kpId)) + "</span></div>" : "") +
       '<div class="q-body-wrap" data-act="detail" data-id="' + it.id + '"><div class="q-content">' + renderRich(b.content) + "</div></div>" +
-      '<button class="q-ans-toggle" data-act="answer" data-id="' + it.id + '">👁 查看答案 / 解析</button>' +
-      '<div class="q-ans-box" id="ans-' + it.id + '"><div class="ans-label">答案 / 解析</div>' + (renderRich(b.answer) || "—") + (b.analysis ? '<div style="margin-top:6px">' + renderRich(b.analysis) + "</div>" : "") + "</div>" +
       '<div class="q-actions">' +
-        '<button class="btn sec sm" data-act="detail" data-id="' + it.id + '">🔍 详情</button>' +
-        '<button class="btn sm' + (inCompose ? " ok" : "") + '" data-act="compose" data-id="' + it.id + '">' + (inCompose ? "✕ 取消组卷" : "🧩 加入组卷") + "</button>" +
-        '<button class="btn danger sm' + (isWrong ? " marked" : "") + '" data-act="wrong" data-id="' + it.id + '">' + (isWrong ? "✓ 已标错题" : "📕 标记错题") + "</button>" +
-      "</div>";
+        '<button class="q-link" data-act="answer" data-id="' + it.id + '">查看解析</button>' +
+        '<button class="q-link" data-act="detail" data-id="' + it.id + '">详情</button>' +
+        '<button class="q-link' + (inCompose ? " on" : "") + '" data-act="compose" data-id="' + it.id + '">' + (inCompose ? "✓ 已加入组卷" : "加入组卷") + "</button>" +
+        '<button class="q-link danger' + (isWrong ? " on" : "") + '" data-act="wrong" data-id="' + it.id + '">' + (isWrong ? "✓ 已标错题" : "标错题") + "</button>" +
+      "</div>" +
+      '<div class="q-ans-box" id="ans-' + it.id + '"><div class="ans-label">答案 / 解析</div>' + (renderRich(b.answer) || "—") + (b.analysis ? '<div style="margin-top:6px">' + renderRich(b.analysis) + "</div>" : "") + "</div>";
     return div;
   }
   // 题库列表统一事件委托（详情/答案/组卷/错题/知识点/图片放大）
@@ -340,7 +327,7 @@
     else if (act === "answer") {
       const box = document.getElementById("ans-" + id);
       box.classList.toggle("open");
-      t.innerHTML = box.classList.contains("open") ? "🙈 收起答案 / 解析" : "👁 查看答案 / 解析";
+      t.innerHTML = box.classList.contains("open") ? "收起解析" : "查看解析";
     }
     else if (act === "compose") quickCompose(id);
     else if (act === "wrong") markWrong(id);
@@ -372,7 +359,15 @@
   }
 
   // ---------- 知识点选择抽屉 ----------
-  function openKpSheet() { $("#kpSearch").value = ""; renderKpTree(); $("#kpSheet").classList.remove("hidden"); }
+  // kpSheet 抽屉复用模式：null=题库筛选；"add"=添加题目表单选知识点
+  let kpSheetFor = null;
+  let addQKp = ""; // 添加题目表单当前选中的知识点
+  function openKpSheet(forWhat) {
+    kpSheetFor = forWhat || null;
+    $("#kpSearch").value = "";
+    renderKpTree();
+    $("#kpSheet").classList.remove("hidden");
+  }
   function closeKpSheet() { $("#kpSheet").classList.add("hidden"); }
   // 选中节点的祖先链（用于再次打开抽屉时自动展开到当前筛选位置）
   function kpAncestors(id) {
@@ -384,8 +379,11 @@
   function renderKpTree() {
     const kw = ($("#kpSearch").value || "").trim().toLowerCase();
     const box = $("#kpTree");
-    const anc = qf.kpId ? kpAncestors(qf.kpId) : new Set();
-    const allBtn = '<div class="kp-row' + (qf.kpId ? "" : " sel") + '" data-kp="" onclick="pickKp(\'\')">' +
+    const isAdd = kpSheetFor === "add";
+    const curSel = isAdd ? addQKp : qf.kpId;
+    const anc = curSel ? kpAncestors(curSel) : new Set();
+    const allBtn = isAdd ? "" :
+      '<div class="kp-row' + (curSel ? "" : " sel") + '" data-kp="" onclick="pickKp(\'\')">' +
       '<span class="kp-toggle leaf">·</span><span class="kp-name">📚 全部知识点</span>' +
       '<span class="kp-cnt">' + (DB.data.questions || []).length + " 题</span></div>";
     function nodeHtml(id) {
@@ -395,7 +393,7 @@
       if (kw && !String(b.name || "").toLowerCase().includes(kw) && !kids.some(k => String(kpMap[k].name || "").toLowerCase().includes(kw))) return "";
       const hasKids = kids.length > 0;
       const expanded = hasKids && anc.has(id);
-      return '<div><div class="kp-row' + (qf.kpId === id ? " sel" : "") + '" data-kp="' + esc(id) + '" onclick="pickKp(\'' + esc(id) + '\')">' +
+      return '<div><div class="kp-row' + (curSel === id ? " sel" : "") + '" data-kp="' + esc(id) + '" onclick="pickKp(\'' + esc(id) + '\')">' +
         '<span class="kp-toggle' + (hasKids ? "" : " leaf") + (expanded ? " open" : "") + '" onclick="event.stopPropagation();this.classList.toggle(\'open\');this.closest(\'.kp-row\').parentElement.querySelector(\':scope > .kp-kids\').classList.toggle(\'open\')">' + (hasKids ? "▶" : "") + "</span>" +
         '<span class="kp-name">' + esc(b.name || id) + "</span>" +
         '<span class="kp-cnt">' + cnt + " 题</span></div>" +
@@ -405,12 +403,22 @@
     const roots = (kpKids[""] || []).slice().sort((a, c) => String(kpMap[a].name).localeCompare(String(kpMap[c].name), "zh-CN"));
     box.innerHTML = allBtn + roots.map(nodeHtml).join("");
     // 滚动到当前选中的知识点，方便接着选同级/相邻节点
-    if (qf.kpId) {
+    if (curSel) {
       const sel = box.querySelector(".kp-row.sel");
       if (sel && sel.scrollIntoView) setTimeout(() => sel.scrollIntoView({ block: "center" }), 60);
     }
   }
-  function pickKp(id) { closeKpSheet(); setKpFilter(id); window.scrollTo(0, 0); }
+  function pickKp(id) {
+    closeKpSheet();
+    if (kpSheetFor === "add") {
+      addQKp = id || "";
+      const lbl = $("#nq_kp_btn");
+      if (lbl) { lbl.textContent = addQKp ? "📍 " + kpPath(addQKp) : "选择知识点"; lbl.classList.toggle("on", !!addQKp); }
+      kpSheetFor = null;
+      return;
+    }
+    setKpFilter(id); window.scrollTo(0, 0);
+  }
 
   // ---------- 标记错题 ----------
   function markWrong(qId) {
@@ -1078,11 +1086,12 @@
   // ---------- 添加题目（手机端新建题目，云端同步） ----------
   function renderAddQForm() {
     const box = $("#addQForm");
+    addQKp = "";
     box.innerHTML = `
       <label class="kv">题型</label>
       <select id="nq_type"><option>选择题</option><option>多选题</option><option>填空题</option><option>解答题</option><option>计算题</option><option>实验题</option><option>作图题</option><option>综合题</option></select>
-      <label class="kv">知识点ID(kpId)</label>
-      <input id="nq_kp" placeholder="如 qb3_1_1_1_T1">
+      <label class="kv">所属知识点</label>
+      <button type="button" id="nq_kp_btn" class="filter-select" onclick="openKpSheet('add')">选择知识点</button>
       <label class="kv">题干（可含 media://questions/&lt;id&gt;/c/img_1.png 引用图片）</label>
       <textarea id="nq_content"></textarea>
       <label class="kv">答案</label>
@@ -1100,7 +1109,7 @@
     const body = {
       id: "q_" + Date.now().toString(36),
       type: $("#nq_type").value,
-      kpId: ($("#nq_kp").value || "").trim(),
+      kpId: addQKp || "",
       content: ($("#nq_content").value || "").trim(),
       answer: ($("#nq_answer").value || "").trim(),
       analysis: ($("#nq_analysis").value || "").trim(),

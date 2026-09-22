@@ -85,16 +85,17 @@
     background:var(--primary-bg);padding:2px 9px;border-radius:6px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .q-kp:active{background:#E0E7FF}
   .q-body-wrap{padding:4px 14px 0;cursor:pointer}
-  .q-ans-toggle{margin:8px 14px 0;display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:500;
-    color:var(--info);background:var(--info-bg);padding:6px 12px;border-radius:8px}
-  .q-ans-toggle:active{background:#DBEAFE}
   .q-ans-box{margin:8px 14px 0;display:none;border-left:3px solid var(--info);background:var(--info-bg);
     border-radius:0 8px 8px 0;padding:10px 12px;font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-word}
   .q-ans-box.open{display:block;animation:fadeIn .18s ease}
   .q-ans-box .ans-label{font-weight:600;color:var(--info);margin-bottom:4px}
-  .q-actions{display:flex;gap:8px;border-top:1px solid var(--border);margin-top:12px;padding:9px 12px;background:#FAFAFB}
-  .q-actions .btn{flex:1;padding:8px 2px;font-size:13px;gap:4px}
-  .q-actions .btn.marked{background:var(--danger);color:#fff;border-color:var(--danger)}
+  /* 题卡操作行：无边框纯文字链接，简约小巧，给题目内容腾空间 */
+  .q-actions{display:flex;align-items:center;gap:4px;margin-top:4px;padding:4px 14px 2px}
+  .q-link{background:none;border:none;box-shadow:none;padding:4px 6px;font-size:11px;line-height:1;
+    color:#7A7F8A;white-space:nowrap;-webkit-tap-highlight-color:transparent}
+  .q-link:active{color:var(--primary)}
+  .q-link.on{color:var(--primary);font-weight:600}
+  .q-link.danger.on{color:var(--danger)}
 
   /* ===== 筛选栏（下拉菜单形式） ===== */
   .filter-bar{background:var(--bg);padding:2px 0 6px}
