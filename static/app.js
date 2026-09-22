@@ -794,8 +794,9 @@
     } catch (e) { return false; }
   }
 
-  // 下载面板：在 webview 里 blob 下载会被静默拦截，因此用真实链接 + 复制链接兜底，
-  // 用户可在系统浏览器打开链接下载，或长按链接另存为。
+  // 下载面板：微信/QQ 等 webview 会拦截所有 <a> 的下载与新窗口打开（blob 和真实链接都静默失败），
+  // 唯一可靠的是 JS 复制到剪贴板。因此主按钮设为「复制链接」，并在「打开/下载」按钮里
+  // 尝试 window.open 的同时自动复制链接兜底，确保无论何种环境都能拿到链接去系统浏览器下载。
   function showDownloadPanel(url, blobUrl, fname) {
     let box = $("#downloadPanel");
     if (!box) {
@@ -803,33 +804,49 @@
       box.id = "downloadPanel";
       box.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:9999;padding:18px";
       document.body.appendChild(box);
+      const st = document.createElement("style");
+      st.textContent = ".dp-btn{display:block;width:100%;box-sizing:border-box;text-align:center;padding:13px;border-radius:10px;border:none;background:#2f7d4f;color:#fff;font-size:15px;text-decoration:none;cursor:pointer}.dp-ok{background:#1a73e8}.dp-ghost{background:#eee;color:#333}";
+      document.head.appendChild(st);
     }
-    const sysBtn = blobUrl
-      ? '<a class="dp-btn dp-ok" href="' + blobUrl + '" download="' + esc(fname) + '" rel="noopener">⬇ 保存到本机（系统浏览器）</a>'
+    const ua = navigator.userAgent || "";
+    const isWV = /MicroMessenger|WXWork|QQ\/|Weibo|Alipay|webview/i.test(ua);
+    const sysBtn = (blobUrl && !isWV)
+      ? '<button class="dp-btn dp-ok" id="dpSave">⬇ 保存到本机（系统浏览器）</button>'
       : "";
     box.innerHTML =
       '<div style="background:#fff;border-radius:14px;max-width:340px;width:100%;padding:18px 16px;box-shadow:0 8px 30px rgba(0,0,0,.25)">' +
         '<div style="font-size:16px;font-weight:700;margin-bottom:4px">下载试卷</div>' +
         '<div style="font-size:13px;color:#555;margin-bottom:14px;word-break:break-all">文件名：<b>' + esc(fname) + '</b></div>' +
+        '<button class="dp-btn dp-ok" id="dpOpen">🌐 打开 / 下载（自动复制链接）</button>' +
         sysBtn +
-        '<a class="dp-btn" href="' + esc(url) + '" target="_blank" rel="noopener" style="margin-top:10px">🔗 用浏览器打开 / 下载</a>' +
         '<button class="dp-btn" id="dpCopy" style="margin-top:10px">📋 复制下载链接</button>' +
         '<div id="dpHint" style="font-size:12px;color:#888;margin-top:12px;line-height:1.6">' +
-          '若点是没反应：① 在微信里点右上角 ⋯ →「用浏览器打开」本页，再点上面的链接；' +
-          '② 或点「复制下载链接」，粘贴到手机系统浏览器（Chrome/Safari）地址栏打开即可下载。' +
+          (isWV
+            ? '当前在微信/QQ 内，链接与文件会被拦截。请点「复制下载链接」，再打开手机<b>系统浏览器</b>（Chrome/Safari）粘贴打开即可下载；或点右上角 ⋯ →「用浏览器打开」本页后直接下载。'
+            : '可直接点「打开 / 下载」；若无反应，点「复制下载链接」粘贴到浏览器地址栏打开。') +
         '</div>' +
-        '<button class="dp-btn" id="dpClose" style="margin-top:14px;background:#eee;color:#333">关闭</button>' +
+        '<button class="dp-btn dp-ghost" id="dpClose" style="margin-top:14px">关闭</button>' +
       '</div>';
-    const styleOnce = document.createElement("style");
-    styleOnce.textContent = ".dp-btn{display:block;width:100%;box-sizing:border-box;text-align:center;padding:12px;border-radius:10px;border:none;background:#2f7d4f;color:#fff;font-size:15px;text-decoration:none;cursor:pointer}.dp-ok{background:#1a73e8}";
-    document.head.appendChild(styleOnce);
     box.style.display = "flex";
     const close = () => { box.style.display = "none"; if (blobUrl) setTimeout(() => URL.revokeObjectURL(blobUrl), 1000); };
+    const afterCopy = (ok) => {
+      $("#dpHint").style.color = "#2f7d4f";
+      $("#dpHint").innerHTML = ok
+        ? '✅ 链接已复制：<br>' + esc(url) + '<br>粘贴到手机系统浏览器打开即可下载'
+        : '复制失败，请长按下方链接手动复制：<br>' + esc(url);
+    };
     $("#dpClose").onclick = close;
     box.onclick = (e) => { if (e.target === box) close(); };
-    $("#dpCopy").onclick = () => {
-      copyText(url).then(() => { $("#dpHint").textContent = "已复制链接：" + url + "  （粘贴到手机系统浏览器打开即可下载）"; toast("下载链接已复制"); });
+    if ($("#dpSave")) $("#dpSave").onclick = () => { const a = document.createElement("a"); a.href = blobUrl; a.download = fname; document.body.appendChild(a); a.click(); a.remove(); };
+    // 主按钮：先复制链接（保证拿到），再尝试 window.open 拉起系统浏览器
+    $("#dpOpen").onclick = () => {
+      copyText(url).then(ok => {
+        afterCopy(ok);
+        toast(ok ? "链接已复制，正在尝试打开…" : "复制链接后粘贴到浏览器打开");
+        try { const w = window.open(url, "_blank"); if (!w) {/* 被拦截：链接已复制兜底 */} } catch (e) {}
+      });
     };
+    $("#dpCopy").onclick = () => copyText(url).then(ok => { afterCopy(ok); toast(ok ? "下载链接已复制" : "复制失败，请长按链接"); });
   }
 
   // ---------- 学生（手机端增删改 + 充值，云端同步） ----------
