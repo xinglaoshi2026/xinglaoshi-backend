@@ -1183,16 +1183,8 @@
     let totalArrears = 0, totalRemain = 0;
     students.forEach(s => { const b = s.body || {}; totalArrears += parseFloat(b.arrears) || 0; totalRemain += parseFloat(b.hours) || 0; });
 
-    // 顶部统计（无边框，浅色底）
-    let html = '<div class="rec-stats">' +
-      '<div class="rec-stat"><div class="l">本月消课</div><div class="v">' + fmtLessons(monthConsume) + '</div><div class="s">次课 / ' + monthRecs.filter(isConsume).length + ' 次</div></div>' +
-      '<div class="rec-stat"><div class="l">累计消课</div><div class="v">' + fmtLessons(totalConsume) + '</div><div class="s">次课</div></div>' +
-      '<div class="rec-stat"><div class="l">本月收入</div><div class="v">¥' + fmtLessons(monthIncome) + '</div><div class="s">充值 ' + monthRecs.filter(r => (r.body || {}).type === "recharge").length + ' 笔</div></div>' +
-      '<div class="rec-stat"><div class="l">总欠费课时</div><div class="v">' + fmtLessons(totalArrears) + '</div><div class="s">剩余 ' + fmtLessons(totalRemain) + ' 次</div></div>' +
-      '</div>';
-
     // 年级→学生→上课日期 表格（同电脑端）
-    if (!students.length) { box.innerHTML = html + '<div class="center">还没有学生，先去「学生」页添加</div>'; return; }
+    if (!students.length) { box.innerHTML = '<div class="center">还没有学生，先去「学生」页添加</div>'; return; }
     const byName = {};
     recs.filter(isConsume).forEach(r => {
       const b = r.body || {};
@@ -1203,7 +1195,11 @@
     const byGrade = {};
     students.forEach(s => { const b = s.body || {}; const g = b.grade || "未设置年级"; (byGrade[g] = byGrade[g] || []).push(s); });
     const gradeColors = { "初二": "#c6e0b4", "初三": "#a9d08e", "高一": "#f4b183", "高二": "#9dc3e6", "高三": "#ffd966", "未设置年级": "#e2e3e5" };
-    const gradeEntries = Object.keys(byGrade).sort((a, b) => a.localeCompare(b, "zh"));
+    const gradeRank = ["高三", "高二", "高一", "初三", "初二", "初一", "六年级", "五年级", "四年级", "三年级", "二年级", "一年级", "未设置年级"];
+    const gradeEntries = Object.keys(byGrade).sort((a, b) => {
+      const ia = gradeRank.indexOf(a), ib = gradeRank.indexOf(b);
+      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    });
     const ordered = [];
     gradeEntries.forEach(g => byGrade[g].forEach(s => ordered.push(s)));
     const maxDates = Math.max(0, ...ordered.map(s => (byName[(s.body || {}).name] || []).length));
