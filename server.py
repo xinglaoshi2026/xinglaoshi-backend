@@ -364,6 +364,11 @@ def send_file(h, path, filename=None):
     h.send_response(200)
     h.send_header("Content-Type", mt)
     h.send_header("Content-Length", str(sz))
+    if path.endswith((".html", ".js", ".css")):
+        # 页面与样式不缓存，避免手机端拿到旧 CSS 出现新旧混合的界面
+        h.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        h.send_header("Pragma", "no-cache")
+        h.send_header("Expires", "0")
     if filename:
         h.send_header("Content-Disposition", f'inline; filename="{filename}"')
     h.send_cors()
