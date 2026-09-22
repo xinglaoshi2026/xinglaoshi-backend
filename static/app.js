@@ -452,12 +452,12 @@
     const existing = (DB.data.wrongNotes || []).find(it => (it.body || {}).questionId === qId && !(it.body || {}).resolved);
     const studentId = $("#wnStudent").value || "";
     const stu = (DB.data.students || []).find(s => s.id === studentId);
-    const base = existing ? existing.body : { id: "wn_" + Date.now().toString(36), source: "手机端", createdAt: Math.floor(Date.now() / 1000) };
+    const base = existing ? existing.body : { id: "wn_" + Date.now().toString(36), source: "手机端", createdAt: Date.now() };
     const body = Object.assign({}, base, {
       questionId: qId,
       studentId, studentName: stu ? ((stu.body || {}).name || "") : "",
       note: ($("#wnNote").value || "").trim(),
-      resolved: false, updatedAt: Math.floor(Date.now() / 1000)
+      resolved: false, updatedAt: Date.now()
     });
     try {
       if (existing) {
@@ -513,7 +513,7 @@
   async function toggleWrongResolved(id) {
     const it = (DB.data.wrongNotes || []).find(x => x.id === id);
     if (!it) return;
-    const body = Object.assign({}, it.body, { resolved: !it.body.resolved, updatedAt: Math.floor(Date.now() / 1000) });
+    const body = Object.assign({}, it.body, { resolved: !it.body.resolved, updatedAt: Date.now() });
     try {
       await api("PUT", "/api/wrongNotes/" + id, body);
       it.body = body; toast(body.resolved ? "已标为掌握 ✓" : "已标为未掌握"); loadWrong(); 
@@ -627,7 +627,7 @@
     const body = {
       id, type: $("#etype").value, kpId: $("#ekp").value.trim(),
       content: $("#econtent").value, answer: $("#eanswer").value, analysis: $("#eanalysis").value,
-      updatedAt: Math.floor(Date.now() / 1000)
+      updatedAt: Date.now()
     };
     try {
       if ($("#eid").value) await api("PUT", "/api/questions/" + id, body);
@@ -750,7 +750,7 @@
       title, note,
       questionIds: qids.slice(),
       source: "mobile",
-      createdAt: Math.floor(Date.now() / 1000)
+      createdAt: Date.now()
     };
     try {
       await api("POST", "/api/papers", body);
@@ -880,7 +880,7 @@
       hours: $("#sHours").value === "" ? 0 : Number($("#sHours").value),
       arrears: $("#sArrears").value === "" ? 0 : Number($("#sArrears").value),
       note: $("#sNote").value.trim(),
-      updatedAt: Math.floor(Date.now() / 1000)
+      updatedAt: Date.now()
     };
     if (!body.name) return toast("姓名不能为空");
     try {
@@ -898,11 +898,11 @@
     if (!it) return;
     const b = it.body || {};
     const newHours = (Number(b.hours) || 0) + hours;
-    const studentBody = Object.assign({}, b, { hours: newHours, updatedAt: Math.floor(Date.now() / 1000) });
+    const studentBody = Object.assign({}, b, { hours: newHours, updatedAt: Date.now() });
     const rec = {
       id: "rec_" + Date.now().toString(36), studentId: id, studentName: b.name || "",
       type: "recharge", hours: hours, date: todayStr(), topic: "充值 " + hours + " 课时",
-      note: "手机端充值", createdAt: Math.floor(Date.now() / 1000)
+      note: "手机端充值", createdAt: Date.now()
     };
     try {
       await api("PUT", "/api/students/" + id, studentBody);
@@ -1006,7 +1006,7 @@
       note: ($("#cNote").value || "").trim(),
       questionIds: composeSet.slice(),
       source: "mobile",
-      createdAt: Math.floor(Date.now() / 1000)
+      createdAt: Date.now()
     };
     try {
       await api("POST", "/api/papers", body);
@@ -1113,7 +1113,7 @@
       const b = s.body || {};
       const dup = dst.some(d => { const db = d.body || {}; return db.dayOfWeek === b.dayOfWeek && db.startTime === b.startTime && db.studentName === b.studentName; });
       if (dup) continue;
-      const copy = Object.assign({}, b, { id: "sch_" + Date.now().toString(36) + "_" + added, weekStart: dstKey, createdAt: Math.floor(Date.now() / 1000) });
+      const copy = Object.assign({}, b, { id: "sch_" + Date.now().toString(36) + "_" + added, weekStart: dstKey, createdAt: Date.now() });
       try { await api("POST", "/api/schedule", copy); added++; } catch (e) { toast("复制失败：" + e.message); }
     }
     if (added === 0) return toast("下一邻近周已有相同排课，无需复制");
@@ -1140,12 +1140,12 @@
         try {
           if (remain < lessons) {
             const newArrears = remain > 0 ? arrears + (lessons - remain) : arrears + lessons;
-            await api("PUT", "/api/students/" + student.id, Object.assign({}, sb, { hours: 0, arrears: newArrears, updatedAt: Math.floor(Date.now() / 1000) }));
-            await api("POST", "/api/records", { id: "rec_" + Date.now().toString(36), studentId: student.id, studentName: sb.name || "", type: "arrears", hours: lessons, durationHours: duration, date: dateStr, topic: "", note: "从排课表一键消课", createdAt: Math.floor(Date.now() / 1000) });
+            await api("PUT", "/api/students/" + student.id, Object.assign({}, sb, { hours: 0, arrears: newArrears, updatedAt: Date.now() }));
+            await api("POST", "/api/records", { id: "rec_" + Date.now().toString(36), studentId: student.id, studentName: sb.name || "", type: "arrears", hours: lessons, durationHours: duration, date: dateStr, topic: "", note: "从排课表一键消课", createdAt: Date.now() });
             toast("已记录欠费上课，欠费 " + fmtLessons(newArrears) + " 次课");
           } else {
-            await api("PUT", "/api/students/" + student.id, Object.assign({}, sb, { hours: remain - lessons, updatedAt: Math.floor(Date.now() / 1000) }));
-            await api("POST", "/api/records", { id: "rec_" + Date.now().toString(36), studentId: student.id, studentName: sb.name || "", type: "consume", hours: lessons, durationHours: duration, date: dateStr, topic: "", note: "从排课表一键消课", createdAt: Math.floor(Date.now() / 1000) });
+            await api("PUT", "/api/students/" + student.id, Object.assign({}, sb, { hours: remain - lessons, updatedAt: Date.now() }));
+            await api("POST", "/api/records", { id: "rec_" + Date.now().toString(36), studentId: student.id, studentName: sb.name || "", type: "consume", hours: lessons, durationHours: duration, date: dateStr, topic: "", note: "从排课表一键消课", createdAt: Date.now() });
             toast("上课成功，消耗 " + fmtLessons(lessons) + " 次课");
           }
           await loadPull(true); renderScheduleGrid();
@@ -1304,7 +1304,7 @@
       content: ($("#nq_content").value || "").trim(),
       answer: ($("#nq_answer").value || "").trim(),
       analysis: "",
-      createdAt: Math.floor(Date.now() / 1000)
+      createdAt: Date.now()
     };
     if (!body.content) return toast("题干不能为空");
     try {
@@ -1478,7 +1478,7 @@
       if (f.type === "number") v = v === "" ? 0 : Number(v);
       body[f.k] = v;
     });
-    body.updatedAt = Math.floor(Date.now() / 1000);
+    body.updatedAt = Date.now();
     try {
       if ($("#m_id").value) await api("PUT", "/api/" + mod + "/" + id, body);
       else await api("POST", "/api/" + mod, body);
