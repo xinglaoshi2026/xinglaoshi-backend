@@ -1202,6 +1202,7 @@
     });
     const ordered = [];
     gradeEntries.forEach(g => byGrade[g].forEach(s => ordered.push(s)));
+    let html = "";
     const maxDates = Math.max(0, ...ordered.map(s => (byName[(s.body || {}).name] || []).length));
     if (maxDates === 0) { box.innerHTML = html + '<div class="center">暂无上课记录</div>'; return; }
     html += '<div class="rec-table-wrap"><table class="rec-table"><thead><tr class="rt-grade">' +
