@@ -205,7 +205,7 @@
   }
   function startAutoSync() {
     if (_autoTimer) return;
-    _autoTimer = setInterval(autoSync, 15000);
+    _autoTimer = setInterval(autoSync, 10000);
   }
 
   // ---------- 登录 ----------
