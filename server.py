@@ -208,7 +208,9 @@ def _p_text(text, bold=False, sz=22):
             % (rpr, xesc(text)))
 
 
-_EMU_MAX = 5400000  # 约 5.9 英寸页宽
+_EMU_MAX = 5400000  # 约 5.9 英寸页宽（试卷正文可用宽度）
+_EMU_PER_IN = 914400  # 1 英寸 = 914400 EMU
+_PRINT_DPI = 220      # 图片在 Word 中的目标打印清晰度（不低于此值即清晰）
 
 
 def _p_image(rid, idx, cx, cy):
@@ -261,8 +263,16 @@ def build_paper_docx(paper, questions_map):
                     ext = "jpeg"
                 img_idx += 1
                 w, h = _img_dims(data)
-                cx = _EMU_MAX
-                cy = int(_EMU_MAX * h / max(w, 1))
+                # 按原生像素 + 目标 DPI 计算真实尺寸，避免打印时被放大发虚；
+                # 仅当比页宽还大时才等比缩到页宽（缩小仍清晰）
+                nat_w = int(w * _EMU_PER_IN / _PRINT_DPI)
+                nat_h = int(h * _EMU_PER_IN / _PRINT_DPI)
+                if nat_w > _EMU_MAX:
+                    cx = _EMU_MAX
+                    cy = int(nat_h * _EMU_MAX / max(nat_w, 1))
+                else:
+                    cx = nat_w
+                    cy = nat_h
                 rid = "rId%d" % (100 + img_idx)
                 arc = "word/media/img%d.%s" % (img_idx, ext)
                 rels.append((rid, "media/img%d.%s" % (img_idx, ext)))
