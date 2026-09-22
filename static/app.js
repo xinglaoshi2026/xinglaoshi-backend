@@ -198,10 +198,12 @@
       DB.server_ts = after;
       qMap = {}; (DB.data.questions || []).forEach(it => { qMap[it.id] = it; }); buildKpIndex(); cachePut('pull', DB);
       // 仅在有变化时重渲染当前所在页面（覆盖题目/试卷/课表/学生/错题/记录等所有页）
+      // 添加题目页与知识点抽屉打开时禁止重渲染，避免表单/已选知识点被重置
+      const addFormVisible = (mainTab === 'questions' && qSubPane === 'add');
+      const kpSheetOpen = !($("#kpSheet") && $("#kpSheet").classList.contains('hidden'));
+      if (addFormVisible || kpSheetOpen) return;
       if (typeof renderTab === 'function') renderTab();
       else if (mainTab === 'questions') qSub(qSubPane);
-      else if (mainTab === 'schedule') schedSub(schedSubPane);
-      else if (mainTab === 'students') renderStudents();
     } catch (e) { /* 静默 */ }
   }
   function startAutoSync() {
@@ -860,7 +862,7 @@
   let qSubPane = "q";
   let schedSubPane = "grid";
   function renderTab() {
-    if (mainTab === "questions") qSub(qSubPane);
+    if (mainTab === "questions") { if (qSubPane !== "add") qSub(qSubPane); } // 添加表单页不重渲染，防清空
     else if (mainTab === "schedule") schedSub(schedSubPane);
     else if (mainTab === "students") renderStudents();
     else if (mainTab === "settings") renderSettings();
