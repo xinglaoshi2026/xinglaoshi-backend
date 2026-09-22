@@ -759,34 +759,77 @@
     } catch (e) { toast("生成失败：" + e.message); }
   }
 
-  // 试卷下载：用 fetch 取 blob 再以 objectURL 触发真实下载（比直接 <a href> 在手机 webview 更可靠），
-  // 同时给出文件名提示，方便在文件管理器里搜到。
+  // 试卷下载：先取 blob（系统浏览器可直接存），再弹出一个下载面板，
+  // 面板里提供「真实链接 + 复制链接」，保证微信等 webview 里也能拿到文件。
   async function downloadPaper(id) {
     const it = (DB.data.papers || []).find(x => x.id === id);
     const title = ((it && it.body && it.body.title) || "试卷").replace(/[\\/:*?"<>|]/g, "_");
     const base = localStorage.getItem(LS_BASE) || "";
     const url = base + "/api/papers/" + encodeURIComponent(id) + "/docx";
     const fname = title + ".docx";
-    toast("正在下载：" + fname);
+    toast("正在准备下载：" + fname);
+    let blobUrl = null;
     try {
       const resp = await fetch(url, { credentials: "include" });
       if (!resp.ok) throw new Error("HTTP " + resp.status);
       const blob = await resp.blob();
-      const objUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = objUrl; a.download = fname; a.rel = "noopener";
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(objUrl), 4000);
-      const ua = navigator.userAgent || "";
-      if (/MicroMessenger|WXWork|QQ\/|Weibo|Alipay/i.test(ua))
-        setTimeout(() => toast("微信内可能无法直接保存。点右上角 ⋯「用浏览器打开」本页，再点下载即可存到「下载」目录", 3200), 1400);
-      else
-        setTimeout(() => toast("已触发下载，请在「下载」/Download 目录查看：" + fname, 3200), 1400);
-    } catch (e) {
-      // 兜底：新标签打开（部分手机可直接预览/另存）
-      window.open(url, "_blank");
-      toast("自动下载失败，已打开预览页，可长按另存为");
+      blobUrl = URL.createObjectURL(blob);
+    } catch (e) { /* 即便取 blob 失败，仍可走真实链接下载 */ }
+    showDownloadPanel(url, blobUrl, fname);
+  }
+
+  // 复制文本到剪贴板（含旧浏览器兜底）
+  function copyText(t) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(t).catch(() => legacyCopy(t));
     }
+    return Promise.resolve(legacyCopy(t));
+  }
+  function legacyCopy(t) {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      document.execCommand("copy"); ta.remove(); return true;
+    } catch (e) { return false; }
+  }
+
+  // 下载面板：在 webview 里 blob 下载会被静默拦截，因此用真实链接 + 复制链接兜底，
+  // 用户可在系统浏览器打开链接下载，或长按链接另存为。
+  function showDownloadPanel(url, blobUrl, fname) {
+    let box = $("#downloadPanel");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "downloadPanel";
+      box.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:9999;padding:18px";
+      document.body.appendChild(box);
+    }
+    const sysBtn = blobUrl
+      ? '<a class="dp-btn dp-ok" href="' + blobUrl + '" download="' + esc(fname) + '" rel="noopener">⬇ 保存到本机（系统浏览器）</a>'
+      : "";
+    box.innerHTML =
+      '<div style="background:#fff;border-radius:14px;max-width:340px;width:100%;padding:18px 16px;box-shadow:0 8px 30px rgba(0,0,0,.25)">' +
+        '<div style="font-size:16px;font-weight:700;margin-bottom:4px">下载试卷</div>' +
+        '<div style="font-size:13px;color:#555;margin-bottom:14px;word-break:break-all">文件名：<b>' + esc(fname) + '</b></div>' +
+        sysBtn +
+        '<a class="dp-btn" href="' + esc(url) + '" target="_blank" rel="noopener" style="margin-top:10px">🔗 用浏览器打开 / 下载</a>' +
+        '<button class="dp-btn" id="dpCopy" style="margin-top:10px">📋 复制下载链接</button>' +
+        '<div id="dpHint" style="font-size:12px;color:#888;margin-top:12px;line-height:1.6">' +
+          '若点是没反应：① 在微信里点右上角 ⋯ →「用浏览器打开」本页，再点上面的链接；' +
+          '② 或点「复制下载链接」，粘贴到手机系统浏览器（Chrome/Safari）地址栏打开即可下载。' +
+        '</div>' +
+        '<button class="dp-btn" id="dpClose" style="margin-top:14px;background:#eee;color:#333">关闭</button>' +
+      '</div>';
+    const styleOnce = document.createElement("style");
+    styleOnce.textContent = ".dp-btn{display:block;width:100%;box-sizing:border-box;text-align:center;padding:12px;border-radius:10px;border:none;background:#2f7d4f;color:#fff;font-size:15px;text-decoration:none;cursor:pointer}.dp-ok{background:#1a73e8}";
+    document.head.appendChild(styleOnce);
+    box.style.display = "flex";
+    const close = () => { box.style.display = "none"; if (blobUrl) setTimeout(() => URL.revokeObjectURL(blobUrl), 1000); };
+    $("#dpClose").onclick = close;
+    box.onclick = (e) => { if (e.target === box) close(); };
+    $("#dpCopy").onclick = () => {
+      copyText(url).then(() => { $("#dpHint").textContent = "已复制链接：" + url + "  （粘贴到手机系统浏览器打开即可下载）"; toast("下载链接已复制"); });
+    };
   }
 
   // ---------- 学生（手机端增删改 + 充值，云端同步） ----------
