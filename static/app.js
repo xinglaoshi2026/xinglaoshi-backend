@@ -1171,17 +1171,59 @@
   function renderRecordsList() {
     const box = $("#sub-records");
     const recs = (DB.data.records || []).slice().sort((a, c) => String((c.body || {}).date || "").localeCompare(String((a.body || {}).date || "")));
-    if (!recs.length) { box.innerHTML = '<div class="center">暂无课时记录</div>'; return; }
-    let html = "";
-    recs.forEach(it => {
-      const b = it.body || {};
-      const typeBadge = b.type === "recharge" ? "badge-success" : b.type === "arrears" ? "badge-danger" : "badge-info";
-      const typeLabel = b.type === "recharge" ? "充值" : b.type === "arrears" ? "欠费消课" : "消课";
-      html += `<div class="card"><div class="row"><span class="badge ${typeBadge}">${typeLabel}</span>
-        <span style="flex:1;font-weight:600">${esc(b.studentName || "")}</span>
-        <span class="muted">${esc(b.date || "")}</span></div>
-        <div class="muted" style="margin-top:4px">${fmtLessons(b.hours || 0)} 次${b.topic ? (" · " + esc(b.topic)) : ""}${b.durationHours ? (" · " + esc(b.durationHours) + " 小时") : ""}</div></div>`;
+    const students = DB.data.students || [];
+    const monthKey = todayStr().slice(0, 7);
+    const inMonth = r => String((r.body || {}).date || "").slice(0, 7) === monthKey;
+    const isConsume = r => (r.body || {}).type === "consume" || (r.body || {}).type === "arrears";
+    const sum = (arr, f) => arr.reduce((s, r) => s + (parseFloat(f(r)) || 0), 0);
+    const monthRecs = recs.filter(inMonth);
+    const monthConsume = sum(monthRecs.filter(isConsume), r => r.body.hours);
+    const totalConsume = sum(recs.filter(isConsume), r => r.body.hours);
+    const monthIncome = sum(monthRecs.filter(r => (r.body || {}).type === "recharge"), r => r.body.amount);
+    let totalArrears = 0, totalRemain = 0;
+    students.forEach(s => { const b = s.body || {}; totalArrears += parseFloat(b.arrears) || 0; totalRemain += parseFloat(b.hours) || 0; });
+
+    // 顶部统计（无边框，浅色底）
+    let html = '<div class="rec-stats">' +
+      '<div class="rec-stat"><div class="l">本月消课</div><div class="v">' + fmtLessons(monthConsume) + '</div><div class="s">次课 / ' + monthRecs.filter(isConsume).length + ' 次</div></div>' +
+      '<div class="rec-stat"><div class="l">累计消课</div><div class="v">' + fmtLessons(totalConsume) + '</div><div class="s">次课</div></div>' +
+      '<div class="rec-stat"><div class="l">本月收入</div><div class="v">¥' + fmtLessons(monthIncome) + '</div><div class="s">充值 ' + monthRecs.filter(r => (r.body || {}).type === "recharge").length + ' 笔</div></div>' +
+      '<div class="rec-stat"><div class="l">总欠费课时</div><div class="v">' + fmtLessons(totalArrears) + '</div><div class="s">剩余 ' + fmtLessons(totalRemain) + ' 次</div></div>' +
+      '</div>';
+
+    // 年级→学生→上课日期 表格（同电脑端）
+    if (!students.length) { box.innerHTML = html + '<div class="center">还没有学生，先去「学生」页添加</div>'; return; }
+    const byName = {};
+    recs.filter(isConsume).forEach(r => {
+      const b = r.body || {};
+      const key = b.studentName || "未知";
+      (byName[key] = byName[key] || []).push(b.date);
     });
+    Object.keys(byName).forEach(k => byName[k] = [...new Set(byName[k])].sort());
+    const byGrade = {};
+    students.forEach(s => { const b = s.body || {}; const g = b.grade || "未设置年级"; (byGrade[g] = byGrade[g] || []).push(s); });
+    const gradeColors = { "初二": "#c6e0b4", "初三": "#a9d08e", "高一": "#f4b183", "高二": "#9dc3e6", "高三": "#ffd966", "未设置年级": "#e2e3e5" };
+    const gradeEntries = Object.keys(byGrade).sort((a, b) => a.localeCompare(b, "zh"));
+    const ordered = [];
+    gradeEntries.forEach(g => byGrade[g].forEach(s => ordered.push(s)));
+    const maxDates = Math.max(0, ...ordered.map(s => (byName[(s.body || {}).name] || []).length));
+    if (maxDates === 0) { box.innerHTML = html + '<div class="center">暂无上课记录</div>'; return; }
+    html += '<div class="rec-table-wrap"><table class="rec-table"><thead><tr class="rt-grade">' +
+      gradeEntries.map(g => `<th colspan="${byGrade[g].length}" style="background:${gradeColors[g] || "#e2e3e5"}">${esc(g)}</th>`).join("") +
+      '</tr><tr class="rt-stu">' +
+      ordered.map(s => `<th>${esc((s.body || {}).name || "")}</th>`).join("") +
+      '</tr><tr class="rt-count">' +
+      ordered.map(s => `<td>${(byName[(s.body || {}).name] || []).length}</td>`).join("") +
+      '</tr></thead><tbody>';
+    for (let i = 0; i < maxDates; i++) {
+      html += "<tr>" + ordered.map(s => {
+        const d = (byName[(s.body || {}).name] || [])[i];
+        if (!d) return "<td></td>";
+        const dt = new Date(d);
+        return `<td class="rt-date">${dt.getMonth() + 1}.${dt.getDate()}</td>`;
+      }).join("") + "</tr>";
+    }
+    html += "</tbody></table></div>";
     box.innerHTML = html;
   }
 

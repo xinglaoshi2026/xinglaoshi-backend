@@ -143,6 +143,20 @@
   .wn-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px}
   .wn-note{font-size:12px;color:var(--danger);background:var(--danger-bg);border-radius:6px;padding:4px 8px;margin-top:6px}
 
+  /* ===== 课时统计（无边框） ===== */
+  .rec-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+  .rec-stat{background:var(--bg,#f6f7f9);border-radius:12px;padding:10px 12px}
+  .rec-stat .l{font-size:12px;color:var(--text-sec,#666)}
+  .rec-stat .v{font-size:22px;font-weight:700;line-height:1.2;margin:2px 0}
+  .rec-stat .s{font-size:11px;color:var(--text-sec,#666)}
+  .rec-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;background:#fff;border-radius:10px}
+  .rec-table{border-collapse:collapse;min-width:100%;font-size:12px;text-align:center}
+  .rec-table th,.rec-table td{border:1px solid #e5e7eb;padding:5px 8px;white-space:nowrap}
+  .rec-table .rt-grade th{font-weight:700;color:#333}
+  .rec-table .rt-stu th{font-weight:600;background:#fafafa}
+  .rec-table .rt-count td{color:var(--text-sec,#666)}
+  .rec-table .rt-date{color:var(--text-sec,#666)}
+
   /* ===== 图片兜底 ===== */
   .qimg{max-width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);margin:6px 0;display:block}
   .q-content img,.q-ans-box img,.q-preview-card img,.modal img,.wn-card img{
