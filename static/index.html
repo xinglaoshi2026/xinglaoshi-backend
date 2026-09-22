@@ -147,8 +147,10 @@
   .qimg{max-width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);margin:6px 0;display:block}
   .q-content img,.q-ans-box img,.q-preview-card img,.modal img,.wn-card img{
     max-width:100%!important;height:auto!important;width:auto!important}
-  /* 题目图片放大：居中且等比例铺满题卡宽度（右侧挨屏幕） */
-  .q-content img,.q-ans-box img{width:100%!important;height:auto!important;display:block;margin:6px auto!important}
+  /* 题目图片放大：居中且等比例放大铺满并超出屏宽，容器裁切两侧实现居中放大 */
+  .card.q .q-content{overflow:hidden}
+  .card.q .q-content img{width:135%!important;height:auto!important;display:block;margin:6px auto!important}
+  .q-ans-box img{width:100%!important;height:auto!important;display:block;margin:6px auto!important}
 
   /* ===== 底部四主菜单 tabbar ===== */
   .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:42;height:var(--tabbar-h);
