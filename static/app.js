@@ -293,16 +293,14 @@
       return;
     }
     const slice = qFiltered.slice(qShown, qShown + 20);
-    const wrongSet = wrongQIds();
     const frag = document.createDocumentFragment();
-    slice.forEach(it => frag.appendChild(qCard(it, wrongSet)));
+    slice.forEach(it => frag.appendChild(qCard(it)));
     qShown += slice.length;
     $("#qList").appendChild(frag);
   }
-  function qCard(it, wrongSet) {
+  function qCard(it) {
     const b = it.body || {};
     const inCompose = composeSet.includes(it.id);
-    const isWrong = wrongSet && wrongSet.has(it.id);
     const div = document.createElement("div");
     div.className = "card q";
     div.innerHTML =
@@ -310,8 +308,7 @@
       '<div class="q-actions">' +
         '<button class="q-link" data-act="answer" data-id="' + it.id + '">查看解析</button>' +
         '<button class="q-link" data-act="detail" data-id="' + it.id + '">详情</button>' +
-        '<button class="q-link' + (inCompose ? " on" : "") + '" data-act="compose" data-id="' + it.id + '">' + (inCompose ? "✓ 已加入组卷" : "加入组卷") + "</button>" +
-        '<button class="q-link danger' + (isWrong ? " on" : "") + '" data-act="wrong" data-id="' + it.id + '">' + (isWrong ? "✓ 已标错题" : "标错题") + "</button>" +
+        '<button class="q-link' + (inCompose ? " on" : "") + '" data-act="compose" data-id="' + it.id + '">' + (inCompose ? "✕ 取消组卷" : "加入组卷") + "</button>" +
       "</div>" +
       '<div class="q-ans-box" id="ans-' + it.id + '"><div class="ans-label">答案 / 解析</div>' + (renderRich(b.answer) || "—") + (b.analysis ? '<div style="margin-top:6px">' + renderRich(b.analysis) + "</div>" : "") + "</div>";
     return div;
@@ -350,8 +347,8 @@
   function syncComposeBtn(id) {
     const on = composeSet.includes(id);
     document.querySelectorAll('button[data-act="compose"][data-id="' + id + '"]').forEach(btn => {
-      btn.classList.toggle("ok", on);
-      btn.innerHTML = on ? "✕ 取消组卷" : "🧩 加入组卷";
+      btn.classList.toggle("on", on);
+      btn.innerHTML = on ? "✕ 取消组卷" : "加入组卷";
     });
   }
   function showLightbox(src) {
@@ -467,7 +464,13 @@
         DB.data.wrongNotes.push({ id: body.id, updated_at: body.updatedAt, body });
         toast("已标记错题 ✓");
       }
-      closeModal(); applyFilter();
+      closeModal();
+      if (paperReopenId) {
+        const pid = paperReopenId; paperReopenId = null;
+        openPaper(pid);
+      } else {
+        applyFilter(); loadWrong();
+      }
     } catch (e) { toast("保存失败：" + e.message); }
   }
 
@@ -477,7 +480,7 @@
     const kw = ($("#wrongSearch") ? $("#wrongSearch").value : "").trim().toLowerCase();
     let items = (DB.data.wrongNotes || []).slice().reverse();
     if (kw) items = items.filter(it => { const b = it.body || {}; return ((b.studentName || "") + " " + (b.note || "")).toLowerCase().includes(kw); });
-    if (!items.length) { box.innerHTML = '<div class="center">还没有错题记录<br><span style="font-size:12px">在题库里点「📕 标记错题」即可添加</span></div>'; return; }
+    if (!items.length) { box.innerHTML = '<div class="center">还没有错题记录<br><span style="font-size:12px">在「组卷」打开某份试卷，每题下方点「📕 标记错题」即可添加</span></div>'; return; }
     box.innerHTML = "";
     items.forEach(it => {
       const b = it.body || {};
@@ -638,12 +641,18 @@
     const base = localStorage.getItem(LS_BASE) || "";
     const title = b.title || "试卷";
     const ids = b.questionIds || [];
+    currentPaperId = id;
     let qs = "";
     for (const qid of ids.slice(0, 50)) {
       const q = qMap[qid];
       if (q) {
         const qb = q.body || {};
-        qs += `<div class="card" style="margin:6px 0">${renderRich(qb.content)}<div class="muted">答：${renderRich(qb.answer) || "—"}</div></div>`;
+        const wn = (DB.data.wrongNotes || []).find(w => (w.body || {}).questionId === qid && !(w.body || {}).resolved);
+        qs += `<div class="card" style="margin:6px 0">${renderRich(qb.content)}` +
+          `<div class="muted">答：${renderRich(qb.answer) || "—"}</div>` +
+          `<div class="q-actions" style="margin-top:6px;padding:0">` +
+            `<button class="q-link ${wn ? " on" : ""}" onclick="openPaperWrong('${esc(qid)}')">${wn ? "✓ 已标错题" : "📕 标记错题"}</button>` +
+          `</div></div>`;
       } else {
         qs += `<div class="muted">（题 ${esc(qid)} 未同步）</div>`;
       }
@@ -652,6 +661,7 @@
       <div class="modal-body"><div class="muted">${esc(b.note || "")}</div>${qs}</div>
       <div class="modal-footer" style="flex-wrap:wrap;gap:8px">
         <button class="btn ok" style="flex:1 1 100%" onclick="downloadPaper('${esc(id)}')">⬇ 下载 Word 试卷</button>
+        <button class="btn sec" style="flex:1 1 100%" onclick="buildWrongPaperFromPaper('${esc(id)}')">📕 本卷错题重组卷</button>
         <button class="btn sec" style="flex:1 1 100%" onclick="closeModal()">关闭</button>
       </div>`;
     openModal();
@@ -660,6 +670,80 @@
     if (/MicroMessenger|WXWork|QQ\/|Weibo|Alipay/i.test(ua))
       toast("若没自动保存，点右上角 ⋯ 选「用浏览器打开」本页后再下载", 2600);
   }
+  // 试卷视图内点「标记错题」：记录来源试卷，保存后回重开该试卷
+  function openPaperWrong(qId) {
+    paperReopenId = currentPaperId;
+    markWrong(qId);
+  }
+  // 收集未掌握的错题题目 id（可限定学生 / 限定某份试卷的题目范围）
+  function wrongQidsFor({ studentId, paperIds } = {}) {
+    const scope = new Set();
+    if (paperIds) {
+      (DB.data.papers || []).forEach(p => {
+        if (paperIds.includes(p.id)) (p.body.questionIds || []).forEach(q => scope.add(q));
+      });
+    }
+    const out = []; const seen = new Set();
+    (DB.data.wrongNotes || []).forEach(w => {
+      const b = w.body || {};
+      if (b.resolved) return;
+      if (studentId && b.studentId !== studentId) return;
+      const qid = b.questionId;
+      if (!qid || !qMap[qid]) return;
+      if (paperIds && !scope.has(qid)) return;
+      if (seen.has(qid)) return;
+      seen.add(qid); out.push(qid);
+    });
+    return out;
+  }
+  // 弹窗：按学生组「错题练习卷」
+  function openWrongPaperBuilder() {
+    const students = DB.data.students || [];
+    const opts = ['<option value="">全部学生</option>'].concat(
+      students.map(s => '<option value="' + esc(s.id) + '">' + esc((s.body || {}).name || s.id) + "</option>")).join("");
+    $("#modalBox").innerHTML = `
+      <div class="modal-header"><span class="modal-title">📕 错题重组卷</span><button class="modal-close" onclick="closeModal()">✕</button></div>
+      <div class="modal-body">
+        <div class="muted" style="margin-bottom:10px">把标记给某位（或全部）学生的未掌握错题，整理成一份新的练习卷，发给学生再次练习。</div>
+        <div class="form-group"><label class="kv">学生</label><select id="wpStudent">${opts}</select></div>
+        <div class="form-group"><label class="kv">试卷标题</label><input id="wpTitle" placeholder="如：小明错题练习卷"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn sec" style="flex:1" onclick="closeModal()">取消</button>
+        <button class="btn ok" style="flex:1" onclick="buildWrongPaperFromStudent()">生成练习卷</button>
+      </div>`;
+    openModal();
+  }
+  async function buildWrongPaperFromStudent() {
+    const sid = ($("#wpStudent") ? $("#wpStudent").value : "") || "";
+    const stu = (DB.data.students || []).find(s => s.id === sid);
+    const qids = wrongQidsFor({ studentId: sid });
+    if (!qids.length) return toast("没有可组卷的错题");
+    const title = ($("#wpTitle") && $("#wpTitle").value ? $("#wpTitle").value : "").trim() || ("错题练习" + (stu ? "·" + (stu.body || {}).name : ""));
+    await saveWrongPaper(title, "错题重组" + (stu ? "·" + (stu.body || {}).name : ""), qids);
+  }
+  async function buildWrongPaperFromPaper(paperId) {
+    const paper = (DB.data.papers || []).find(p => p.id === paperId);
+    const qids = wrongQidsFor({ paperIds: [paperId] });
+    if (!qids.length) return toast("本卷还没有标记错题");
+    const title = ((paper && (paper.body || {}).title) || "试卷") + "·错题练习";
+    await saveWrongPaper(title, "本卷错题重组", qids);
+  }
+  async function saveWrongPaper(title, note, qids) {
+    const body = {
+      id: "p_" + Date.now().toString(36),
+      title, note,
+      questionIds: qids.slice(),
+      source: "mobile",
+      createdAt: Math.floor(Date.now() / 1000)
+    };
+    try {
+      await api("POST", "/api/papers", body);
+      toast("练习卷已生成 ✓"); closeModal();
+      await loadPull(true); qSub("compose");
+    } catch (e) { toast("生成失败：" + e.message); }
+  }
+
   // docx 接口无需鉴权且返回 Content-Disposition: attachment；直接用真实 URL 触发系统原生下载，
   // 这样文件会落到 Downloads 目录（文件管理器可见）。blob 方案在微信等 webview 会被拦截、找不到文件。
   function downloadPaper(id) {
@@ -814,6 +898,8 @@
 
   // ---------- 组卷（在题库点「加入组卷」收集，底部浮条保存） ----------
   let composeSet = [];   // 已选题目 id（有序）
+  let currentPaperId = null;  // 当前打开的试卷（用于试卷内标记错题后回显）
+  let paperReopenId = null;   // 标记错题来自试卷视图时，保存后回重开该试卷
   // 底部浮条：仅当在「题库」子视图且已选题目时显示
   function updateComposeBar() {
     const bar = $("#composeBar");
@@ -1312,6 +1398,8 @@
   window.showLightbox = showLightbox;
   window.openDetail = openDetail; window.openEditor = openEditor; window.saveQ = saveQ;
   window.delQ = delQ; window.closeModal = closeModal; window.openPaper = openPaper;
+  window.openPaperWrong = openPaperWrong; window.buildWrongPaperFromPaper = buildWrongPaperFromPaper;
+  window.openWrongPaperBuilder = openWrongPaperBuilder; window.buildWrongPaperFromStudent = buildWrongPaperFromStudent;
   window.downloadPaper = downloadPaper;
   window.switchMain = switchMain; window.qSub = qSub; window.schedSub = schedSub;
   window.renderStudents = renderStudents; window.openStudentEditor = openStudentEditor; window.saveStudentEditor = saveStudentEditor; window.doRecharge = doRecharge;
