@@ -81,6 +81,21 @@ def now_ts():
     return int(time.time())
 
 
+def now_ms():
+    """毫秒时间戳：store 行的 updated_at 统一用毫秒（与桌面桥推送一致），
+    避免手机端直接 POST 产生秒级时间戳，导致排序沉底/增量拉取拉不到。"""
+    return int(time.time() * 1000)
+
+
+def migrate_ts():
+    """启动时把历史秒级时间戳统一放大为毫秒（幂等：毫秒值恒 > 1e11）。"""
+    cx = db()
+    cx.execute("UPDATE store SET updated_at=updated_at*1000 WHERE updated_at>0 AND updated_at<100000000000")
+    cx.execute("UPDATE tombstones SET deleted_at=deleted_at*1000 WHERE deleted_at>0 AND deleted_at<100000000000")
+    cx.commit()
+    cx.close()
+
+
 # ---------------- 存储层 ----------------
 MODULES = ["questions", "papers", "exams", "students", "schedule",
            "records", "knowledgePoints", "examCategories", "wrongNotes"]
@@ -96,7 +111,7 @@ def store_get(module, id):
 
 
 def store_put(module, id, body, ts=None):
-    ts = ts or now_ts()
+    ts = ts or now_ms()
     cx = db()
     cx.execute("INSERT INTO store(module,id,body,updated_at) VALUES(?,?,?,?) "
                "ON CONFLICT(module,id) DO UPDATE SET body=excluded.body, updated_at=excluded.updated_at",
@@ -298,7 +313,7 @@ def build_paper_docx(paper, questions_map):
 
 def store_tombstone(module, id, ts=None):
     """记录删除墓碑（用于双向删除同步）。删除时间取 ts 或当前时间。"""
-    ts = ts or now_ts()
+    ts = ts or now_ms()
     cx = db()
     cx.execute("INSERT INTO tombstones(module,id,deleted_at) VALUES(?,?,?) "
                "ON CONFLICT(module,id) DO UPDATE SET deleted_at=excluded.deleted_at",
@@ -538,7 +553,18 @@ class H(BaseHTTPRequestHandler):
                 if rows:
                     dels[m] = {r["id"]: r["deleted_at"] for r in rows}
             cx.close()
-            return send_json(self, {"server_ts": now_ts(), "data": out, "deletions": dels})
+            # server_ts 用本批数据的最大 updated_at（毫秒）；无变更时回显 since，
+            # 客户端据此判断"云端无新变更"，避免每次全量重拉
+            max_ts = 0
+            for m in MODULES:
+                for it in out[m]:
+                    t = it.get("updated_at") or 0
+                    if t > max_ts: max_ts = t
+            for m in dels:
+                for t in dels[m].values():
+                    if t > max_ts: max_ts = t
+            if max_ts == 0: max_ts = since
+            return send_json(self, {"server_ts": max_ts, "data": out, "deletions": dels})
         send_json(self, {"error": "未知接口 " + p}, 404)
 
     # ---- POST ----
@@ -628,7 +654,7 @@ class H(BaseHTTPRequestHandler):
             for m, items in data.items():
                 if m not in MODULES: continue
                 for it in items:
-                    ts = it.get("updated_at") or now_ts()
+                    ts = it.get("updated_at") or now_ms()
                     if it.get("deleted"):
                         # 删除型同步：仅当删除时间不早于本地更新才生效
                         existing, old_ts = store_get(m, it["id"])
@@ -716,6 +742,7 @@ class H(BaseHTTPRequestHandler):
 
 def main():
     init_db()
+    migrate_ts()
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), H)
     print(f"[server] 云端同步后端已启动: http://0.0.0.0:{PORT}  (数据目录 {DATA_DIR})")
     try:

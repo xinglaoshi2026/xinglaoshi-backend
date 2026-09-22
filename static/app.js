@@ -255,8 +255,12 @@
       }
       return true;
     });
-    // 新题置顶：按 updated_at 倒序（毫秒），兜底用 body.updatedAt/createdAt，再按 id 稳定排序
-    const tsOf = it => it.updated_at || (it.body && (it.body.updatedAt || it.body.createdAt)) || 0;
+    // 新题置顶：按 updated_at 倒序（毫秒），秒级时间戳归一为毫秒，再按 id 稳定排序
+    const tsOf = it => {
+      let t = it.updated_at || (it.body && (it.body.updatedAt || it.body.createdAt)) || 0;
+      if (t && t < 1e11) t *= 1000; // 秒 → 毫秒
+      return t;
+    };
     qFiltered.sort((a, b) => tsOf(b) - tsOf(a) || String(a.id).localeCompare(String(b.id)));
     qShown = 0;
     renderFilterBar();
@@ -593,18 +597,27 @@
     $("#upA").onclick = () => pickImg("eanswer", "a");
     openModal();
   }
-  function pickImg(targetId, kind) {
+  // 图片上传到 题目id/{c,a}/img_N.png（qid 缺省取编辑弹窗当前题目 id）
+  function pickImg(targetId, kind, qidArg) {
     const inp = document.createElement("input");
     inp.type = "file"; inp.accept = "image/*";
     inp.onchange = async () => {
       const f = inp.files[0]; if (!f) return;
-      const sub = "questions/" + (targetId || ("new_" + Date.now())) + "/" + kind;
+      const ta = $("#" + targetId);
+      const qid = qidArg || ($("#eid") && $("#eid").value) || ("tmp_" + Date.now());
+      // 文件名序号：从 textarea 里已有引用推断，避免刷新后重复覆盖 img_1
+      let n = 0;
+      if (ta) {
+        const re = new RegExp("media://questions/" + qid + "/" + kind + "/img_(\\d+)\\.png", "g");
+        let mm; while ((mm = re.exec(ta.value))) n = Math.max(n, parseInt(mm[1], 10));
+      }
+      n += 1;
+      const sub = "questions/" + qid + "/" + kind;
       try {
-        await api("POST", "/api/media?sub=" + encodeURIComponent(sub), f, true, "img_1.png");
-        const ref = "media://" + sub + "/img_1.png";
-        const ta = $("#" + targetId);
+        await api("POST", "/api/media?sub=" + encodeURIComponent(sub), f, true, "img_" + n + ".png");
+        const ref = "media://" + sub + "/img_" + n + ".png";
         if (ta) ta.value = (ta.value ? ta.value + "\n" : "") + ref;
-        toast("图片已添加：" + ref);
+        toast("图片已添加");
       } catch (e) { toast("上传失败：" + e.message); }
     };
     inp.click();
@@ -1173,9 +1186,11 @@
   }
 
   // ---------- 添加题目（手机端新建题目，云端同步） ----------
+  let addQId = ""; // 本轮添加表单预生成的题目 id：图片先上传到 questions/<id>/...，保存时同名入库
   function renderAddQForm() {
     const box = $("#addQForm");
     addQKp = "";
+    addQId = "q_" + Date.now().toString(36);
     box.innerHTML = `
       <div style="display:flex;gap:8px;margin-bottom:8px">
         <select id="nq_type" style="flex:1;margin:0"></select>
@@ -1189,12 +1204,12 @@
         <button type="button" id="nq_upA">上传答案图</button>
       </div>`;
     $("#nq_type").innerHTML = '<option>选择题</option><option>多选题</option><option>填空题</option><option>解答题</option><option>计算题</option><option>实验题</option><option>作图题</option><option>综合题</option>';
-    $("#nq_upC").onclick = () => pickImg("nq_content", "c");
-    $("#nq_upA").onclick = () => pickImg("nq_answer", "a");
+    $("#nq_upC").onclick = () => pickImg("nq_content", "c", addQId);
+    $("#nq_upA").onclick = () => pickImg("nq_answer", "a", addQId);
   }
   async function saveNewQuestion() {
     const body = {
-      id: "q_" + Date.now().toString(36),
+      id: addQId || ("q_" + Date.now().toString(36)),
       type: $("#nq_type").value,
       kpId: addQKp || "",
       content: ($("#nq_content").value || "").trim(),
