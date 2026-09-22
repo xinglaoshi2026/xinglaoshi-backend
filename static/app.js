@@ -1177,20 +1177,18 @@
     const box = $("#addQForm");
     addQKp = "";
     box.innerHTML = `
-      <label class="kv">题型</label>
-      <select id="nq_type"><option>选择题</option><option>多选题</option><option>填空题</option><option>解答题</option><option>计算题</option><option>实验题</option><option>作图题</option><option>综合题</option></select>
-      <label class="kv">所属知识点</label>
-      <button type="button" id="nq_kp_btn" class="filter-select" onclick="openKpSheet('add')">选择知识点</button>
-      <label class="kv">题干（可含 media://questions/&lt;id&gt;/c/img_1.png 引用图片）</label>
-      <textarea id="nq_content"></textarea>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <select id="nq_type" style="flex:1;margin:0"></select>
+        <button type="button" id="nq_kp_btn" class="filter-select" style="flex:1;margin:0" onclick="openKpSheet('add')">选择知识点</button>
+      </div>
+      <textarea id="nq_content" placeholder="题干" style="min-height:90px"></textarea>
       <label class="kv">答案</label>
       <textarea id="nq_answer" style="min-height:50px"></textarea>
-      <label class="kv">解析</label>
-      <textarea id="nq_analysis"></textarea>
       <div class="seg">
         <button type="button" id="nq_upC">上传题干图</button>
         <button type="button" id="nq_upA">上传答案图</button>
       </div>`;
+    $("#nq_type").innerHTML = '<option>选择题</option><option>多选题</option><option>填空题</option><option>解答题</option><option>计算题</option><option>实验题</option><option>作图题</option><option>综合题</option>';
     $("#nq_upC").onclick = () => pickImg("nq_content", "c");
     $("#nq_upA").onclick = () => pickImg("nq_answer", "a");
   }
@@ -1201,7 +1199,7 @@
       kpId: addQKp || "",
       content: ($("#nq_content").value || "").trim(),
       answer: ($("#nq_answer").value || "").trim(),
-      analysis: ($("#nq_analysis").value || "").trim(),
+      analysis: "",
       createdAt: Math.floor(Date.now() / 1000)
     };
     if (!body.content) return toast("题干不能为空");
