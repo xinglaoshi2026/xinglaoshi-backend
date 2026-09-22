@@ -196,8 +196,9 @@
       }
       DB.server_ts = after;
       qMap = {}; (DB.data.questions || []).forEach(it => { qMap[it.id] = it; }); buildKpIndex(); cachePut('pull', DB);
-      // 仅在有变化时重渲染当前视图
-      if (mainTab === 'questions') qSub(qSubPane);
+      // 仅在有变化时重渲染当前所在页面（覆盖题目/试卷/课表/学生/错题/记录等所有页）
+      if (typeof renderTab === 'function') renderTab();
+      else if (mainTab === 'questions') qSub(qSubPane);
       else if (mainTab === 'schedule') schedSub(schedSubPane);
       else if (mainTab === 'students') renderStudents();
     } catch (e) { /* 静默 */ }
