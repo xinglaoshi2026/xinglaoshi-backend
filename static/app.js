@@ -759,21 +759,34 @@
     } catch (e) { toast("生成失败：" + e.message); }
   }
 
-  // docx 接口无需鉴权且返回 Content-Disposition: attachment；直接用真实 URL 触发系统原生下载，
-  // 这样文件会落到 Downloads 目录（文件管理器可见）。blob 方案在微信等 webview 会被拦截、找不到文件。
-  function downloadPaper(id) {
+  // 试卷下载：用 fetch 取 blob 再以 objectURL 触发真实下载（比直接 <a href> 在手机 webview 更可靠），
+  // 同时给出文件名提示，方便在文件管理器里搜到。
+  async function downloadPaper(id) {
     const it = (DB.data.papers || []).find(x => x.id === id);
-    const title = (it && it.body && it.body.title) || "试卷";
+    const title = ((it && it.body && it.body.title) || "试卷").replace(/[\\/:*?"<>|]/g, "_");
     const base = localStorage.getItem(LS_BASE) || "";
     const url = base + "/api/papers/" + encodeURIComponent(id) + "/docx";
-    toast("正在下载…");
-    const a = document.createElement("a");
-    a.href = url; a.download = (title || "试卷") + ".docx";
-    a.rel = "noopener";
-    document.body.appendChild(a); a.click(); a.remove();
-    const ua = navigator.userAgent || "";
-    if (/MicroMessenger|WXWork|QQ\/|Weibo|Alipay/i.test(ua))
-      setTimeout(() => toast("若没自动保存，点右上角 ⋯ 「用浏览器打开」本页后再下载", 2600), 1200);
+    const fname = title + ".docx";
+    toast("正在下载：" + fname);
+    try {
+      const resp = await fetch(url, { credentials: "include" });
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      const blob = await resp.blob();
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objUrl; a.download = fname; a.rel = "noopener";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(objUrl), 4000);
+      const ua = navigator.userAgent || "";
+      if (/MicroMessenger|WXWork|QQ\/|Weibo|Alipay/i.test(ua))
+        setTimeout(() => toast("微信内可能无法直接保存。点右上角 ⋯「用浏览器打开」本页，再点下载即可存到「下载」目录", 3200), 1400);
+      else
+        setTimeout(() => toast("已触发下载，请在「下载」/Download 目录查看：" + fname, 3200), 1400);
+    } catch (e) {
+      // 兜底：新标签打开（部分手机可直接预览/另存）
+      window.open(url, "_blank");
+      toast("自动下载失败，已打开预览页，可长按另存为");
+    }
   }
 
   // ---------- 学生（手机端增删改 + 充值，云端同步） ----------
