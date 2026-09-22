@@ -167,6 +167,46 @@
     }
   }
 
+  // 自动同步：定时增量拉取云端，手机端改动无需手动下拉刷新（仅云端有变化才重渲染当前视图）
+  let _autoTimer = null;
+  async function autoSync() {
+    if (!mainTab) return;
+    const ae = document.activeElement;
+    if (document.querySelector('.modal.open') ||
+        (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA'))) return; // 不打断输入/编辑
+    try {
+      const before = DB.server_ts || 0;
+      const r = await api('GET', '/api/sync/pull?since=' + before);
+      if (!r || !r.data) return;
+      const after = r.server_ts || 0;
+      if (after <= before) return; // 云端无新变更
+      for (const m of Object.keys(r.data)) {
+        const cloud = r.data[m] || [];
+        const local = DB.data[m] || [];
+        const map = {};
+        local.forEach(it => { if (it && it.id) map[it.id] = it; });
+        for (const cit of cloud) {
+          if (!cit || !cit.id) continue;
+          const body = cit.body || cit;
+          map[cit.id] = { id: cit.id, updated_at: cit.updated_at || body.updatedAt, body };
+        }
+        const dels = (r.deletions && r.deletions[m]) || {};
+        for (const id in dels) delete map[id];
+        DB.data[m] = Object.values(map);
+      }
+      DB.server_ts = after;
+      qMap = {}; (DB.data.questions || []).forEach(it => { qMap[it.id] = it; }); buildKpIndex(); cachePut('pull', DB);
+      // 仅在有变化时重渲染当前视图
+      if (mainTab === 'questions') qSub(qSubPane);
+      else if (mainTab === 'schedule') schedSub(schedSubPane);
+      else if (mainTab === 'students') renderStudents();
+    } catch (e) { /* 静默 */ }
+  }
+  function startAutoSync() {
+    if (_autoTimer) return;
+    _autoTimer = setInterval(autoSync, 15000);
+  }
+
   // ---------- 登录 ----------
   async function doLogin() {
     const base = $("#baseUrl").value.trim();
@@ -188,6 +228,7 @@
     $("#qList").innerHTML = '<div class="center">正在同步数据…</div>';
     await loadPull(true);
     switchMain("questions");
+    startAutoSync(); // 启动自动同步（手机端改动无需手动下拉刷新）
   }
 
   // ---------- 题库（题型/知识点/关键词 筛选 + 本地分页） ----------
