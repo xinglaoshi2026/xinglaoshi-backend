@@ -84,7 +84,8 @@
     if (!html) return "";
     const s = String(html);
     if (/<[a-z][\s\S]*>/i.test(s)) {
-      return s.replace(/(src\s*=\s*["'])media:\/\//gi, "$1/api/media/")
+      return s.replace(/<div class="qb-meta">[\s\S]*?<\/div>/gi, "")
+              .replace(/(src\s*=\s*["'])media:\/\//gi, "$1/api/media/")
               .replace(/<img(?![^>]*onerror)/gi, '<img onerror="this.style.display=\'none\'"')
               .replace(/<img(?![^>]*\bclass=)/gi, '<img class="qimg"');
     }
