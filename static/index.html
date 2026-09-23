@@ -59,6 +59,16 @@
   .btn.danger{background:var(--danger-bg);color:var(--danger)}
   .btn.danger:active{background:var(--danger);color:#fff}
   .btn.sm{padding:6px 11px;font-size:13px}
+  /* 简约文字风按钮：列表卡操作、错题操作、组卷顶部、搜索行 */
+  .pa-actions .btn,.wn-card .row .btn,.compose-actions .btn,.search .btn{background:none;border:none;padding:6px 4px;font-weight:600;box-shadow:none}
+  .pa-actions .btn{color:var(--primary)}
+  .pa-actions .btn.ok{color:var(--success)}
+  .wn-card .row .btn.ok{color:var(--success)}
+  .wn-card .row .btn.sec{color:var(--text-muted)}
+  .wn-card .row .btn.danger{color:var(--danger)}
+  .compose-actions .btn{color:var(--primary)}
+  .compose-actions .btn.sec{color:var(--text)}
+  .search .btn{color:var(--primary);flex-shrink:0}
   .btn:disabled{opacity:.5}
 
   /* ===== 表单 ===== */
@@ -335,7 +345,7 @@
         </div>
 
         <div id="sub-compose" class="subpane hidden">
-          <div class="row" style="margin-bottom:10px">
+          <div class="row compose-actions" style="margin-bottom:10px">
             <button class="btn" style="flex:1" onclick="openComposeModal()">＋ 新建组卷</button>
             <button class="btn sec" style="flex:1" onclick="openWrongPaperBuilder()">📕 错题重组卷</button>
           </div>
