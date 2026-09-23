@@ -99,18 +99,18 @@
 
   /* ===== 筛选栏（下拉菜单形式） ===== */
   .filter-bar{background:var(--bg);padding:2px 0 6px}
-  .filter-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
-  .filter-row select{flex:1 1 110px;width:auto;min-width:0;padding:9px 8px;
+  .filter-row{display:flex;gap:8px;align-items:center;flex-wrap:nowrap;margin-bottom:8px}
+  .filter-row select{flex:1 1 0;width:auto;min-width:0;padding:9px 8px;
     appearance:none;-webkit-appearance:none;
     background:#fff url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0l5 6 5-6z' fill='%236B7280'/></svg>") no-repeat right 10px center;
     font-size:13px;font-weight:500;color:var(--text);border:1px solid var(--border-dark);border-radius:var(--radius-sm)}
   .filter-row select.on{border-color:var(--primary);color:var(--primary);background-color:var(--primary-bg)}
-  .filter-row .filter-select{flex:1 1 130px;text-align:left;padding:9px 26px 9px 10px;
+  .filter-row .filter-select{flex:1.2 1 0;text-align:left;padding:9px 26px 9px 10px;
     appearance:none;-webkit-appearance:none;font-size:13px;font-weight:500;color:var(--text-muted);
     border:1px solid var(--border-dark);border-radius:var(--radius-sm);background:#fff
     url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0l5 6 5-6z' fill='%236B7280'/></svg>") no-repeat right 10px center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .filter-row .filter-select.on{border-color:var(--primary);color:var(--primary);background-color:var(--primary-bg)}
-  .filter-row .f-search{flex:2 1 150px;min-width:0}
+  .filter-row .f-search{flex:1.6 1 0;min-width:0}
   .q-count{font-size:12px;color:var(--text-muted);margin:4px 2px 8px;display:flex;align-items:center;gap:6px}
 
   /* ===== 知识点选择底部抽屉 ===== */
