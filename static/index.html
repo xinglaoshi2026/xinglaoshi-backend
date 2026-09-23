@@ -35,7 +35,7 @@
 
   /* ===== 卡片 ===== */
   .card{background:var(--card-bg);border-radius:var(--radius);box-shadow:var(--shadow-sm);
-    overflow:hidden;padding:14px 16px;margin-bottom:10px}
+    overflow:hidden;padding:12px 14px;margin-bottom:6px}
   .card h3{margin:0 0 6px;font-size:16px;font-weight:600;color:var(--text)}
   .card.page{padding:0;overflow:visible}
 
@@ -85,7 +85,7 @@
 
   /* ===== 题目卡片 ===== */
   .card.q{border-left:none;border-radius:0;box-shadow:none;margin:0 -12px 10px;padding:6px 0}
-  .q-content{font-size:14px;line-height:1.7;margin:8px 10px;white-space:pre-wrap;word-break:break-word}
+  .q-content{font-size:14px;line-height:1.7;margin:6px 4px;white-space:pre-wrap;word-break:break-word}
   .q-answer{font-size:13px;color:var(--text-muted);background:#F9FAFB;padding:10px 14px;border-radius:var(--radius-sm);
     margin-top:8px;white-space:pre-wrap;border:1px dashed var(--border)}
   .q-head{display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap;padding:12px 14px 2px}
@@ -94,7 +94,7 @@
   .q-kp{display:inline-flex;align-items:center;gap:3px;font-size:12px;color:var(--primary);
     background:var(--primary-bg);padding:2px 9px;border-radius:6px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .q-kp:active{background:#E0E7FF}
-  .q-body-wrap{padding:4px 14px 0;cursor:pointer}
+  .q-body-wrap{padding:4px 8px 0;cursor:pointer}
   .q-ans-box{margin:8px 14px 0;display:none;border-left:3px solid var(--info);background:var(--info-bg);
     border-radius:0 8px 8px 0;padding:10px 12px;font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-word}
   .q-ans-box.open{display:block;animation:fadeIn .18s ease}
@@ -173,7 +173,7 @@
     max-width:100%!important;height:auto!important;width:auto!important}
   /* 题目图片放大：居中且等比例放大铺满并超出屏宽，容器裁切两侧实现居中放大 */
   .card.q .q-content{overflow:hidden}
-  .card.q .q-content img{width:135%!important;height:auto!important;display:block;margin:6px auto!important}
+  .card.q .q-content img{width:165%!important;height:auto!important;display:block;margin:6px auto!important}
   .q-ans-box img{width:100%!important;height:auto!important;display:block;margin:6px auto!important}
 
   /* ===== 底部四主菜单 tabbar ===== */
