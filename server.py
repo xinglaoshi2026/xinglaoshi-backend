@@ -18,7 +18,7 @@
 """
 import os, sys, json, sqlite3, hashlib, secrets, time, uuid, mimetypes, re, io, zipfile, struct, shutil
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs, quote as urlquote
+from urllib.parse import urlparse, parse_qs, quote as urlquote, unquote as urlunquote
 from datetime import datetime, timezone
 from xml.sax.saxutils import escape as xesc
 
@@ -504,7 +504,9 @@ class H(BaseHTTPRequestHandler):
                 return send_file(self, fp)
             self.send_response(403); self.send_cors(); self.end_headers(); return
         if p.startswith("/api/media/"):
-            rel = p[len("/api/media/"):]
+            # URL 路径已是 percent-encoded, 先解码回原始(可能含中文)再查盘,
+            # 否则 _media_disk 的 urlquote 会二次编码导致 404。
+            rel = urlunquote(p[len("/api/media/"):])
             fp = _safe_media_path(rel)
             if fp:
                 return send_file(self, fp)
@@ -705,7 +707,10 @@ class H(BaseHTTPRequestHandler):
             return send_json(self, {"ok": True, "applied": applied})
         if p == "/api/media":
             # 裸二进制上传：文件名取自 X-Filename 或 ?name=
-            name = self.headers.get("X-Filename") or q.get("name", ["upload.bin"])[0]
+            # 优先用查询参数 name(sub 亦来自查询, 均已被 urlparse 正确解码为中文),
+            # 避免桌面端 urllib 无法把中文写入 X-Filename 头(latin-1)导致上传失败;
+            # X-Filename 仍作为移动端兼容回退。
+            name = q.get("name", [None])[0] or self.headers.get("X-Filename") or "upload.bin"
             name = os.path.basename(name)
             raw, _ = read_body(self)
             if not isinstance(raw, bytes): raw = b""
