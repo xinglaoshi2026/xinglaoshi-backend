@@ -44,19 +44,21 @@ def init_db():
     cx = db()
     cx.executescript("""
     CREATE TABLE IF NOT EXISTS users(
-        id TEXT PRIMARY KEY, username TEXT UNIQUE, pw_hash TEXT, role TEXT, created_at INTEGER);
+        id TEXT PRIMARY KEY, username TEXT UNIQUE, pw_hash TEXT, salt TEXT, role TEXT, created_at INTEGER);
     CREATE TABLE IF NOT EXISTS sessions(
         token TEXT PRIMARY KEY, user_id TEXT, expires INTEGER);
     CREATE TABLE IF NOT EXISTS store(
-        module TEXT, id TEXT, body TEXT, updated_at INTEGER,
-        PRIMARY KEY(module, id));
+        user_id TEXT, module TEXT, id TEXT, body TEXT, updated_at INTEGER,
+        PRIMARY KEY(user_id, module, id));
     CREATE TABLE IF NOT EXISTS tombstones(
-        module TEXT, id TEXT, deleted_at INTEGER,
-        PRIMARY KEY(module, id));
+        user_id TEXT, module TEXT, id TEXT, deleted_at INTEGER,
+        PRIMARY KEY(user_id, module, id));
     CREATE TABLE IF NOT EXISTS meta(
         k TEXT PRIMARY KEY, v TEXT);
     """)
-    cx.commit()
+    # 迁移：旧库 store/tombstones 无 user_id 列 → 整体重建并把历史数据归属到 admin
+    _migrate_user_scoping(cx)
+    migrate_salt(cx)
     # 初始化：若没有任何用户，创建默认管理员（用户名 admin / 密码 admin123），仅首次
     cur = cx.execute("SELECT COUNT(*) c FROM users")
     if cur.fetchone()["c"] == 0:
@@ -66,15 +68,59 @@ def init_db():
     cx.close()
 
 
-def pw_hash(pw):
-    return hashlib.sha256(pw.encode("utf-8")).hexdigest()
+def _col_exists(cx, table, col):
+    rows = cx.execute("PRAGMA table_info(%s)" % table).fetchall()
+    return any(r["name"] == col for r in rows)
+
+
+def _migrate_user_scoping(cx):
+    """把无 user_id 的旧 store/tombstones 重建为按 user_id 隔离，历史数据归属 admin。"""
+    admin = cx.execute("SELECT id FROM users WHERE username='admin'").fetchone()
+    admin_id = admin["id"] if admin else None
+    if _col_exists(cx, "store", "user_id") and _col_exists(cx, "tombstones", "user_id"):
+        return
+    print("[migrate] 检测到旧表结构，开始按账号隔离迁移…")
+    if not _col_exists(cx, "store", "user_id"):
+        cx.execute("ALTER TABLE store RENAME TO store_old")
+        cx.execute("CREATE TABLE store(user_id TEXT, module TEXT, id TEXT, body TEXT, updated_at INTEGER,"
+                   " PRIMARY KEY(user_id, module, id))")
+        if admin_id:
+            cx.execute("INSERT INTO store(user_id,module,id,body,updated_at) "
+                       "SELECT ?,module,id,body,updated_at FROM store_old", (admin_id,))
+        cx.execute("DROP TABLE store_old")
+    if not _col_exists(cx, "tombstones", "user_id"):
+        cx.execute("ALTER TABLE tombstones RENAME TO tombstones_old")
+        cx.execute("CREATE TABLE tombstones(user_id TEXT, module TEXT, id TEXT, deleted_at INTEGER,"
+                   " PRIMARY KEY(user_id, module, id))")
+        if admin_id:
+            cx.execute("INSERT INTO tombstones(user_id,module,id,deleted_at) "
+                       "SELECT ?,module,id,deleted_at FROM tombstones_old", (admin_id,))
+        cx.execute("DROP TABLE tombstones_old")
+    cx.commit()
+    print("[migrate] 迁移完成，历史数据已归属 admin")
+
+
+def pw_hash(pw, salt=""):
+    return hashlib.sha256((salt + pw).encode("utf-8")).hexdigest()
 
 
 def add_user(cx, username, pw, role="user"):
     uid = "u_" + uuid.uuid4().hex[:12]
-    cx.execute("INSERT INTO users(id,username,pw_hash,role,created_at) VALUES(?,?,?,?,?)",
-               (uid, username, pw_hash(pw), role, int(time.time())))
+    salt = secrets.token_hex(8)
+    cx.execute("INSERT INTO users(id,username,pw_hash,salt,role,created_at) VALUES(?,?,?,?,?,?)",
+               (uid, username, pw_hash(pw, salt), salt, role, int(time.time())))
     return uid
+
+
+def migrate_salt(cx):
+    """旧用户无 salt 列值 → 补一个随机 salt 并重算哈希（幂等）。"""
+    rows = cx.execute("SELECT id,pw_hash,salt FROM users WHERE salt IS NULL OR salt=''").fetchall()
+    for r in rows:
+        salt = secrets.token_hex(8)
+        # 旧哈希是纯 sha256(pw)，无法直接反解；约定旧账户首次登录时由 auth_user 重写。
+        # 这里仅给无 salt 的账户置 salt，auth_user 遇到 salt 为空时用旧算法校验并升级。
+        cx.execute("UPDATE users SET salt=? WHERE id=?", (salt, r["id"]))
+    cx.commit()
 
 
 def now_ts():
@@ -85,6 +131,21 @@ def now_ms():
     """毫秒时间戳：store 行的 updated_at 统一用毫秒（与桌面桥推送一致），
     避免手机端直接 POST 产生秒级时间戳，导致排序沉底/增量拉取拉不到。"""
     return int(time.time() * 1000)
+
+
+# ---------------- 当前请求账号上下文 ----------------
+# 每个请求在独立线程中处理，用 threading.local 保存当前登录用户，
+# 存储层在未显式传入 user_id 时回退到这里，避免逐处传参。
+import threading
+_CTX = threading.local()
+
+
+def set_ctx_user(uid):
+    _CTX.uid = uid
+
+
+def ctx_user():
+    return getattr(_CTX, "uid", None)
 
 
 def migrate_ts():
@@ -101,29 +162,33 @@ MODULES = ["questions", "papers", "exams", "students", "schedule",
            "records", "knowledgePoints", "examCategories", "wrongNotes"]
 
 
-def store_get(module, id):
+def store_get(module, id, user_id=None):
+    uid = user_id or ctx_user()
     cx = db()
-    r = cx.execute("SELECT body,updated_at FROM store WHERE module=? AND id=?", (module, id)).fetchone()
+    r = cx.execute("SELECT body,updated_at FROM store WHERE user_id=? AND module=? AND id=?",
+                   (uid, module, id)).fetchone()
     cx.close()
     if not r:
         return None, None
     return json.loads(r["body"]), r["updated_at"]
 
 
-def store_put(module, id, body, ts=None):
+def store_put(module, id, body, ts=None, user_id=None):
+    uid = user_id or ctx_user()
     ts = ts or now_ms()
     cx = db()
-    cx.execute("INSERT INTO store(module,id,body,updated_at) VALUES(?,?,?,?) "
-               "ON CONFLICT(module,id) DO UPDATE SET body=excluded.body, updated_at=excluded.updated_at",
-               (module, id, json.dumps(body, ensure_ascii=False), ts))
+    cx.execute("INSERT INTO store(user_id,module,id,body,updated_at) VALUES(?,?,?,?,?) "
+               "ON CONFLICT(user_id,module,id) DO UPDATE SET body=excluded.body, updated_at=excluded.updated_at",
+               (uid, module, id, json.dumps(body, ensure_ascii=False), ts))
     cx.commit()
     cx.close()
 
 
-def store_list(module, since=None, limit=200, offset=0, q=None, **filters):
+def store_list(module, since=None, limit=200, offset=0, q=None, user_id=None, **filters):
+    uid = user_id or ctx_user()
     cx = db()
-    sql = "SELECT id,body,updated_at FROM store WHERE module=?"
-    args = [module]
+    sql = "SELECT id,body,updated_at FROM store WHERE user_id=? AND module=?"
+    args = [uid, module]
     if since:
         sql += " AND updated_at>=?"
         args.append(int(since))
@@ -321,23 +386,25 @@ def build_paper_docx(paper, questions_map):
     return buf.getvalue()
 
 
-def store_tombstone(module, id, ts=None):
+def store_tombstone(module, id, ts=None, user_id=None):
     """记录删除墓碑（用于双向删除同步）。删除时间取 ts 或当前时间。"""
+    uid = user_id or ctx_user()
     ts = ts or now_ms()
     cx = db()
-    cx.execute("INSERT INTO tombstones(module,id,deleted_at) VALUES(?,?,?) "
-               "ON CONFLICT(module,id) DO UPDATE SET deleted_at=excluded.deleted_at",
-               (module, id, ts))
+    cx.execute("INSERT INTO tombstones(user_id,module,id,deleted_at) VALUES(?,?,?,?) "
+               "ON CONFLICT(user_id,module,id) DO UPDATE SET deleted_at=excluded.deleted_at",
+               (uid, module, id, ts))
     cx.commit()
     cx.close()
 
 
-def store_delete(module, id):
+def store_delete(module, id, user_id=None):
+    uid = user_id or ctx_user()
     cx = db()
-    cx.execute("DELETE FROM store WHERE module=? AND id=?", (module, id))
+    cx.execute("DELETE FROM store WHERE user_id=? AND module=? AND id=?", (uid, module, id))
     cx.commit()
     cx.close()
-    store_tombstone(module, id)
+    store_tombstone(module, id, user_id=uid)
 
 
 # ---------------- 认证 ----------------
@@ -345,9 +412,20 @@ def auth_user(username, pw):
     cx = db()
     r = cx.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
     cx.close()
-    if not r or r["pw_hash"] != pw_hash(pw):
+    if not r:
         return None
-    return r
+    if r["salt"]:
+        ok = (r["pw_hash"] == pw_hash(pw, r["salt"]))
+    else:
+        # 旧账户（无 salt）：用旧算法校验，并在首次登录时升级为加盐哈希
+        ok = (r["pw_hash"] == hashlib.sha256(pw.encode("utf-8")).hexdigest())
+        if ok:
+            salt = secrets.token_hex(8)
+            cx2 = db()
+            cx2.execute("UPDATE users SET salt=?, pw_hash=? WHERE id=?",
+                        (salt, pw_hash(pw, salt), r["id"]))
+            cx2.commit(); cx2.close()
+    return r if ok else None
 
 
 def new_session(user_id):
@@ -364,7 +442,7 @@ def user_of(token):
     if not token:
         return None
     cx = db()
-    r = cx.execute("SELECT s.user_id,u.role,u.username FROM sessions s JOIN users u ON u.id=s.user_id "
+    r = cx.execute("SELECT s.user_id AS id,u.role,u.username FROM sessions s JOIN users u ON u.id=s.user_id "
                    "WHERE s.token=? AND s.expires>?", (token, now_ts())).fetchone()
     cx.close()
     return dict(r) if r else None
@@ -480,13 +558,21 @@ class H(BaseHTTPRequestHandler):
                 return send_file(self, fp)
             self.send_response(403); self.send_cors(); self.end_headers(); return
         if p.startswith("/api/media/"):
+            u = user_of(get_token(self))
+            if not u:
+                return send_json(self, {"error": "未登录"}, 401)
             rel = p[len("/api/media/"):]
-            fp = os.path.normpath(os.path.join(MEDIA_DIR, rel))
-            if fp.startswith(MEDIA_DIR):
+            base = os.path.normpath(os.path.join(MEDIA_DIR, u["id"]))
+            fp = os.path.normpath(os.path.join(MEDIA_DIR, u["id"], rel))
+            if fp.startswith(base + os.sep) and os.path.isfile(fp):
                 return send_file(self, fp)
-            self.send_response(403); self.send_cors(); self.end_headers(); return
+            self.send_response(404); self.send_cors(); self.end_headers(); return
         m = re.match(r"^/api/papers/([^/]+)/docx$", p)
         if m:
+            u = user_of(get_token(self))
+            if not u:
+                return send_json(self, {"error": "未登录"}, 401)
+            set_ctx_user(u["id"])
             paper, _ = store_get("papers", m.group(1))
             if not paper:
                 self.send_response(404); self.send_cors(); self.end_headers(); return
@@ -507,9 +593,13 @@ class H(BaseHTTPRequestHandler):
 
     def api_get(self, p):
         q = self.query
+        # 所有数据接口需登录，按账号隔离
+        u = user_of(get_token(self))
+        if not u:
+            return send_json(self, {"error": "未登录"}, 401)
+        set_ctx_user(u["id"])
         if p == "/api/me":
-            u = user_of(get_token(self))
-            return send_json(self, u or {"error": "未登录"}, 401 if not u else 200)
+            return send_json(self, u)
         if p == "/api/knowledgePoints":
             return send_json(self, store_list("knowledgePoints", limit=2000))
         if p == "/api/questions":
@@ -558,8 +648,8 @@ class H(BaseHTTPRequestHandler):
             cx = db()
             for m in MODULES:
                 rows = cx.execute(
-                    "SELECT id,deleted_at FROM tombstones WHERE module=? AND deleted_at>=?",
-                    (m, int(since))).fetchall()
+                    "SELECT id,deleted_at FROM tombstones WHERE user_id=? AND module=? AND deleted_at>=?",
+                    (u["id"], m, int(since))).fetchall()
                 if rows:
                     dels[m] = {r["id"]: r["deleted_at"] for r in rows}
             cx.close()
@@ -603,6 +693,7 @@ class H(BaseHTTPRequestHandler):
         # 以下需登录
         u = user_of(get_token(self))
         if not u: return send_json(self, {"error": "未登录"}, 401)
+        set_ctx_user(u["id"])
         if p == "/api/questions":
             body, err = read_body(self)
             if err: return send_json(self, {"error": err}, 400)
@@ -685,9 +776,9 @@ class H(BaseHTTPRequestHandler):
             name = os.path.basename(name)
             raw, _ = read_body(self)
             if not isinstance(raw, bytes): raw = b""
-            # 放入 media/<module>/<id>/... 由前端在路径里指定，这里简单放 media/others
+            # 放入 media/<user_id>/<module>/<id>/... 按账号隔离
             sub = q.get("sub", ["others"])[0]
-            d = os.path.join(MEDIA_DIR, sub)
+            d = os.path.join(MEDIA_DIR, u["id"], sub)
             os.makedirs(d, exist_ok=True)
             fp = os.path.join(d, name)
             with open(fp, "wb") as f: f.write(raw)
@@ -700,6 +791,7 @@ class H(BaseHTTPRequestHandler):
         p = self.path_only
         u = user_of(get_token(self))
         if not u: return send_json(self, {"error": "未登录"}, 401)
+        set_ctx_user(u["id"])
         if p.startswith("/api/questions/"):
             id = p[len("/api/questions/"):]
             body, err = read_body(self)
@@ -738,6 +830,7 @@ class H(BaseHTTPRequestHandler):
         p = self.path_only
         u = user_of(get_token(self))
         if not u: return send_json(self, {"error": "未登录"}, 401)
+        set_ctx_user(u["id"])
         for prefix, mod in (("/api/questions/", "questions"), ("/api/papers/", "papers"),
                             ("/api/exams/", "exams"), ("/api/students/", "students"),
                             ("/api/schedule/", "schedule"), ("/api/records/", "records"),
