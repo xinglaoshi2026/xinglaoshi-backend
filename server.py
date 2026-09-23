@@ -16,7 +16,7 @@
 数据模型（业务字段保持与桌面端 data.json 一致，整条以 JSON 存于 store 表）：
   store(module, id, body, updated_at)
 """
-import os, sys, json, sqlite3, hashlib, secrets, time, uuid, mimetypes, re, io, zipfile, struct
+import os, sys, json, sqlite3, hashlib, secrets, time, uuid, mimetypes, re, io, zipfile, struct, shutil
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote as urlquote
 from datetime import datetime, timezone
@@ -713,6 +713,13 @@ class H(BaseHTTPRequestHandler):
             # 用 URL 编码后的 ASCII 路径落盘，规避部分文件系统不支持中文文件名的问题。
             sub = q.get("sub", ["others"])[0]
             rel = f"{sub}/{name}"
+            # 磁盘空间保护：剩余不足时拒绝写入, 避免撑爆数据盘导致 sync.db(WAL)写入失败而整体宕机
+            try:
+                free = shutil.disk_usage(os.path.dirname(MEDIA_DIR) or ".").free
+                if free < 30 * 1024 * 1024:
+                    return send_json(self, {"error": "云端磁盘空间不足, 图片上传被拒绝(请清理或扩容)"}, 507)
+            except Exception:
+                pass
             fp = _media_disk(rel)
             os.makedirs(os.path.dirname(fp), exist_ok=True)
             with open(fp, "wb") as f: f.write(raw)
@@ -774,7 +781,33 @@ class H(BaseHTTPRequestHandler):
         send_json(self, {"error": "未知接口 " + p}, 404)
 
 
+def _free_disk_if_needed():
+    """云端数据盘(容器磁盘)可能被子目录 media 撑满, 导致 sync.db 的 WAL 文件
+    无法创建、server.py 启动即崩溃(表现为 Railway 部署失败 / 502)。
+    此处: 若 DB 因磁盘满无法初始化, 清空可重建的 media 目录释放空间后重试。
+    media 由桌面端 --watch 重新回填, 题目数据亦由桌面端重新同步, 故清空安全。"""
+    try:
+        cx = sqlite3.connect(DB_PATH)
+        cx.execute("PRAGMA journal_mode=WAL")
+        cx.close()
+        return
+    except Exception:
+        pass
+    try:
+        shutil.rmtree(MEDIA_DIR, ignore_errors=True)
+        os.makedirs(MEDIA_DIR, exist_ok=True)
+    except Exception:
+        pass
+    try:
+        cx = sqlite3.connect(DB_PATH)
+        cx.execute("PRAGMA journal_mode=WAL")
+        cx.close()
+    except Exception:
+        pass
+
+
 def main():
+    _free_disk_if_needed()
     init_db()
     migrate_ts()
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), H)
