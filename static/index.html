@@ -177,13 +177,15 @@
   .tab-btn.active{color:var(--primary);font-weight:600}
 
   /* ===== 主视图内的 sub-tab 条（顶部平铺） ===== */
-  .subtabs{position:sticky;top:0;z-index:25;display:flex;gap:6px;overflow-x:auto;padding:8px 0 10px;
+  .subtabs{position:sticky;top:0;z-index:25;display:flex;gap:26px;overflow-x:auto;padding:10px 4px 8px;
     background:var(--bg);-webkit-overflow-scrolling:touch;scrollbar-width:none}
   .subtabs::-webkit-scrollbar{display:none}
-  .subtab{flex-shrink:0;padding:7px 15px;border-radius:20px;background:#fff;border:1px solid var(--border-dark);
-    font-size:13px;font-weight:600;color:var(--text-muted);transition:all .15s}
-  .subtab:active{transform:scale(.96)}
-  .subtab.on{background:var(--primary);border-color:var(--primary);color:#fff;box-shadow:0 2px 8px rgba(79,70,229,.28)}
+  .subtab{flex-shrink:0;position:relative;padding:4px 2px;border:none;background:none;
+    font-size:14px;font-weight:600;color:var(--text-muted);transition:color .15s}
+  .subtab:active{opacity:.7}
+  .subtab.on{color:var(--primary)}
+  .subtab.on::after{content:'';position:absolute;left:50%;transform:translateX(-50%);bottom:-3px;
+    width:18px;height:3px;border-radius:2px;background:var(--primary)}
   .subpane{}
 
   /* ===== 组卷底部浮条 ===== */
