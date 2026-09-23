@@ -511,6 +511,20 @@ class H(BaseHTTPRequestHandler):
             if fp:
                 return send_file(self, fp)
             self.send_response(404); self.send_cors(); self.end_headers(); return
+        if p == "/api/health":
+            # 运维诊断: 云端容器磁盘容量/余量(决定能否容纳全部媒体图)
+            try:
+                du = shutil.disk_usage(os.path.dirname(MEDIA_DIR) or ".")
+                n = 0
+                for _, _, fs in os.walk(MEDIA_DIR):
+                    n += len(fs)
+                return send_json(self, {
+                    "ok": True,
+                    "disk_total": du.total, "disk_used": du.used, "disk_free": du.free,
+                    "data_dir": DATA_DIR, "media_files": n,
+                })
+            except Exception as e:
+                return send_json(self, {"ok": False, "error": str(e)}, 500)
         m = re.match(r"^/api/papers/([^/]+)/docx$", p)
         if m:
             paper, _ = store_get("papers", m.group(1))
