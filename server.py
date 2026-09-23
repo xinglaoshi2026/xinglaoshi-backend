@@ -31,6 +31,8 @@ os.makedirs(MEDIA_DIR, exist_ok=True)
 
 PORT = int(os.environ.get("PORT", "8000"))
 
+# (deploy trigger) 重启以恢复因并发写入锁死的 sync.db
+
 
 # ---------------- 数据库 ----------------
 def db():
