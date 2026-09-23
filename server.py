@@ -166,6 +166,31 @@ def _img_dims(data):
     return 800, 600
 
 
+def _media_disk(rel):
+    """逻辑媒体路径 -> 磁盘路径。
+
+    部分运行环境(如某些云容器的文件系统)不支持中文/全角文件名，
+    直接 open 中文路径会写出“乱码”文件、GET 时按解码路径找不到 -> 404。
+    这里统一把逻辑路径 URL 编码成 ASCII 再落盘，规避该问题；
+    rel 中的 '/' 保留为目录分隔，仅对中文等特殊字符做 %XX 转义。
+    """
+    return os.path.normpath(os.path.join(MEDIA_DIR, urlquote(rel, safe="/")))
+
+
+def _safe_media_path(rel):
+    """逻辑路径 -> 真实存在的磁盘路径(已做越界校验)；不存在返回 None。
+
+    同时尝试“URL 编码落盘路径”和“旧版字面路径”两种方案，向后兼容。
+    用 abspath 归一化斜杠/盘符，避免 Windows 下 / 与 \\ 混用导致 startswith 误判。
+    """
+    base = os.path.abspath(MEDIA_DIR)
+    for fp in (_media_disk(rel), os.path.normpath(os.path.join(MEDIA_DIR, rel))):
+        afp = os.path.abspath(fp)
+        if afp.startswith(base + os.sep) and os.path.isfile(afp):
+            return afp
+    return None
+
+
 def _media_file(src):
     """media://xxx 或 /api/media/xxx -> 本地文件路径；不存在返回 None。"""
     rel = src
@@ -173,10 +198,7 @@ def _media_file(src):
         if rel.startswith(pre):
             rel = rel[len(pre):]
             break
-    fp = os.path.normpath(os.path.join(MEDIA_DIR, rel))
-    if fp.startswith(MEDIA_DIR) and os.path.isfile(fp):
-        return fp
-    return None
+    return _safe_media_path(rel)
 
 
 def _content_segments(html):
@@ -481,10 +503,10 @@ class H(BaseHTTPRequestHandler):
             self.send_response(403); self.send_cors(); self.end_headers(); return
         if p.startswith("/api/media/"):
             rel = p[len("/api/media/"):]
-            fp = os.path.normpath(os.path.join(MEDIA_DIR, rel))
-            if fp.startswith(MEDIA_DIR):
+            fp = _safe_media_path(rel)
+            if fp:
                 return send_file(self, fp)
-            self.send_response(403); self.send_cors(); self.end_headers(); return
+            self.send_response(404); self.send_cors(); self.end_headers(); return
         m = re.match(r"^/api/papers/([^/]+)/docx$", p)
         if m:
             paper, _ = store_get("papers", m.group(1))
@@ -685,13 +707,13 @@ class H(BaseHTTPRequestHandler):
             name = os.path.basename(name)
             raw, _ = read_body(self)
             if not isinstance(raw, bytes): raw = b""
-            # 放入 media/<module>/<id>/... 由前端在路径里指定，这里简单放 media/others
+            # 放入 media/<module>/<id>/... 由前端在路径里指定；
+            # 用 URL 编码后的 ASCII 路径落盘，规避部分文件系统不支持中文文件名的问题。
             sub = q.get("sub", ["others"])[0]
-            d = os.path.join(MEDIA_DIR, sub)
-            os.makedirs(d, exist_ok=True)
-            fp = os.path.join(d, name)
-            with open(fp, "wb") as f: f.write(raw)
             rel = f"{sub}/{name}"
+            fp = _media_disk(rel)
+            os.makedirs(os.path.dirname(fp), exist_ok=True)
+            with open(fp, "wb") as f: f.write(raw)
             return send_json(self, {"ok": True, "url": "/api/media/" + rel})
         send_json(self, {"error": "未知接口 " + p}, 404)
 
