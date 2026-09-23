@@ -405,10 +405,28 @@ def send_json(h, obj, code=200):
     h.wfile.write(data)
 
 
+def _sniff_content_type(path):
+    """按文件头魔数判定图片类型, 避免转码(PNG->JPEG)后扩展名与真实格式不符导致手机端无法渲染。"""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(12)
+        if head[:8] == b"\x89PNG\r\n\x1a\n":
+            return "image/png"
+        if head[:3] == b"\xff\xd8\xff":
+            return "image/jpeg"
+        if head[:6] in (b"GIF87a", b"GIF89a"):
+            return "image/gif"
+        if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+            return "image/webp"
+    except Exception:
+        pass
+    return mimetypes.guess_type(path)[0] or "application/octet-stream"
+
+
 def send_file(h, path, filename=None):
     if not os.path.exists(path):
         h.send_response(404); h.send_cors(); h.end_headers(); return
-    mt = mimetypes.guess_type(path)[0] or "application/octet-stream"
+    mt = _sniff_content_type(path)
     sz = os.path.getsize(path)
     h.send_response(200)
     h.send_header("Content-Type", mt)
