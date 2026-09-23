@@ -15,7 +15,7 @@
     --radius:12px; --radius-sm:8px; --radius-lg:16px;
     --shadow-sm:0 1px 2px rgba(0,0,0,.06); --shadow:0 1px 3px rgba(0,0,0,.1),0 1px 2px rgba(0,0,0,.04);
     --shadow-lg:0 10px 30px rgba(0,0,0,.08),0 4px 12px rgba(0,0,0,.04);
-    --tabbar-h:50px;
+    --tabbar-h:56px;
   }
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   html,body{height:100%}
@@ -170,9 +170,11 @@
   .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:42;height:var(--tabbar-h);
     display:flex;background:#fff;border-top:1px solid var(--border);
     padding-bottom:env(safe-area-inset-bottom);box-shadow:0 -2px 10px rgba(0,0,0,.05)}
-  .tab-btn{flex:1;display:flex;align-items:center;justify-content:center;
-    color:var(--text-muted);font-size:14px;font-weight:600;letter-spacing:1px;transition:color .15s}
-  .tab-btn.active{color:var(--primary)}
+  .tab-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+    color:var(--text-muted);font-size:11px;font-weight:500;transition:color .15s}
+  .tab-btn svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;
+    stroke-linecap:round;stroke-linejoin:round}
+  .tab-btn.active{color:var(--primary);font-weight:600}
 
   /* ===== 主视图内的 sub-tab 条（顶部平铺） ===== */
   .subtabs{position:sticky;top:0;z-index:25;display:flex;gap:6px;overflow-x:auto;padding:8px 0 10px;
@@ -403,10 +405,22 @@
 
     <!-- 底部四主菜单 -->
     <nav class="tabbar" id="tabbar">
-      <button class="tab-btn active" data-main="questions" onclick="switchMain('questions')"><span>题库</span></button>
-      <button class="tab-btn" data-main="schedule" onclick="switchMain('schedule')"><span>排课</span></button>
-      <button class="tab-btn" data-main="students" onclick="switchMain('students')"><span>学生</span></button>
-      <button class="tab-btn" data-main="settings" onclick="switchMain('settings')"><span>设置</span></button>
+      <button class="tab-btn active" data-main="questions" onclick="switchMain('questions')">
+        <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        <span>题库</span>
+      </button>
+      <button class="tab-btn" data-main="schedule" onclick="switchMain('schedule')">
+        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        <span>排课</span>
+      </button>
+      <button class="tab-btn" data-main="students" onclick="switchMain('students')">
+        <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span>学生</span>
+      </button>
+      <button class="tab-btn" data-main="settings" onclick="switchMain('settings')">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.08a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.08a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.08a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>设置</span>
+      </button>
     </nav>
   </div>
 
