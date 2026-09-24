@@ -53,6 +53,11 @@
     let url = base + path;
     const opt = { method, headers: {} };
     if (token) opt.headers["Authorization"] = "Bearer " + token;
+    // 兼容：部分网关会丢弃 DELETE 请求的 Authorization 头（表现为手机端删除一直 401），
+    // DELETE 额外把 token 放到查询参数上（服务端 get_token 头/查询参数都认）。
+    if (method === "DELETE" && token) {
+      url += (url.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token);
+    }
     if (isRaw) {
       opt.body = body;
       if (fname) opt.headers["X-Filename"] = fname;
@@ -80,11 +85,20 @@
     const t = token || "";
     return base + "/api/media/" + p + (t ? "?token=" + encodeURIComponent(t) : "");
   }
+  // 图片加载失败自动重试一次：弱网/慢网下首次加载常超时，
+  // 直接隐藏会让"纯图片题"在手机上看起来是一道空题（电脑端本地文件秒开无此问题）。
+  function imgRetry(el) {
+    if (!el.dataset.r) {
+      el.dataset.r = "1";
+      el.src = el.src + (el.src.includes("?") ? "&" : "?") + "r=" + Date.now();
+    } else { el.style.display = "none"; }
+  }
+  window.imgRetry = imgRetry;
   // 把 media://questions/<id>/{c,a}/img_1.png 改成可访问的图片标签
   function renderMedia(text) {
     if (!text) return "";
     return esc(text).replace(/media:\/\/questions\/([^\s)]+)/g,
-      (m, p) => `<img class="qimg" src="${mediaUrl(p)}" onerror="this.style.display='none'">`);
+      (m, p) => `<img class="qimg" loading="lazy" src="${mediaUrl(p)}" onerror="imgRetry(this)">`);
   }
   // 内容是桌面端生成的 HTML（含 <img src="media://...">）→ 按原样渲染并改写媒体地址；
   // 纯文本则转义后把 media:// 引用转成图片。
@@ -95,7 +109,7 @@
       return s.replace(/<div class="qb-meta">[\s\S]*?<\/div>/gi, "")
               .replace(/(src\s*=\s*["'])media:\/\/([^\s"'>]+)/gi,
                 (m, pre, p) => pre + mediaUrl(p))
-              .replace(/<img(?![^>]*onerror)/gi, '<img onerror="this.style.display=\'none\'"')
+              .replace(/<img(?![^>]*onerror)/gi, '<img loading="lazy" onerror="imgRetry(this)"')
               .replace(/<img(?![^>]*\bclass=)/gi, '<img class="qimg"');
     }
     return renderMedia(s);
@@ -401,10 +415,12 @@
     const anc = curSel ? kpAncestors(curSel) : new Set();
     if (kpFocusId) kpAncestors(kpFocusId).forEach(x => anc.add(x));
     const allLabel = isPick ? "（顶级，无父级）" : "📚 全部知识点";
+    // "＋"只在知识点管理场景（选择父级/管理）出现；题库选题/筛选时是纯选择器，不显示管理按钮
+    const canManage = isPick;
     const allBtn = isAdd ? "" :
       '<div class="kp-row' + (curSel || kpFocusId ? "" : " sel") + '" data-kp="" onclick="pickKp(\'\')">' +
       '<span class="kp-toggle leaf">·</span><span class="kp-name">' + allLabel + '</span>' +
-      '<span class="kp-add" title="新建顶级知识点" onclick="event.stopPropagation();kpNewChildAt(\'\')">＋</span>' +
+      (canManage ? '<span class="kp-add" title="新建顶级知识点" onclick="event.stopPropagation();kpNewChildAt(\'\')">＋</span>' : "") +
       (isPick ? "" : '<span class="kp-cnt">' + (DB.data.questions || []).length + " 题</span>") + '</div>';
     function nodeHtml(id) {
       const b = kpMap[id] || {};
@@ -416,7 +432,7 @@
       return '<div><div class="kp-row' + (curSel === id || kpFocusId === id ? " sel" : "") + '" data-kp="' + esc(id) + '" onclick="pickKp(\'' + esc(id) + '\')">' +
         '<span class="kp-toggle' + (hasKids ? "" : " leaf") + (expanded ? " open" : "") + '" onclick="event.stopPropagation();this.classList.toggle(\'open\');this.closest(\'.kp-row\').parentElement.querySelector(\':scope > .kp-kids\').classList.toggle(\'open\')">' + (hasKids ? "▶" : "") + "</span>" +
         '<span class="kp-name">' + esc(b.name || id) + "</span>" +
-        '<span class="kp-add" title="在此知识点下新建子知识点" onclick="event.stopPropagation();kpNewChildAt(\'' + esc(id) + '\')">＋</span>' +
+        (canManage ? '<span class="kp-add" title="在此知识点下新建子知识点" onclick="event.stopPropagation();kpNewChildAt(\'' + esc(id) + '\')">＋</span>' : "") +
         '<span class="kp-cnt">' + cnt + " 题</span></div>" +
         (hasKids ? '<div class="kp-kids' + (expanded ? " open" : "") + '">' + kids.map(nodeHtml).join("") + "</div>" : "") +
         "</div>";
@@ -632,7 +648,8 @@
     const isEdit = !!id;
     const box = $("#modalBox");
     box.innerHTML = `
-      <h3>${isEdit ? "编辑题目" : "新建题目"}</h3>
+      <div class="modal-header"><span class="modal-title">${isEdit ? "编辑题目" : "新建题目"}</span><button class="modal-close" onclick="closeModal()">✕</button></div>
+      <div class="modal-body">
       <input type="hidden" id="eid" value="${esc(id || "")}">
       <label class="kv">题型</label>
       <select id="etype"><option>选择题</option><option>多选题</option><option>填空题</option><option>解答题</option></select>
@@ -648,9 +665,12 @@
         <button type="button" id="upC">上传题干图</button>
         <button type="button" id="upA">上传答案图</button>
       </div>
-      <div class="row" style="margin-top:10px">
-        <button class="btn ok" onclick="saveQ()">保存</button>
-        <button class="btn sec" onclick="closeModal()">取消</button>
+      </div>
+      <div class="modal-footer">
+        <div class="row-2">
+          <button class="btn ok" onclick="saveQ()">保存</button>
+          <button class="btn sec" onclick="closeModal()">取消</button>
+        </div>
       </div>`;
     if (isEdit) {
       const b = (qMap[id] && qMap[id].body) || {};
@@ -1107,8 +1127,8 @@
   // ---------- 收藏试卷（exams，与电脑端「试卷中心·收藏试卷」一致） ----------
   let examDraft = { id: null, files: [] };   // 编辑/新增时的草稿（含待上传附件 rels）
   function renderExamsM() {
-    const fsel = $("#examCatFilter");
-    if (fsel) fsel.innerHTML = examCatFilterOptionsHtml(examCatFilter);
+    const fbtn = $("#examCatFilterBtn");
+    if (fbtn) fbtn.textContent = examCatFilter ? "🏷️ " + catPath(examCatFilter) : "全部分类";
     const box = $("#examListM"); if (!box) return;
     let items = DB.data.exams || [];
     if (examCatFilter) {
@@ -1143,20 +1163,27 @@
     examDraft = { id: isEdit ? id : ("ex_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
                   files: (b.files || []).map(f => ({ rel: f.rel, name: f.name })) };
     const v = (k, ph) => '<input id="ef_' + k + '" value="' + esc(b[k] || "") + '" placeholder="' + ph + '">';
-    let html = `<h3>${isEdit ? "编辑" : "新建"}收藏试卷</h3>
+    let html = `
+      <div class="modal-header"><span class="modal-title">${isEdit ? "编辑" : "新建"}收藏试卷</span><button class="modal-close" onclick="closeModal()">✕</button></div>
+      <div class="modal-body">
       <label class="kv">标题</label>${v("title", "如：2026高三一模物理卷")}
       <label class="kv">年级</label>${v("grade", "如：高三")}
       <label class="kv">来源</label>${v("source", "如：学校月考")}
       <label class="kv">标签（空格分隔）</label>${v("tags", "如：真题 期末")}
-      <label class="kv">分类（可选，在「🏷️ 分类管理」中创建）</label><select id="ef_cat" class="filter-select">${examCatOptionsHtml(b.categoryId, true)}</select>
+      <label class="kv">分类</label>
+      <button id="ef_cat_btn" class="filter-select" style="width:100%;text-align:left" onclick="openCatSheet('pick')">${esc(b.categoryId ? catPath(b.categoryId) : "未分类（点此选择）")}</button>
+      <input type="hidden" id="ef_cat" value="${esc(b.categoryId || "")}">
       <label class="kv">备注</label><textarea id="ef_note">${esc(b.note || "")}</textarea>
       <label class="kv">内容（整卷文字 / 说明，可选）</label><textarea id="ef_content">${esc(b.contentHtml || "")}</textarea>
-      <label class="kv">附件（PDF / Word 等）</label>
-      <input type="file" id="ef_files" multiple onchange="examUploadFiles(this)">
+      <label class="kv">附件（PDF / Word / 图片）</label>
+      <label class="btn ok" for="ef_files" style="display:block;text-align:center;padding:11px;font-size:15px">📎 点此上传附件（可多选）<input type="file" id="ef_files" multiple style="display:none" onchange="examUploadFiles(this)"></label>
       <div id="ef_fileList" class="muted" style="margin-top:6px"></div>
-      <div class="row" style="margin-top:14px">
-        <button class="btn ok" style="flex:1" onclick="saveExamM()">保存</button>
-        <button class="btn sec" style="flex:1" onclick="closeModal()">取消</button>
+      </div>
+      <div class="modal-footer">
+        <div class="row-2">
+          <button class="btn ok" onclick="saveExamM()">保存</button>
+          <button class="btn sec" onclick="closeModal()">取消</button>
+        </div>
       </div>`;
     $("#modalBox").innerHTML = html; openModal(); renderExamFileList();
   }
@@ -1209,17 +1236,21 @@
     const it = (DB.data.exams || []).find(x => x.id === id);
     const b = (it && it.body) || {};
     const files = b.files || [];
-    let html = '<h3>' + esc(b.title || "未命名试卷") + "</h3>" +
-      '<div class="muted">' + esc([b.grade, b.source, b.tags].filter(Boolean).join(" · ")) + "</div>";
+    let html = '<div class="modal-header"><span class="modal-title">' + esc(b.title || "未命名试卷") + '</span><button class="modal-close" onclick="closeModal()">✕</button></div>' +
+      '<div class="modal-body">' +
+      '<div class="muted">' + esc([b.grade, b.source, b.tags].filter(Boolean).join(" · ")) + "</div>" +
+      '<div style="margin-top:6px"><button class="btn sec sm" onclick="openCatSheet(\'pick\')">🏷️ ' + esc(b.categoryId ? catPath(b.categoryId) : "未分类") + "</button></div>";
     if (b.note) html += '<div class="kv" style="margin-top:8px">备注</div><div>' + esc(b.note) + "</div>";
     if (b.contentHtml) html += '<div class="kv" style="margin-top:8px">内容</div><div>' + renderRich(b.contentHtml) + "</div>";
     if (files.length) {
       html += '<div class="kv" style="margin-top:8px">附件（' + files.length + "）</div>";
       files.forEach(fl => { html += '<div style="margin:4px 0"><a href="' + mediaUrl(encodeURIComponent(fl.rel)) + '" target="_blank" download>' + esc(fl.name || fl.rel) + "</a></div>"; });
     }
-    html += '<div class="row" style="margin-top:14px"><button class="btn" onclick="openExamEditor(\'' + esc(id) + '\')">编辑</button>' +
-      '<button class="btn danger" onclick="delExamM(\'' + esc(id) + '\')">删除</button>' +
-      '<button class="btn sec" onclick="closeModal()">关闭</button></div>';
+    html += '</div><div class="modal-footer"><div class="row-3">' +
+      '<button class="btn sec" onclick="openExamEditor(\'' + esc(id) + '\')">编辑</button>' +
+      '<button class="btn sec" onclick="delExamM(\'' + esc(id) + '\')">删除</button>' +
+      '<button class="btn sec" onclick="closeModal()">关闭</button>' +
+      "</div></div>";
     $("#modalBox").innerHTML = html; openModal();
   }
   async function delExamM(id) {
@@ -1247,79 +1278,105 @@
     while (stack.length) { const cur = stack.pop(); catKids(cur).forEach(k => { if (!set.has(k.id)) { set.add(k.id); stack.push(k.id); } }); }
     return set;
   }
-  function examCatOptionsHtml(selId, withTop) {
-    let html = withTop ? '<option value="">未分类</option>' : "";
-    const walk = (pid, depth) => {
-      catKids(pid).forEach(c => {
-        const indent = "　".repeat(depth);
-        html += '<option value="' + esc(c.id) + '"' + (c.id === selId ? " selected" : "") + ">" + indent + esc(catName(c)) + "</option>";
-        walk(c.id, depth + 1);
-      });
-    };
-    walk("", 0);
-    return html;
-  }
-  function examCatFilterOptionsHtml(selId) {
-    let html = '<option value="">全部分类</option>';
-    const walk = (pid, depth) => {
-      catKids(pid).forEach(c => {
-        const indent = "　".repeat(depth);
-        html += '<option value="' + esc(c.id) + '"' + (c.id === selId ? " selected" : "") + ">" + indent + esc(catName(c)) + "</option>";
-        walk(c.id, depth + 1);
-      });
-    };
-    walk("", 0);
-    return html;
-  }
   function setExamCatFilter(v) { examCatFilter = v || ""; renderExamsM(); }
-  function renderCatTreeM() {
-    const box = $("#catTreeM"); if (!box) return;
-    const row = (c, depth) => {
-      const indent = "　".repeat(depth);
+  function catExamCount(id) {
+    const subs = catSubtreeIds(id);
+    return (DB.data.exams || []).filter(e => subs.has((e.body && e.body.categoryId) || "")).length;
+  }
+  // ---- 白底树形抽屉（与题库"按知识点筛选"同款交互：搜索 + ▶ 展开）----
+  let catSheetMode = "pick";      // "pick"=编辑器里选分类 | "filter"=列表筛选 | "manage"=分类管理
+  let catExpanded = new Set();    // 展开的分类节点
+  let catAdding = null;           // {pid} 正在新增（抽屉内联输入行）
+  let catRenaming = null;         // 正在改名的分类 id
+  function openCatSheet(mode) {
+    catSheetMode = mode || "pick";
+    catAdding = null; catRenaming = null;
+    $("#catSearch").value = "";
+    $("#catSheetTitle").textContent = catSheetMode === "manage" ? "🏷️ 试卷分类管理" : "🏷️ 选择分类";
+    renderCatTree();
+    $("#catSheet").classList.remove("hidden");
+  }
+  function closeCatSheet() { $("#catSheet").classList.add("hidden"); }
+  function toggleCat(id) {
+    if (catExpanded.has(id)) catExpanded.delete(id); else catExpanded.add(id);
+    renderCatTree();
+  }
+  function renderCatTree() {
+    const box = $("#catTree"); if (!box) return;
+    const kw = ($("#catSearch").value || "").trim().toLowerCase();
+    const manage = catSheetMode === "manage";
+    const editRow = (inputHtml, saveFn) =>
+      '<div class="kp-row" style="gap:6px">' + inputHtml +
+      '<button class="btn ok sm" onclick="' + saveFn + '">保存</button>' +
+      '<button class="btn sec sm" onclick="catCancelEdit()">取消</button></div>';
+    let top = "";
+    if (catAdding && !catAdding.pid) {
+      top += editRow('<input id="catNewName" placeholder="顶级分类名称" style="flex:1;margin:0" onkeydown="if(event.key===\'Enter\')catSaveAdd()">', "catSaveAdd()");
+    }
+    top += '<div class="kp-row' + (!examCatFilter && catSheetMode !== "manage" ? " sel" : "") + '" onclick="pickCat(\'\')">' +
+      '<span class="kp-toggle leaf">·</span><span class="kp-name">' + (catSheetMode === "filter" ? "📂 全部分类" : "📂 未分类") + "</span>" +
+      (manage ? '<button class="btn sm" onclick="event.stopPropagation();catBeginAdd(\'\')">＋顶级</button>' : "") +
+      (catSheetMode === "filter" ? '<span class="kp-cnt">' + (DB.data.exams || []).length + " 卷</span>" : "") +
+      "</div>";
+    function nodeHtml(c) {
       const kids = catKids(c.id);
-      return '<div style="border-bottom:1px solid #eee;padding:6px 0">' +
-        '<div class="row" style="align-items:center;gap:6px">' +
-          '<span style="flex:1">' + indent + esc(catName(c)) + "</span>" +
-          '<button class="btn sm" onclick="addExamCatM(\'' + esc(c.id) + '\')">＋子</button>' +
-          '<button class="btn sec sm" onclick="renameExamCatM(\'' + esc(c.id) + '\')">改名</button>' +
-          '<button class="btn danger sm" onclick="delExamCatM(\'' + esc(c.id) + '\')">删除</button>' +
-        "</div>" +
-        (kids.length ? '<div style="padding-left:12px">' + kids.map(k => row(k, depth + 1)).join("") + "</div>" : "") +
+      const nm = catName(c);
+      if (kw && !nm.toLowerCase().includes(kw) && !kids.some(k => catName(k).toLowerCase().includes(kw))) return "";
+      const hasKids = kids.length > 0;
+      const expanded = catExpanded.has(c.id);
+      let inner;
+      if (catRenaming === c.id) {
+        inner = editRow('<input id="catNewName" value="' + esc(nm) + '" style="flex:1;margin:0" onkeydown="if(event.key===\'Enter\')catSaveRename(\'' + esc(c.id) + '\')">', "catSaveRename('" + esc(c.id) + "')");
+      } else {
+        inner = '<div class="kp-row" onclick="pickCat(\'' + esc(c.id) + '\')">' +
+          '<span class="kp-toggle' + (hasKids ? "" : " leaf") + (expanded ? " open" : "") + '" onclick="event.stopPropagation();toggleCat(\'' + esc(c.id) + '\')">' + (hasKids ? "▶" : "") + "</span>" +
+          '<span class="kp-name">' + esc(nm) + "</span>" +
+          (manage ? '<button class="btn sm" onclick="event.stopPropagation();catBeginAdd(\'' + esc(c.id) + '\')">＋子</button>' +
+                    '<button class="btn sec sm" onclick="event.stopPropagation();catBeginRename(\'' + esc(c.id) + '\')">改名</button>' +
+                    '<button class="btn danger sm" onclick="event.stopPropagation();delExamCatM(\'' + esc(c.id) + '\')">删除</button>' : "") +
+          '<span class="kp-cnt">' + catExamCount(c.id) + " 卷</span></div>";
+      }
+      return "<div>" + inner +
+        (hasKids ? '<div class="kp-kids' + (expanded ? " open" : "") + '">' + kids.map(nodeHtml).join("") + "</div>" : "") +
         "</div>";
-    };
-    box.innerHTML = catKids("").map(c => row(c, 0)).join("") || '<div class="center">还没有分类，先添加一个顶级分类吧</div>';
+    }
+    let html = top + catKids("").map(nodeHtml).join("");
+    if (catAdding && catAdding.pid) {
+      html += editRow('<input id="catNewName" placeholder="子分类名称" style="flex:1;margin:0" onkeydown="if(event.key===\'Enter\')catSaveAdd()">', "catSaveAdd()");
+    }
+    box.innerHTML = html;
+    if (catAdding || catRenaming) setTimeout(() => { const el = $("#catNewName"); if (el) el.focus(); }, 60);
   }
-  function manageExamCatsM() {
-    const html = `<h3>🏷️ 试卷分类管理</h3>
-      <div class="row" style="margin-bottom:10px">
-        <input id="newCatName" placeholder="新顶级分类名称" style="flex:1;margin:0">
-        <button class="btn ok" onclick="addExamCatM('')">＋ 添加</button>
-      </div>
-      <div id="catTreeM"></div>
-      <div class="row" style="margin-top:12px"><button class="btn sec" style="flex:1" onclick="closeModal()">关闭</button></div>`;
-    $("#modalBox").innerHTML = html; openModal(); renderCatTreeM();
+  function pickCat(id) {
+    if (catSheetMode === "filter") { setExamCatFilter(id || ""); closeCatSheet(); return; }
+    const hid = $("#ef_cat"), btn = $("#ef_cat_btn");
+    if (hid) hid.value = id || "";
+    if (btn) btn.textContent = id ? "🏷️ " + catPath(id) : "未分类（点此选择）";
+    closeCatSheet();
   }
-  function refreshExamCatSelect() {
-    const sel = $("#ef_cat"); if (!sel) return;
-    const cur = sel.value; sel.innerHTML = examCatOptionsHtml(cur, true);
-  }
-  async function addExamCatM(pid) {
-    const name = window.prompt(pid ? "输入子分类名称" : "输入顶级分类名称");
-    if (name === null) return;
-    const nm = name.trim(); if (!nm) return;
-    const body = { id: "ec_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: nm, parentId: pid || "", createdAt: Date.now() };
+  function catBeginAdd(pid) { catAdding = { pid: pid || "" }; catRenaming = null; renderCatTree(); }
+  function catBeginRename(id) { catRenaming = id; catAdding = null; renderCatTree(); }
+  function catCancelEdit() { catAdding = null; catRenaming = null; renderCatTree(); }
+  async function catSaveAdd() {
+    const name = (($("#catNewName") || {}).value || "").trim();
+    if (!name) { toast("请填写分类名称"); return; }
+    const pid = (catAdding && catAdding.pid) || "";
+    const body = { id: "ec_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, parentId: pid, createdAt: Date.now() };
     DB.data.examCategories = DB.data.examCategories || [];
     DB.data.examCategories.push({ id: body.id, updated_at: body.createdAt, body });
     try { await api("POST", "/api/examCategories", body); } catch (e) { toast("保存失败：" + e.message); }
-    renderCatTreeM(); renderExamsM(); refreshExamCatSelect();
+    catAdding = null;
+    if (pid) catExpanded.add(pid);
+    renderCatTree(); renderExamsM();
   }
-  async function renameExamCatM(id) {
+  async function catSaveRename(id) {
+    const name = (($("#catNewName") || {}).value || "").trim();
+    if (!name) { toast("请填写分类名称"); return; }
     const c = examCats().find(x => x.id === id); if (!c) return;
-    const name = window.prompt("修改分类名称", catName(c));
-    if (name === null) return; const nm = name.trim(); if (!nm) return;
-    const body = Object.assign({}, c.body, { id, name: nm, parentId: catPid(c), createdAt: (c.body && c.body.createdAt) || Date.now() });
+    const body = Object.assign({}, c.body, { id, name, parentId: catPid(c), createdAt: (c.body && c.body.createdAt) || Date.now() });
     try { await api("PUT", "/api/examCategories/" + id, body); } catch (e) { toast("保存失败：" + e.message); }
-    c.body = body; renderCatTreeM(); renderExamsM(); refreshExamCatSelect();
+    c.body = body; catRenaming = null;
+    renderCatTree(); renderExamsM();
   }
   async function delExamCatM(id) {
     const c = examCats().find(x => x.id === id); if (!c) return;
@@ -1331,7 +1388,9 @@
       for (const sid of subs) { try { await api("DELETE", "/api/examCategories/" + sid); } catch (err) {} }
     } catch (e) { toast("部分删除失败：" + e.message); }
     DB.data.examCategories = examCats().filter(x => !subs.has(x.id));
-    renderCatTreeM(); renderExamsM(); refreshExamCatSelect();
+    if (examCatFilter && subs.has(examCatFilter)) examCatFilter = "";
+    catAdding = null; catRenaming = null;
+    renderCatTree(); renderExamsM();
   }
 
   // ---------- 排课（周课表网格，复刻电脑版，云端同步） ----------
@@ -1720,7 +1779,7 @@
     const ui = MOD_UI[mod];
     const it = (DB.data[mod] || []).find(x => x.id === id);
     const b = (it && it.body) || {};
-    let html = `<h3>${esc(ui.title(b))}</h3><div class="muted">${esc(ui.sub(b))}</div>`;
+    let html = `<div class="modal-header"><span class="modal-title">${esc(ui.title(b))}</span><button class="modal-close" onclick="closeModal()">✕</button></div><div class="modal-body"><div class="muted">${esc(ui.sub(b))}</div>`;
     (ui.fields || []).forEach(f => {
       const v = b[f.k];
       if (f.k === "contentHtml" && v) html += `<div class="kv" style="margin-top:6px">${esc(f.label)}</div><div>${renderRich(v)}</div>`;
@@ -1730,10 +1789,10 @@
       html += `<div class="kv" style="margin-top:6px">附件</div>`;
       (b.files || []).forEach(fl => { html += `<div><a href="${mediaUrl(encodeURIComponent(fl.rel))}" target="_blank">${esc(fl.name || fl.rel)}</a></div>`; });
     }
-    html += `<div class="row" style="margin-top:12px">
-      <button class="btn" onclick="openModuleEditor('${mod}','${id}')">编辑</button>
-      <button class="btn danger" onclick="delModule('${mod}','${id}')">删除</button>
-      <button class="btn sec" onclick="closeModal()">关闭</button></div>`;
+    html += `</div><div class="modal-footer"><div class="row-3">
+      <button class="btn sec" onclick="openModuleEditor('${mod}','${id}')">编辑</button>
+      <button class="btn sec" onclick="delModule('${mod}','${id}')">删除</button>
+      <button class="btn sec" onclick="closeModal()">关闭</button></div></div>`;
     $("#modalBox").innerHTML = html; openModal();
   }
   function openModuleEditor(mod, id) {
@@ -1741,7 +1800,8 @@
     const isEdit = !!id;
     const it = isEdit ? (DB.data[mod] || []).find(x => x.id === id) : null;
     const b = (it && it.body) || {};
-    let html = `<h3>${isEdit ? "编辑" : "新建"}${ui.label}</h3>
+    let html = `<div class="modal-header"><span class="modal-title">${isEdit ? "编辑" : "新建"}${ui.label}</span><button class="modal-close" onclick="closeModal()">✕</button></div>
+      <div class="modal-body">
       <input type="hidden" id="m_mod" value="${mod}"><input type="hidden" id="m_id" value="${esc(id || "")}">`;
     (ui.fields || []).forEach(f => {
       const v = b[f.k] == null ? "" : b[f.k];
@@ -1756,7 +1816,7 @@
       }
       else html += `<label class="kv">${esc(f.label)}</label><input id="mf_${f.k}" type="${f.type === "number" ? "number" : "text"}" value="${esc(v)}">`;
     });
-    html += `<div class="row" style="margin-top:12px"><button class="btn ok" onclick="saveModule()">保存</button><button class="btn sec" onclick="closeModal()">取消</button></div>`;
+    html += `</div><div class="modal-footer"><div class="row-2"><button class="btn ok" onclick="saveModule()">保存</button><button class="btn sec" onclick="closeModal()">取消</button></div></div>`;
     $("#modalBox").innerHTML = html; openModal();
   }
   async function saveModule() {
@@ -1810,8 +1870,11 @@
   window.openModuleEditor = openModuleEditor; window.saveModule = saveModule; window.delModule = delModule;
   window.openExamEditor = openExamEditor; window.saveExamM = saveExamM; window.delExamM = delExamM;
   window.openExamDetail = openExamDetail; window.examUploadFiles = examUploadFiles; window.examRemoveFile = examRemoveFile;
-  window.setExamCatFilter = setExamCatFilter; window.manageExamCatsM = manageExamCatsM;
-  window.addExamCatM = addExamCatM; window.renameExamCatM = renameExamCatM; window.delExamCatM = delExamCatM; window.renderCatTreeM = renderCatTreeM;
+  window.setExamCatFilter = setExamCatFilter;
+  window.openCatSheet = openCatSheet; window.closeCatSheet = closeCatSheet; window.renderCatTree = renderCatTree;
+  window.pickCat = pickCat; window.toggleCat = toggleCat; window.catBeginAdd = catBeginAdd; window.catBeginRename = catBeginRename;
+  window.catCancelEdit = catCancelEdit; window.catSaveAdd = catSaveAdd; window.catSaveRename = catSaveRename;
+  window.delExamCatM = delExamCatM;
   window.logout = logout;
 
   // 全局事件委托：题库卡片（详情/答案/组卷/错题/知识点/图片放大）

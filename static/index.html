@@ -255,7 +255,7 @@
 
   /* ===== 弹窗 ===== */
   .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-start;justify-content:center;
-    z-index:60;padding:24px 14px;overflow-y:auto;animation:fadeIn .15s ease}
+    z-index:75;padding:24px 14px;overflow-y:auto;animation:fadeIn .15s ease}
   .modal{background:#fff;border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);width:100%;max-width:560px;margin:auto;
     max-height:90vh;display:flex;flex-direction:column;overflow:hidden;animation:sheetUp .2s ease}
   .modal-header{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
@@ -361,8 +361,8 @@
               <button class="btn" onclick="openExamEditor(null)">＋ 收藏试卷</button>
             </div>
             <div class="row" style="margin-bottom:10px;gap:8px">
-              <select id="examCatFilter" class="filter-select" style="flex:1;margin:0" onchange="setExamCatFilter(this.value)"></select>
-              <button class="btn sec sm" style="margin:0" onclick="manageExamCatsM()">🏷️ 分类管理</button>
+              <button id="examCatFilterBtn" class="filter-select" style="flex:1;margin:0;text-align:left" onclick="openCatSheet('filter')">全部分类</button>
+              <button class="btn sec sm" style="margin:0" onclick="openCatSheet('manage')">🏷️ 分类管理</button>
             </div>
             <div id="examListM"></div>
           </div>
@@ -461,6 +461,17 @@
       </div>
       <div style="padding:10px 12px 0"><input id="kpSearch" placeholder="搜索知识点名称…" oninput="renderKpTree()"></div>
       <div class="sheet-body" id="kpTree"></div>
+    </div>
+  </div>
+  <!-- 试卷分类 选择/管理 抽屉（与知识点树同款样式） -->
+  <div id="catSheet" class="sheet-overlay hidden" style="z-index:85" onclick="if(event.target===this)closeCatSheet()">
+    <div class="sheet">
+      <div class="sheet-head">
+        <div class="sheet-title" id="catSheetTitle">🏷️ 选择分类</div>
+        <button class="btn sec sm" onclick="closeCatSheet()">关闭</button>
+      </div>
+      <div style="padding:10px 12px 0"><input id="catSearch" placeholder="搜索分类名称…" oninput="renderCatTree()"></div>
+      <div class="sheet-body" id="catTree"></div>
     </div>
   </div>
   <!-- 图片灯箱 -->
