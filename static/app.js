@@ -95,9 +95,11 @@
   }
   window.imgRetry = imgRetry;
   // 把 media://questions/<id>/{c,a}/img_1.png 改成可访问的图片标签
+  // 捕获组必须带 questions/ 前缀：服务端媒体路径是 questions/<qid>/<kind>/img_N.png，
+  // 丢掉该段会拼出 /api/media/<qid>/... 导致 404（表现为手机端看不到题目/答案图片）。
   function renderMedia(text) {
     if (!text) return "";
-    return esc(text).replace(/media:\/\/questions\/([^\s)]+)/g,
+    return esc(text).replace(/media:\/\/(questions\/[^\s)]+)/g,
       (m, p) => `<img class="qimg" loading="lazy" src="${mediaUrl(p)}" onerror="imgRetry(this)">`);
   }
   // 内容是桌面端生成的 HTML（含 <img src="media://...">）→ 按原样渲染并改写媒体地址；
@@ -1176,7 +1178,9 @@
       <label class="kv">备注</label><textarea id="ef_note">${esc(b.note || "")}</textarea>
       <label class="kv">内容（整卷文字 / 说明，可选）</label><textarea id="ef_content">${esc(b.contentHtml || "")}</textarea>
       <label class="kv">附件（PDF / Word / 图片）</label>
-      <label class="btn ok" for="ef_files" style="display:block;text-align:center;padding:11px;font-size:15px">📎 点此上传附件（可多选）<input type="file" id="ef_files" multiple style="display:none" onchange="examUploadFiles(this)"></label>
+      <label class="btn ok" for="ef_files" style="display:block;text-align:center;padding:11px;font-size:15px">📎 点此上传附件（可多选）<input type="file" id="ef_files" multiple
+        accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.png,.jpg,.jpeg,.webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        style="display:none" onchange="examUploadFiles(this)"></label>
       <div id="ef_fileList" class="muted" style="margin-top:6px"></div>
       </div>
       <div class="modal-footer">
@@ -1194,7 +1198,9 @@
     for (const f of files) {
       try {
         const buf = await f.arrayBuffer();
-        const res = await api("POST", "/api/media?sub=exams/" + encodeURIComponent(examDraft.id), buf, true, f.name);
+        // 文件名走 ?name= 查询参数：X-Filename 头放中文会按 latin-1 编码损坏，
+        // 服务端优先取查询参数里的文件名。
+        const res = await api("POST", "/api/media?sub=" + encodeURIComponent("exams/" + examDraft.id) + "&name=" + encodeURIComponent(f.name), buf, true);
         const rel = (res.url || "").replace(/^\/api\/media\//, "");
         if (rel) examDraft.files.push({ rel, name: f.name });
       } catch (e) { toast("上传失败：" + f.name + " " + e.message); }
