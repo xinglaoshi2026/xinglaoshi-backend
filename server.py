@@ -16,9 +16,9 @@
 数据模型（业务字段保持与桌面端 data.json 一致，整条以 JSON 存于 store 表）：
   store(module, id, body, updated_at)
 """
-import os, sys, json, sqlite3, hashlib, secrets, time, uuid, mimetypes, re, io, zipfile, struct
+import os, sys, json, sqlite3, hashlib, secrets, time, uuid, mimetypes, re, io, zipfile, struct, shutil
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs, quote as urlquote
+from urllib.parse import urlparse, parse_qs, quote as urlquote, unquote as urlunquote
 from datetime import datetime, timezone
 from xml.sax.saxutils import escape as xesc
 
@@ -231,6 +231,31 @@ def _img_dims(data):
     return 800, 600
 
 
+def _media_disk(rel):
+    """逻辑媒体路径 -> 磁盘路径。
+
+    部分运行环境(如某些云容器的文件系统)不支持中文/全角文件名，
+    直接 open 中文路径会写出“乱码”文件、GET 时按解码路径找不到 -> 404。
+    这里统一把逻辑路径 URL 编码成 ASCII 再落盘，规避该问题；
+    rel 中的 '/' 保留为目录分隔，仅对中文等特殊字符做 %XX 转义。
+    """
+    return os.path.normpath(os.path.join(MEDIA_DIR, urlquote(rel, safe="/")))
+
+
+def _safe_media_path(rel):
+    """逻辑路径 -> 真实存在的磁盘路径(已做越界校验)；不存在返回 None。
+
+    同时尝试“URL 编码落盘路径”和“旧版字面路径”两种方案，向后兼容。
+    用 abspath 归一化斜杠/盘符，避免 Windows 下 / 与 \\ 混用导致 startswith 误判。
+    """
+    base = os.path.abspath(MEDIA_DIR)
+    for fp in (_media_disk(rel), os.path.normpath(os.path.join(MEDIA_DIR, rel))):
+        afp = os.path.abspath(fp)
+        if afp.startswith(base + os.sep) and os.path.isfile(afp):
+            return afp
+    return None
+
+
 def _media_file(src):
     """media://xxx 或 /api/media/xxx -> 本地文件路径；不存在返回 None。"""
     rel = src
@@ -238,10 +263,13 @@ def _media_file(src):
         if rel.startswith(pre):
             rel = rel[len(pre):]
             break
-    fp = os.path.normpath(os.path.join(MEDIA_DIR, rel))
-    if fp.startswith(MEDIA_DIR) and os.path.isfile(fp):
-        return fp
-    return None
+    # 媒体按账号落盘在 media/<user_id>/<module>/<id>/...，优先按当前用户查找
+    uid = ctx_user()
+    if uid:
+        fp = _safe_media_path(uid + "/" + rel)
+        if fp:
+            return fp
+    return _safe_media_path(rel)
 
 
 def _content_segments(html):
@@ -459,10 +487,28 @@ def send_json(h, obj, code=200):
     h.wfile.write(data)
 
 
+def _sniff_content_type(path):
+    """按文件头魔数判定图片类型, 避免转码(PNG->JPEG)后扩展名与真实格式不符导致手机端无法渲染。"""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(12)
+        if head[:8] == b"\x89PNG\r\n\x1a\n":
+            return "image/png"
+        if head[:3] == b"\xff\xd8\xff":
+            return "image/jpeg"
+        if head[:6] in (b"GIF87a", b"GIF89a"):
+            return "image/gif"
+        if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+            return "image/webp"
+    except Exception:
+        pass
+    return mimetypes.guess_type(path)[0] or "application/octet-stream"
+
+
 def send_file(h, path, filename=None):
     if not os.path.exists(path):
         h.send_response(404); h.send_cors(); h.end_headers(); return
-    mt = mimetypes.guess_type(path)[0] or "application/octet-stream"
+    mt = _sniff_content_type(path)
     sz = os.path.getsize(path)
     h.send_response(200)
     h.send_header("Content-Type", mt)
@@ -561,12 +607,28 @@ class H(BaseHTTPRequestHandler):
             u = user_of(get_token(self))
             if not u:
                 return send_json(self, {"error": "未登录"}, 401)
-            rel = p[len("/api/media/"):]
-            base = os.path.normpath(os.path.join(MEDIA_DIR, u["id"]))
-            fp = os.path.normpath(os.path.join(MEDIA_DIR, u["id"], rel))
-            if fp.startswith(base + os.sep) and os.path.isfile(fp):
+            # URL 路径是 percent-encoded, 先解码回原始(可能含中文)再查盘,
+            # 否则 _media_disk 的 urlquote 会二次编码导致 404。
+            rel = urlunquote(p[len("/api/media/"):])
+            fp = _safe_media_path(u["id"] + "/" + rel)
+            ufp = os.path.abspath(os.path.join(MEDIA_DIR, u["id"]))
+            if fp and os.path.abspath(fp).startswith(ufp + os.sep):
                 return send_file(self, fp)
             self.send_response(404); self.send_cors(); self.end_headers(); return
+        if p == "/api/health":
+            # 运维诊断: 云端容器磁盘容量/余量(决定能否容纳全部媒体图)
+            try:
+                du = shutil.disk_usage(os.path.dirname(MEDIA_DIR) or ".")
+                n = 0
+                for _, _, fs in os.walk(MEDIA_DIR):
+                    n += len(fs)
+                return send_json(self, {
+                    "ok": True,
+                    "disk_total": du.total, "disk_used": du.used, "disk_free": du.free,
+                    "data_dir": DATA_DIR, "media_files": n,
+                })
+            except Exception as e:
+                return send_json(self, {"ok": False, "error": str(e)}, 500)
         m = re.match(r"^/api/papers/([^/]+)/docx$", p)
         if m:
             u = user_of(get_token(self))
@@ -772,15 +834,25 @@ class H(BaseHTTPRequestHandler):
             return send_json(self, {"ok": True, "applied": applied})
         if p == "/api/media":
             # 裸二进制上传：文件名取自 X-Filename 或 ?name=
-            name = self.headers.get("X-Filename") or q.get("name", ["upload.bin"])[0]
+            # 优先用查询参数 name(已被 urlparse 正确解码为中文),
+            # 避免桌面端 urllib 无法把中文写入 X-Filename 头(latin-1)导致上传失败;
+            # X-Filename 仍作为移动端兼容回退。
+            name = q.get("name", [None])[0] or self.headers.get("X-Filename") or "upload.bin"
             name = os.path.basename(name)
             raw, _ = read_body(self)
             if not isinstance(raw, bytes): raw = b""
             # 放入 media/<user_id>/<module>/<id>/... 按账号隔离
             sub = q.get("sub", ["others"])[0]
-            d = os.path.join(MEDIA_DIR, u["id"], sub)
-            os.makedirs(d, exist_ok=True)
-            fp = os.path.join(d, name)
+            # 磁盘空间保护：剩余不足时拒绝写入, 避免撑爆数据盘导致 sync.db(WAL)写入失败而整体宕机
+            try:
+                free = shutil.disk_usage(os.path.dirname(MEDIA_DIR) or ".").free
+                if free < 30 * 1024 * 1024:
+                    return send_json(self, {"error": "云端磁盘空间不足, 图片上传被拒绝(请清理或扩容)"}, 507)
+            except Exception:
+                pass
+            # URL 编码成 ASCII 落盘，规避部分文件系统不支持中文文件名的问题；仍按账号隔离
+            fp = _media_disk(u["id"] + "/" + sub + "/" + name)
+            os.makedirs(os.path.dirname(fp), exist_ok=True)
             with open(fp, "wb") as f: f.write(raw)
             rel = f"{sub}/{name}"
             return send_json(self, {"ok": True, "url": "/api/media/" + rel})
@@ -843,7 +915,33 @@ class H(BaseHTTPRequestHandler):
         send_json(self, {"error": "未知接口 " + p}, 404)
 
 
+def _free_disk_if_needed():
+    """云端数据盘(容器磁盘)可能被子目录 media 撑满, 导致 sync.db 的 WAL 文件
+    无法创建、server.py 启动即崩溃(表现为 Railway 部署失败 / 502)。
+    此处: 若 DB 因磁盘满无法初始化, 清空可重建的 media 目录释放空间后重试。
+    media 由桌面端 --watch 重新回填, 题目数据亦由桌面端重新同步, 故清空安全。"""
+    try:
+        cx = sqlite3.connect(DB_PATH)
+        cx.execute("PRAGMA journal_mode=WAL")
+        cx.close()
+        return
+    except Exception:
+        pass
+    try:
+        shutil.rmtree(MEDIA_DIR, ignore_errors=True)
+        os.makedirs(MEDIA_DIR, exist_ok=True)
+    except Exception:
+        pass
+    try:
+        cx = sqlite3.connect(DB_PATH)
+        cx.execute("PRAGMA journal_mode=WAL")
+        cx.close()
+    except Exception:
+        pass
+
+
 def main():
+    _free_disk_if_needed()
     init_db()
     migrate_ts()
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), H)
