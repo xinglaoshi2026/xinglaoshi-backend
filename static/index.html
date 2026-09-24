@@ -140,6 +140,7 @@
   .kp-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .kp-row.sel .kp-name{color:var(--primary);font-weight:600}
   .kp-cnt{font-size:12px;color:var(--text-muted);flex-shrink:0}
+  .kp-add{flex-shrink:0;width:26px;height:26px;line-height:24px;text-align:center;border-radius:50%;border:1px solid var(--border);color:var(--primary);font-size:16px;background:var(--bg)}
   .kp-kids{margin-left:16px;border-left:1px dashed var(--border-dark);padding-left:4px;display:none}
   .kp-kids.open{display:block}
 
@@ -353,9 +354,8 @@
         </div>
 
         <div id="sub-paper" class="subpane hidden">
-          <div id="allPapers"></div>
-          <!-- 收藏试卷（与电脑端「试卷中心·收藏试卷」一致） -->
-          <div class="card page" style="margin-top:16px;padding:14px">
+          <!-- 收藏试卷（与电脑端「试卷中心·收藏试卷」一致），置于顶部便于直达 -->
+          <div class="card page" style="margin-bottom:16px;padding:14px">
             <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px">
               <div style="font-size:16px;font-weight:700">⭐ 收藏试卷 <span class="muted" id="examCountM"></span></div>
               <button class="btn" onclick="openExamEditor(null)">＋ 收藏试卷</button>
@@ -366,6 +366,7 @@
             </div>
             <div id="examListM"></div>
           </div>
+          <div id="allPapers"></div>
         </div>
 
         <div id="sub-wrong" class="subpane hidden">

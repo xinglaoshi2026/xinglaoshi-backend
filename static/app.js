@@ -376,8 +376,10 @@
   let kpSheetFor = null;
   let addQKp = ""; // 添加题目表单当前选中的知识点
   let modKpParent = ""; // 知识点编辑表单当前选中的父级（知识点树选择）
+  let kpFocusId = ""; // 刚创建的知识点（在树中高亮并展开其祖先）
   function openKpSheet(forWhat) {
     kpSheetFor = forWhat || null;
+    kpFocusId = "";
     $("#kpSearch").value = "";
     renderKpTree();
     $("#kpSheet").classList.remove("hidden");
@@ -397,10 +399,12 @@
     const isPick = kpSheetFor === "kpParent";
     const curSel = isAdd ? addQKp : (isPick ? modKpParent : qf.kpId);
     const anc = curSel ? kpAncestors(curSel) : new Set();
+    if (kpFocusId) kpAncestors(kpFocusId).forEach(x => anc.add(x));
     const allLabel = isPick ? "（顶级，无父级）" : "📚 全部知识点";
     const allBtn = isAdd ? "" :
-      '<div class="kp-row' + (curSel ? "" : " sel") + '" data-kp="" onclick="pickKp(\'\')">' +
+      '<div class="kp-row' + (curSel || kpFocusId ? "" : " sel") + '" data-kp="" onclick="pickKp(\'\')">' +
       '<span class="kp-toggle leaf">·</span><span class="kp-name">' + allLabel + '</span>' +
+      '<span class="kp-add" title="新建顶级知识点" onclick="event.stopPropagation();kpNewChildAt(\'\')">＋</span>' +
       (isPick ? "" : '<span class="kp-cnt">' + (DB.data.questions || []).length + " 题</span>") + '</div>';
     function nodeHtml(id) {
       const b = kpMap[id] || {};
@@ -409,9 +413,10 @@
       if (kw && !String(b.name || "").toLowerCase().includes(kw) && !kids.some(k => String(kpMap[k].name || "").toLowerCase().includes(kw))) return "";
       const hasKids = kids.length > 0;
       const expanded = hasKids && anc.has(id);
-      return '<div><div class="kp-row' + (curSel === id ? " sel" : "") + '" data-kp="' + esc(id) + '" onclick="pickKp(\'' + esc(id) + '\')">' +
+      return '<div><div class="kp-row' + (curSel === id || kpFocusId === id ? " sel" : "") + '" data-kp="' + esc(id) + '" onclick="pickKp(\'' + esc(id) + '\')">' +
         '<span class="kp-toggle' + (hasKids ? "" : " leaf") + (expanded ? " open" : "") + '" onclick="event.stopPropagation();this.classList.toggle(\'open\');this.closest(\'.kp-row\').parentElement.querySelector(\':scope > .kp-kids\').classList.toggle(\'open\')">' + (hasKids ? "▶" : "") + "</span>" +
         '<span class="kp-name">' + esc(b.name || id) + "</span>" +
+        '<span class="kp-add" title="在此知识点下新建子知识点" onclick="event.stopPropagation();kpNewChildAt(\'' + esc(id) + '\')">＋</span>' +
         '<span class="kp-cnt">' + cnt + " 题</span></div>" +
         (hasKids ? '<div class="kp-kids' + (expanded ? " open" : "") + '">' + kids.map(nodeHtml).join("") + "</div>" : "") +
         "</div>";
@@ -442,6 +447,45 @@
       return;
     }
     setKpFilter(id); window.scrollTo(0, 0);
+  }
+
+  // 在知识点树某节点下直接新建子知识点（对齐电脑端的树形新建体验）
+  let kpNewParent = "";
+  function kpNewChildAt(parentId) {
+    kpNewParent = parentId || "";
+    const box = $("#modalBox");
+    box.innerHTML =
+      '<div class="modal-header"><span class="modal-title">🌱 ' + (kpNewParent ? "在「" + esc(kpPath(kpNewParent)) + "」下新建" : "新建顶级知识点") + '</span><button class="modal-close" onclick="closeModal()">✕</button></div>' +
+      '<div class="modal-body">' +
+        '<div class="form-group"><label class="kv">知识点名称</label><input id="kpNewName" placeholder="如：光的折射"></div>' +
+        '<div class="muted">ID 将自动生成，创建后可在「设置 → 知识点管理」中编辑。</div>' +
+      "</div>" +
+      '<div class="modal-footer"><button class="btn ok" onclick="kpSaveNewChild()">保存</button><button class="btn sec" onclick="closeModal()">取消</button></div>';
+    openModal();
+    setTimeout(() => { const el = $("#kpNewName"); if (el) el.focus(); }, 80);
+  }
+  async function kpSaveNewChild() {
+    const name = ($("#kpNewName").value || "").trim();
+    if (!name) { toast("请填写知识点名称"); return; }
+    const id = "kp_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    try {
+      await api("POST", "/api/knowledgePoints", { id, name, parentId: kpNewParent, updatedAt: Date.now() });
+      toast("已创建：" + name);
+      const fromPicker = kpSheetFor === "kpParent";
+      closeModal();
+      await loadPull(true);
+      buildKpIndex();
+      if (fromPicker) {
+        // 从知识点编辑器的父级选择进入：创建完成后回到管理列表
+        closeKpSheet(); kpSheetFor = null;
+        openModuleListEditor("knowledgePoints");
+      } else {
+        // 浏览/筛选模式：留在树上，定位并高亮新节点
+        kpFocusId = id;
+        const search = $("#kpSearch"); if (search) search.value = "";
+        renderKpTree();
+      }
+    } catch (e) { toast("创建失败：" + e.message); }
   }
 
   // ---------- 标记错题 ----------
@@ -1744,6 +1788,7 @@
   window.loadMore = showMore;
   window.setTypeFilter = setTypeFilter; window.setKpFilter = setKpFilter; window.openKpSheet = openKpSheet; window.closeKpSheet = closeKpSheet;
   window.renderKpTree = renderKpTree; window.pickKp = pickKp;
+  window.kpNewChildAt = kpNewChildAt; window.kpSaveNewChild = kpSaveNewChild;
   window.quickCompose = quickCompose; window.markWrong = markWrong; window.saveWrong = saveWrong;
   window.loadWrong = loadWrong; window.toggleWrongResolved = toggleWrongResolved; window.delWrong = delWrong;
   window.showLightbox = showLightbox;
