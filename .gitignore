@@ -3,3 +3,4 @@ _shot_*.png
 pull_sample.json
 pull_*.json
 *.docx
+__pycache__/
