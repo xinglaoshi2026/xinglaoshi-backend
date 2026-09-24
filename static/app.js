@@ -72,11 +72,19 @@
     clearTimeout(toast._t); toast._t = setTimeout(() => el.classList.remove("show"), 1800);
   }
   function esc(s) { return (s == null ? "" : String(s)).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+  // 媒体文件访问地址：补上后端 base 与登录 token。
+  // <img>/<a> 标签无法自动带 Authorization 头，必须放到 URL 上，否则云端媒体接口返回 401，
+  // 导致手机端看不到题目/答案图片（电脑端用本地文件故正常）。
+  function mediaUrl(p) {
+    const base = localStorage.getItem(LS_BASE) || "";
+    const t = token || "";
+    return base + "/api/media/" + p + (t ? "?token=" + encodeURIComponent(t) : "");
+  }
   // 把 media://questions/<id>/{c,a}/img_1.png 改成可访问的图片标签
   function renderMedia(text) {
     if (!text) return "";
     return esc(text).replace(/media:\/\/questions\/([^\s)]+)/g,
-      (m, p) => `<img class="qimg" src="/api/media/${p}" onerror="this.style.display='none'">`);
+      (m, p) => `<img class="qimg" src="${mediaUrl(p)}" onerror="this.style.display='none'">`);
   }
   // 内容是桌面端生成的 HTML（含 <img src="media://...">）→ 按原样渲染并改写媒体地址；
   // 纯文本则转义后把 media:// 引用转成图片。
@@ -85,7 +93,8 @@
     const s = String(html);
     if (/<[a-z][\s\S]*>/i.test(s)) {
       return s.replace(/<div class="qb-meta">[\s\S]*?<\/div>/gi, "")
-              .replace(/(src\s*=\s*["'])media:\/\//gi, "$1/api/media/")
+              .replace(/(src\s*=\s*["'])media:\/\/([^\s"'>]+)/gi,
+                (m, pre, p) => pre + mediaUrl(p))
               .replace(/<img(?![^>]*onerror)/gi, '<img onerror="this.style.display=\'none\'"')
               .replace(/<img(?![^>]*\bclass=)/gi, '<img class="qimg"');
     }
@@ -366,6 +375,7 @@
   // kpSheet 抽屉复用模式：null=题库筛选；"add"=添加题目表单选知识点
   let kpSheetFor = null;
   let addQKp = ""; // 添加题目表单当前选中的知识点
+  let modKpParent = ""; // 知识点编辑表单当前选中的父级（知识点树选择）
   function openKpSheet(forWhat) {
     kpSheetFor = forWhat || null;
     $("#kpSearch").value = "";
@@ -384,12 +394,14 @@
     const kw = ($("#kpSearch").value || "").trim().toLowerCase();
     const box = $("#kpTree");
     const isAdd = kpSheetFor === "add";
-    const curSel = isAdd ? addQKp : qf.kpId;
+    const isPick = kpSheetFor === "kpParent";
+    const curSel = isAdd ? addQKp : (isPick ? modKpParent : qf.kpId);
     const anc = curSel ? kpAncestors(curSel) : new Set();
+    const allLabel = isPick ? "（顶级，无父级）" : "📚 全部知识点";
     const allBtn = isAdd ? "" :
       '<div class="kp-row' + (curSel ? "" : " sel") + '" data-kp="" onclick="pickKp(\'\')">' +
-      '<span class="kp-toggle leaf">·</span><span class="kp-name">📚 全部知识点</span>' +
-      '<span class="kp-cnt">' + (DB.data.questions || []).length + " 题</span></div>";
+      '<span class="kp-toggle leaf">·</span><span class="kp-name">' + allLabel + '</span>' +
+      (isPick ? "" : '<span class="kp-cnt">' + (DB.data.questions || []).length + " 题</span>") + '</div>';
     function nodeHtml(id) {
       const b = kpMap[id] || {};
       const kids = (kpKids[id] || []).slice().sort((a, c) => String(kpMap[a].name).localeCompare(String(kpMap[c].name), "zh-CN"));
@@ -418,6 +430,14 @@
       addQKp = id || "";
       const lbl = $("#nq_kp_btn");
       if (lbl) { lbl.textContent = addQKp ? "📍 " + kpPath(addQKp) : "选择知识点"; lbl.classList.toggle("on", !!addQKp); }
+      kpSheetFor = null;
+      return;
+    }
+    if (kpSheetFor === "kpParent") {
+      modKpParent = id || "";
+      const btn = $("#mf_parentId_btn");
+      if (btn) { btn.textContent = modKpParent ? "📍 " + kpPath(modKpParent) : "（顶级，无父级）"; btn.classList.toggle("on", !!modKpParent); }
+      const hid = $("#mf_parentId"); if (hid) hid.value = modKpParent;
       kpSheetFor = null;
       return;
     }
@@ -1037,6 +1057,237 @@
     const items = DB.data.papers || [];
     box.innerHTML = items.length ? "" : '<div class="center">暂无试卷</div>';
     items.forEach(it => box.appendChild(paperCard(it)));
+    renderExamsM();
+  }
+
+  // ---------- 收藏试卷（exams，与电脑端「试卷中心·收藏试卷」一致） ----------
+  let examDraft = { id: null, files: [] };   // 编辑/新增时的草稿（含待上传附件 rels）
+  function renderExamsM() {
+    const fsel = $("#examCatFilter");
+    if (fsel) fsel.innerHTML = examCatFilterOptionsHtml(examCatFilter);
+    const box = $("#examListM"); if (!box) return;
+    let items = DB.data.exams || [];
+    if (examCatFilter) {
+      const subs = catSubtreeIds(examCatFilter);
+      items = items.filter(it => subs.has((it.body && it.body.categoryId) || ""));
+    }
+    const cnt = $("#examCountM"); if (cnt) cnt.textContent = "(" + (DB.data.exams || []).length + "份)";
+    box.innerHTML = items.length ? "" :
+      '<div class="center">还没有收藏试卷<br><span style="font-size:12px">真题卷、期末卷、好练习卷都能收藏，可上传 PDF/Word</span></div>';
+    items.forEach(it => {
+      const b = it.body || {};
+      const files = b.files || [];
+      const meta = [b.grade, b.source, (b.tags || "").toString()].filter(Boolean).join(" · ");
+      let catLabel = "";
+      if (b.categoryId) { const cc = examCats().find(x => x.id === b.categoryId); if (cc) catLabel = " · 🏷️ " + catPath(b.categoryId); }
+      const div = document.createElement("div"); div.className = "card pa-card";
+      div.innerHTML =
+        '<div class="pa-main"><div class="pa-title">' + esc(b.title || "未命名试卷") + "</div>" +
+        '<div class="pa-sub">' + esc(meta) + (files.length ? " · 📎" + files.length + "个附件" : "") + catLabel + "</div></div>" +
+        '<div class="pa-actions">' +
+          '<button class="btn sm" onclick="openExamDetail(\'' + esc(it.id) + '\')">查看</button>' +
+          '<button class="btn ok sm" onclick="openExamEditor(\'' + esc(it.id) + '\')">编辑</button>' +
+          '<button class="btn danger sm" onclick="delExamM(\'' + esc(it.id) + '\')">删除</button>' +
+        "</div>";
+      box.appendChild(div);
+    });
+  }
+  function openExamEditor(id) {
+    const isEdit = !!id;
+    const it = isEdit ? (DB.data.exams || []).find(x => x.id === id) : null;
+    const b = (it && it.body) || {};
+    examDraft = { id: isEdit ? id : ("ex_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
+                  files: (b.files || []).map(f => ({ rel: f.rel, name: f.name })) };
+    const v = (k, ph) => '<input id="ef_' + k + '" value="' + esc(b[k] || "") + '" placeholder="' + ph + '">';
+    let html = `<h3>${isEdit ? "编辑" : "新建"}收藏试卷</h3>
+      <label class="kv">标题</label>${v("title", "如：2026高三一模物理卷")}
+      <label class="kv">年级</label>${v("grade", "如：高三")}
+      <label class="kv">来源</label>${v("source", "如：学校月考")}
+      <label class="kv">标签（空格分隔）</label>${v("tags", "如：真题 期末")}
+      <label class="kv">分类（可选，在「🏷️ 分类管理」中创建）</label><select id="ef_cat" class="filter-select">${examCatOptionsHtml(b.categoryId, true)}</select>
+      <label class="kv">备注</label><textarea id="ef_note">${esc(b.note || "")}</textarea>
+      <label class="kv">内容（整卷文字 / 说明，可选）</label><textarea id="ef_content">${esc(b.contentHtml || "")}</textarea>
+      <label class="kv">附件（PDF / Word 等）</label>
+      <input type="file" id="ef_files" multiple onchange="examUploadFiles(this)">
+      <div id="ef_fileList" class="muted" style="margin-top:6px"></div>
+      <div class="row" style="margin-top:14px">
+        <button class="btn ok" style="flex:1" onclick="saveExamM()">保存</button>
+        <button class="btn sec" style="flex:1" onclick="closeModal()">取消</button>
+      </div>`;
+    $("#modalBox").innerHTML = html; openModal(); renderExamFileList();
+  }
+  async function examUploadFiles(input) {
+    const files = Array.from(input.files || []);
+    if (!files.length) return;
+    toast("正在上传 " + files.length + " 个文件…");
+    for (const f of files) {
+      try {
+        const buf = await f.arrayBuffer();
+        const res = await api("POST", "/api/media?sub=exams/" + encodeURIComponent(examDraft.id), buf, true, f.name);
+        const rel = (res.url || "").replace(/^\/api\/media\//, "");
+        if (rel) examDraft.files.push({ rel, name: f.name });
+      } catch (e) { toast("上传失败：" + f.name + " " + e.message); }
+    }
+    renderExamFileList(); toast("上传完成");
+  }
+  function renderExamFileList() {
+    const el = $("#ef_fileList"); if (!el) return;
+    if (!examDraft.files.length) { el.textContent = "暂无附件"; return; }
+    el.innerHTML = examDraft.files.map((f, i) =>
+      '<div style="display:flex;align-items:center;gap:8px;margin:3px 0">' +
+      '<a href="' + mediaUrl(encodeURIComponent(f.rel)) + '" target="_blank" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(f.name || f.rel) + "</a>" +
+      '<button class="btn danger sm" onclick="examRemoveFile(' + i + ')">移除</button></div>'
+    ).join("");
+  }
+  function examRemoveFile(i) { examDraft.files.splice(i, 1); renderExamFileList(); }
+  async function saveExamM() {
+    const body = {
+      id: examDraft.id,
+      title: ($("#ef_title") ? $("#ef_title").value : "").trim(),
+      grade: ($("#ef_grade") ? $("#ef_grade").value : "").trim(),
+      source: ($("#ef_source") ? $("#ef_source").value : "").trim(),
+      tags: ($("#ef_tags") ? $("#ef_tags").value : "").trim(),
+      categoryId: ($("#ef_cat") ? $("#ef_cat").value : "").trim(),
+      note: ($("#ef_note") ? $("#ef_note").value : "").trim(),
+      contentHtml: ($("#ef_content") ? $("#ef_content").value : "").trim(),
+      files: examDraft.files.slice()
+    };
+    if (!body.title) return toast("请填写标题");
+    body.updatedAt = Date.now();
+    try {
+      const existing = (DB.data.exams || []).find(x => x.id === examDraft.id);
+      if (existing) await api("PUT", "/api/exams/" + encodeURIComponent(examDraft.id), body);
+      else await api("POST", "/api/exams", body);
+      toast("已保存"); closeModal(); await loadPull(true); renderAllPapers();
+    } catch (e) { toast("保存失败：" + e.message); }
+  }
+  function openExamDetail(id) {
+    const it = (DB.data.exams || []).find(x => x.id === id);
+    const b = (it && it.body) || {};
+    const files = b.files || [];
+    let html = '<h3>' + esc(b.title || "未命名试卷") + "</h3>" +
+      '<div class="muted">' + esc([b.grade, b.source, b.tags].filter(Boolean).join(" · ")) + "</div>";
+    if (b.note) html += '<div class="kv" style="margin-top:8px">备注</div><div>' + esc(b.note) + "</div>";
+    if (b.contentHtml) html += '<div class="kv" style="margin-top:8px">内容</div><div>' + renderRich(b.contentHtml) + "</div>";
+    if (files.length) {
+      html += '<div class="kv" style="margin-top:8px">附件（' + files.length + "）</div>";
+      files.forEach(fl => { html += '<div style="margin:4px 0"><a href="' + mediaUrl(encodeURIComponent(fl.rel)) + '" target="_blank" download>' + esc(fl.name || fl.rel) + "</a></div>"; });
+    }
+    html += '<div class="row" style="margin-top:14px"><button class="btn" onclick="openExamEditor(\'' + esc(id) + '\')">编辑</button>' +
+      '<button class="btn danger" onclick="delExamM(\'' + esc(id) + '\')">删除</button>' +
+      '<button class="btn sec" onclick="closeModal()">关闭</button></div>';
+    $("#modalBox").innerHTML = html; openModal();
+  }
+  async function delExamM(id) {
+    if (!confirm("确认删除这份收藏试卷？")) return;
+    try { await api("DELETE", "/api/exams/" + encodeURIComponent(id)); toast("已删除"); closeModal(); await loadPull(true); renderAllPapers(); }
+    catch (e) { toast("删除失败：" + e.message); }
+  }
+
+  // ---------- 收藏试卷 · 分类管理 / 按分类筛选（与电脑端「试卷中心·收藏试卷」分类一致） ----------
+  let examCatFilter = "";   // 当前筛选的分类（""=全部分类）
+  function examCats() { return DB.data.examCategories || []; }
+  function catName(c) { const b = c.body || {}; return b.name || c.name || ""; }
+  function catPid(c) { const b = c.body || {}; return b.parentId || c.parentId || ""; }
+  function catKids(pid) {
+    return examCats().filter(c => catPid(c) === pid)
+      .sort((a, b) => catName(a).localeCompare(catName(b), "zh-CN"));
+  }
+  function catPath(id) {
+    const names = []; const guard = new Set(); let cur = id;
+    while (cur && !guard.has(cur)) { guard.add(cur); const c = examCats().find(x => x.id === cur); if (!c) break; names.unshift(catName(c)); cur = catPid(c); }
+    return names.join(" / ");
+  }
+  function catSubtreeIds(id) {
+    const set = new Set([id]); const stack = [id];
+    while (stack.length) { const cur = stack.pop(); catKids(cur).forEach(k => { if (!set.has(k.id)) { set.add(k.id); stack.push(k.id); } }); }
+    return set;
+  }
+  function examCatOptionsHtml(selId, withTop) {
+    let html = withTop ? '<option value="">未分类</option>' : "";
+    const walk = (pid, depth) => {
+      catKids(pid).forEach(c => {
+        const indent = "　".repeat(depth);
+        html += '<option value="' + esc(c.id) + '"' + (c.id === selId ? " selected" : "") + ">" + indent + esc(catName(c)) + "</option>";
+        walk(c.id, depth + 1);
+      });
+    };
+    walk("", 0);
+    return html;
+  }
+  function examCatFilterOptionsHtml(selId) {
+    let html = '<option value="">全部分类</option>';
+    const walk = (pid, depth) => {
+      catKids(pid).forEach(c => {
+        const indent = "　".repeat(depth);
+        html += '<option value="' + esc(c.id) + '"' + (c.id === selId ? " selected" : "") + ">" + indent + esc(catName(c)) + "</option>";
+        walk(c.id, depth + 1);
+      });
+    };
+    walk("", 0);
+    return html;
+  }
+  function setExamCatFilter(v) { examCatFilter = v || ""; renderExamsM(); }
+  function renderCatTreeM() {
+    const box = $("#catTreeM"); if (!box) return;
+    const row = (c, depth) => {
+      const indent = "　".repeat(depth);
+      const kids = catKids(c.id);
+      return '<div style="border-bottom:1px solid #eee;padding:6px 0">' +
+        '<div class="row" style="align-items:center;gap:6px">' +
+          '<span style="flex:1">' + indent + esc(catName(c)) + "</span>" +
+          '<button class="btn sm" onclick="addExamCatM(\'' + esc(c.id) + '\')">＋子</button>' +
+          '<button class="btn sec sm" onclick="renameExamCatM(\'' + esc(c.id) + '\')">改名</button>' +
+          '<button class="btn danger sm" onclick="delExamCatM(\'' + esc(c.id) + '\')">删除</button>' +
+        "</div>" +
+        (kids.length ? '<div style="padding-left:12px">' + kids.map(k => row(k, depth + 1)).join("") + "</div>" : "") +
+        "</div>";
+    };
+    box.innerHTML = catKids("").map(c => row(c, 0)).join("") || '<div class="center">还没有分类，先添加一个顶级分类吧</div>';
+  }
+  function manageExamCatsM() {
+    const html = `<h3>🏷️ 试卷分类管理</h3>
+      <div class="row" style="margin-bottom:10px">
+        <input id="newCatName" placeholder="新顶级分类名称" style="flex:1;margin:0">
+        <button class="btn ok" onclick="addExamCatM('')">＋ 添加</button>
+      </div>
+      <div id="catTreeM"></div>
+      <div class="row" style="margin-top:12px"><button class="btn sec" style="flex:1" onclick="closeModal()">关闭</button></div>`;
+    $("#modalBox").innerHTML = html; openModal(); renderCatTreeM();
+  }
+  function refreshExamCatSelect() {
+    const sel = $("#ef_cat"); if (!sel) return;
+    const cur = sel.value; sel.innerHTML = examCatOptionsHtml(cur, true);
+  }
+  async function addExamCatM(pid) {
+    const name = window.prompt(pid ? "输入子分类名称" : "输入顶级分类名称");
+    if (name === null) return;
+    const nm = name.trim(); if (!nm) return;
+    const body = { id: "ec_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: nm, parentId: pid || "", createdAt: Date.now() };
+    DB.data.examCategories = DB.data.examCategories || [];
+    DB.data.examCategories.push({ id: body.id, updated_at: body.createdAt, body });
+    try { await api("POST", "/api/examCategories", body); } catch (e) { toast("保存失败：" + e.message); }
+    renderCatTreeM(); renderExamsM(); refreshExamCatSelect();
+  }
+  async function renameExamCatM(id) {
+    const c = examCats().find(x => x.id === id); if (!c) return;
+    const name = window.prompt("修改分类名称", catName(c));
+    if (name === null) return; const nm = name.trim(); if (!nm) return;
+    const body = Object.assign({}, c.body, { id, name: nm, parentId: catPid(c), createdAt: (c.body && c.body.createdAt) || Date.now() });
+    try { await api("PUT", "/api/examCategories/" + id, body); } catch (e) { toast("保存失败：" + e.message); }
+    c.body = body; renderCatTreeM(); renderExamsM(); refreshExamCatSelect();
+  }
+  async function delExamCatM(id) {
+    const c = examCats().find(x => x.id === id); if (!c) return;
+    const subs = catSubtreeIds(id);
+    if (!window.confirm("确定删除分类「" + catName(c) + "」吗？\n其下子分类会一并删除，相关试卷将变为「未分类」。")) return;
+    const affected = (DB.data.exams || []).filter(e => subs.has((e.body && e.body.categoryId) || ""));
+    try {
+      for (const e of affected) { e.body.categoryId = ""; try { await api("PUT", "/api/exams/" + e.id, e.body); } catch (err) {} }
+      for (const sid of subs) { try { await api("DELETE", "/api/examCategories/" + sid); } catch (err) {} }
+    } catch (e) { toast("部分删除失败：" + e.message); }
+    DB.data.examCategories = examCats().filter(x => !subs.has(x.id));
+    renderCatTreeM(); renderExamsM(); refreshExamCatSelect();
   }
 
   // ---------- 排课（周课表网格，复刻电脑版，云端同步） ----------
@@ -1433,7 +1684,7 @@
     });
     if (ui.files && (b.files || []).length) {
       html += `<div class="kv" style="margin-top:6px">附件</div>`;
-      (b.files || []).forEach(fl => { html += `<div><a href="/api/media/${encodeURIComponent(fl.rel)}" target="_blank">${esc(fl.name || fl.rel)}</a></div>`; });
+      (b.files || []).forEach(fl => { html += `<div><a href="${mediaUrl(encodeURIComponent(fl.rel))}" target="_blank">${esc(fl.name || fl.rel)}</a></div>`; });
     }
     html += `<div class="row" style="margin-top:12px">
       <button class="btn" onclick="openModuleEditor('${mod}','${id}')">编辑</button>
@@ -1452,16 +1703,12 @@
       const v = b[f.k] == null ? "" : b[f.k];
       if (f.type === "textarea") html += `<label class="kv">${esc(f.label)}</label><textarea id="mf_${f.k}">${esc(v)}</textarea>`;
       else if (f.type === "parent") {
-        // 从现有知识点里选父级（排除自身，避免成环）
-        const opts = ['<option value="">（顶级，无父级）</option>'];
-        (DB.data.knowledgePoints || []).forEach(kp => {
-          if (kp.id === id) return;
-          const kb = kp.body || {};
-          const nm = kb.name || kp.id;
-          const label = (nm === kp.id) ? kp.id : (nm + "（" + kp.id + "）");
-          opts.push('<option value="' + esc(kp.id) + '"' + (kp.id === v ? " selected" : "") + ">" + esc(label) + "</option>");
-        });
-        html += '<label class="kv">' + esc(f.label) + '</label><select id="mf_' + f.k + '">' + opts.join("") + "</select>";
+        // 用知识点树选择所属知识点（与电脑端一致的父级/子级树形选择）
+        modKpParent = (v || "");
+        const lbl = modKpParent ? ("📍 " + kpPath(modKpParent)) : "（顶级，无父级）";
+        html += '<label class="kv">' + esc(f.label) + '</label>' +
+          '<button type="button" class="filter-select" style="width:100%;text-align:left;margin:0" id="mf_' + f.k + '_btn" onclick="openKpSheet(\'kpParent\')">' + esc(lbl) + '</button>' +
+          '<input type="hidden" id="mf_' + f.k + '" value="' + esc(v) + '">';
       }
       else html += `<label class="kv">${esc(f.label)}</label><input id="mf_${f.k}" type="${f.type === "number" ? "number" : "text"}" value="${esc(v)}">`;
     });
@@ -1516,6 +1763,10 @@
   window.renderSettings = renderSettings; window.openBaseUrlEditor = openBaseUrlEditor; window.saveBaseUrl = saveBaseUrl; window.openModuleListEditor = openModuleListEditor;
   window.renderModuleList = renderModuleList; window.openModuleDetail = openModuleDetail;
   window.openModuleEditor = openModuleEditor; window.saveModule = saveModule; window.delModule = delModule;
+  window.openExamEditor = openExamEditor; window.saveExamM = saveExamM; window.delExamM = delExamM;
+  window.openExamDetail = openExamDetail; window.examUploadFiles = examUploadFiles; window.examRemoveFile = examRemoveFile;
+  window.setExamCatFilter = setExamCatFilter; window.manageExamCatsM = manageExamCatsM;
+  window.addExamCatM = addExamCatM; window.renameExamCatM = renameExamCatM; window.delExamCatM = delExamCatM; window.renderCatTreeM = renderCatTreeM;
   window.logout = logout;
 
   // 全局事件委托：题库卡片（详情/答案/组卷/错题/知识点/图片放大）
