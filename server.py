@@ -423,6 +423,28 @@ def _sniff_content_type(path):
     return mimetypes.guess_type(path)[0] or "application/octet-stream"
 
 
+def send_index(h):
+    # 首页：按 app.js 的修改时间自动注入版本号，避免手机端 WebView 缓存旧 JS
+    fp = os.path.join(BASE, "static", "index.html")
+    if not os.path.exists(fp):
+        h.send_response(404); h.send_cors(); h.end_headers(); return
+    with open(fp, "r", encoding="utf-8") as f:
+        html = f.read()
+    appjs = os.path.join(BASE, "static", "app.js")
+    ver = int(os.path.getmtime(appjs)) if os.path.exists(appjs) else int(time.time())
+    html = re.sub(r"/static/app\.js\?v=\d+", "/static/app.js?v=%d" % ver, html)
+    data = html.encode("utf-8")
+    h.send_response(200)
+    h.send_header("Content-Type", "text/html; charset=utf-8")
+    h.send_header("Content-Length", str(len(data)))
+    h.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+    h.send_header("Pragma", "no-cache")
+    h.send_header("Expires", "0")
+    h.send_cors()
+    h.end_headers()
+    h.wfile.write(data)
+
+
 def send_file(h, path, filename=None):
     if not os.path.exists(path):
         h.send_response(404); h.send_cors(); h.end_headers(); return
@@ -515,7 +537,7 @@ class H(BaseHTTPRequestHandler):
     def route_get(self):
         p = self.path_only
         if p == "/" or p == "/index.html":
-            return send_file(self, os.path.join(BASE, "static", "index.html"))
+            return send_index(self)
         if p.startswith("/static/"):
             fp = os.path.normpath(os.path.join(BASE, "static", p[len("/static/"):]))
             if fp.startswith(os.path.join(BASE, "static")):
