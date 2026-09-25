@@ -1178,8 +1178,11 @@
       <label class="kv">备注</label><textarea id="ef_note">${esc(b.note || "")}</textarea>
       <label class="kv">内容（整卷文字 / 说明，可选）</label><textarea id="ef_content">${esc(b.contentHtml || "")}</textarea>
       <label class="kv">附件（PDF / Word / 图片）</label>
-      <label class="btn ok" for="ef_files" style="display:block;text-align:center;padding:11px;font-size:15px">📎 点此上传附件（可多选）<input type="file" id="ef_files" multiple
-        accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.png,.jpg,.jpeg,.webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      <label class="btn ok" for="ef_docs" style="display:block;text-align:center;padding:11px;font-size:15px">📎 上传文档（PDF / Word 等，可多选）<input type="file" id="ef_docs" multiple
+        accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        style="display:none" onchange="examUploadFiles(this)"></label>
+      <label class="btn sec" for="ef_imgs" style="display:block;text-align:center;padding:11px;font-size:15px;margin-top:8px">🖼️ 添加图片<input type="file" id="ef_imgs" multiple
+        accept="image/*"
         style="display:none" onchange="examUploadFiles(this)"></label>
       <div id="ef_fileList" class="muted" style="margin-top:6px"></div>
       </div>
