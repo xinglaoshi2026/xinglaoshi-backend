@@ -256,6 +256,198 @@ def _media_file(src):
     return _safe_media_path(rel)
 
 
+# ---------------- 对象存储(R2) + 图片压缩 + 自动清理 ----------------
+def _r2_conf():
+    """读取 Cloudflare R2 配置；未配置返回 None(回退本地磁盘)。"""
+    aid = os.environ.get("R2_ACCOUNT_ID")
+    key = os.environ.get("R2_ACCESS_KEY_ID")
+    sec = os.environ.get("R2_SECRET_ACCESS_KEY")
+    bucket = os.environ.get("R2_BUCKET")
+    if not (aid and key and sec and bucket):
+        return None
+    return {"account_id": aid, "access_key_id": key, "secret": sec, "bucket": bucket,
+            "endpoint": "https://%s.r2.cloudflarestorage.com" % aid}
+
+
+def _r2_client():
+    cfg = _r2_conf()
+    if not cfg:
+        return None
+    try:
+        import boto3
+        from botocore.config import Config as _BC
+        return boto3.client("s3", endpoint_url=cfg["endpoint"],
+                            aws_access_key_id=cfg["access_key_id"],
+                            aws_secret_access_key=cfg["secret"],
+                            region_name="auto", config=_BC(signature_version="s3v4"))
+    except Exception:
+        return None
+
+
+def _r2_enabled():
+    return _r2_client() is not None
+
+
+def _guess_ct(name, data):
+    ct = mimetypes.guess_type(name or "")[0]
+    if ct:
+        return ct
+    if data[:4] == b"%PDF":
+        return "application/pdf"
+    if data[:2] == b"\xff\xd8":
+        return "image/jpeg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:4] == b"GIF8":
+        return "image/gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return "application/octet-stream"
+
+
+def _compress_image(raw, name):
+    """对图片二进制做有损压缩(限制最长边 + JPEG q82)，返回 (bytes, 是否压缩)。
+    非图片 / 压缩后反而更大 / 异常时原样返回。"""
+    try:
+        from PIL import Image, ImageOps
+        import io as _io
+        im = Image.open(_io.BytesIO(raw))
+        try:
+            im = ImageOps.exif_transpose(im)
+        except Exception:
+            pass
+        max_side = int(os.environ.get("IMG_MAX_SIDE", "1600"))
+        w, h = im.size
+        if w > max_side or h > max_side:
+            r = max_side / max(w, h)
+            im = im.resize((max(1, int(w * r)), max(1, int(h * r))), Image.LANCZOS)
+        buf = _io.BytesIO()
+        fmt = (im.format or "JPEG").upper()
+        if fmt == "GIF":
+            return raw, False  # 动图不压缩
+        if fmt == "PNG" and im.mode in ("RGBA", "LA", "P"):
+            im.save(buf, "PNG", optimize=True)  # 含透明通道保留 PNG
+        else:
+            if im.mode != "RGB":
+                im = im.convert("RGB")
+            q = int(os.environ.get("IMG_QUALITY", "82"))
+            im.save(buf, "JPEG", quality=q, optimize=True)
+        out = buf.getvalue()
+        if len(out) < len(raw):
+            return out, True
+        return raw, False
+    except Exception:
+        return raw, False
+
+
+def _put_media(rel, raw, name):
+    """写入媒体：R2 启用则压缩图片后上传对象存储；否则写本地磁盘。
+    返回 (ok, url_or_err, code)。"""
+    ct = _guess_ct(name, raw)
+    is_img = ct.startswith("image/") and not ct.endswith("gif")
+    store = raw
+    if is_img:
+        store, _ = _compress_image(raw, name)
+    cl = _r2_client()
+    if cl:
+        try:
+            cl.put_object(Bucket=_r2_conf()["bucket"], Key=rel, Body=store, ContentType=ct)
+            return True, "/api/media/" + rel, 200
+        except Exception as e:
+            return False, "R2 上传失败: " + str(e), 500
+    fp = _media_disk(rel)
+    os.makedirs(os.path.dirname(fp), exist_ok=True)
+    with open(fp, "wb") as f:
+        f.write(store)
+    return True, "/api/media/" + rel, 200
+
+
+def _media_url(rel):
+    """R2 启用时返回预签名 GET URL(供 302 重定向)；未启用返回 None(走本地)。"""
+    cl = _r2_client()
+    if not cl:
+        return None
+    try:
+        return cl.generate_presigned_url("get_object",
+            Params={"Bucket": _r2_conf()["bucket"], "Key": rel},
+            ExpiresIn=int(os.environ.get("R2_URL_TTL", "3600")))
+    except Exception:
+        return None
+
+
+def _run_orphan_cleanup():
+    """删除未被任何模块引用的上传文件(孤儿), 释放本地磁盘。返回统计字典。"""
+    refs = _referenced_media()
+    keep_disk = {_disk_rel(r) for r in refs}
+    freed = 0
+    removed = 0
+    for root, dirs, files in os.walk(MEDIA_DIR):
+        for fn in files:
+            fp = os.path.join(root, fn)
+            raw_rel = os.path.relpath(fp, MEDIA_DIR).replace(os.sep, "/")
+            decoded = urlunquote(raw_rel)
+            if decoded in refs or raw_rel in refs or raw_rel in keep_disk:
+                continue
+            try:
+                freed += os.path.getsize(fp)
+                os.remove(fp)
+                removed += 1
+            except Exception:
+                pass
+    for root, dirs, files in os.walk(MEDIA_DIR, topdown=False):
+        for d in dirs:
+            dp = os.path.join(root, d)
+            try:
+                if not os.listdir(dp):
+                    os.rmdir(dp)
+            except Exception:
+                pass
+    return {"freed": freed, "removed": removed}
+
+
+def _disk_watchdog():
+    """后台线程：周期检查本地磁盘余量，低于阈值自动清理孤儿媒体，避免撑爆。"""
+    import threading
+    def loop():
+        import time as _t
+        while True:
+            try:
+                _t.sleep(int(os.environ.get("DISK_WATCH_INTERVAL", "600")))
+                free = shutil.disk_usage(os.path.dirname(MEDIA_DIR) or ".").free
+                thr = int(os.environ.get("DISK_LOW_THRESHOLD", str(200 * 1024 * 1024)))
+                if free < thr:
+                    _run_orphan_cleanup()
+            except Exception:
+                pass
+    threading.Thread(target=loop, daemon=True).start()
+
+
+def _migrate_media_to_r2():
+    """把本地媒体批量上传到 R2(键=逻辑 rel), 成功后删除本地副本, 释放云端盘。
+    供切换对象存储后一次性迁移历史文件。"""
+    cl = _r2_client()
+    if not cl:
+        return {"ok": False, "error": "R2 未配置"}
+    bucket = _r2_conf()["bucket"]
+    done = errs = 0
+    for root, dirs, files in os.walk(MEDIA_DIR):
+        for fn in files:
+            fp = os.path.join(root, fn)
+            rel = urlunquote(os.path.relpath(fp, MEDIA_DIR).replace(os.sep, "/"))
+            try:
+                with open(fp, "rb") as f:
+                    data = f.read()
+                cl.put_object(Bucket=bucket, Key=rel, Body=data, ContentType=_guess_ct(rel, data))
+                try:
+                    os.remove(fp)
+                except Exception:
+                    pass
+                done += 1
+            except Exception:
+                errs += 1
+    return {"ok": True, "migrated": done, "errors": errs}
+
+
 def _content_segments(html):
     """题干 HTML -> [("text", s) | ("img", 本地路径)] 序列。"""
     segs = []
@@ -604,6 +796,12 @@ class H(BaseHTTPRequestHandler):
             # URL 路径已是 percent-encoded, 先解码回原始(可能含中文)再查盘,
             # 否则 _media_disk 的 urlquote 会二次编码导致 404。
             rel = urlunquote(p[len("/api/media/"):])
+            # R2 对象存储启用时: 302 重定向到预签名 URL(不直接占云端盘)
+            r2url = _media_url(rel)
+            if r2url:
+                self.send_response(302)
+                self.send_header("Location", r2url)
+                self.send_cors(); self.end_headers(); return
             fp = _safe_media_path(rel)
             if fp:
                 return send_file(self, fp)
@@ -723,6 +921,14 @@ class H(BaseHTTPRequestHandler):
             if not u:
                 return send_json(self, {"error": "未登录"}, 401)
             return self._cleanup_orphan_media()
+        if p == "/api/admin/migrate_media_to_r2":
+            u = user_of(get_token(self))
+            if not u:
+                return send_json(self, {"error": "未登录"}, 401)
+            r = _migrate_media_to_r2()
+            if not r.get("ok"):
+                return send_json(self, r, 400)
+            return send_json(self, r)
         if p == "/api/auth/register":
             body, err = read_body(self)
             if err: return send_json(self, {"error": err}, 400)
@@ -867,17 +1073,18 @@ class H(BaseHTTPRequestHandler):
             # 用 URL 编码后的 ASCII 路径落盘，规避部分文件系统不支持中文文件名的问题。
             sub = q.get("sub", ["others"])[0]
             rel = f"{sub}/{name}"
-            # 磁盘空间保护：剩余不足时拒绝写入, 避免撑爆数据盘导致 sync.db(WAL)写入失败而整体宕机
+            # 磁盘空间保护：本地回退模式剩余不足时拒绝写入, 避免撑爆数据盘导致
+            # sync.db(WAL)写入失败而整体宕机；R2 模式媒体不落本地盘, 不受此限。
             try:
                 free = shutil.disk_usage(os.path.dirname(MEDIA_DIR) or ".").free
-                if free < 30 * 1024 * 1024:
-                    return send_json(self, {"error": "云端磁盘空间不足, 图片上传被拒绝(请清理或扩容)"}, 507)
+                if free < 20 * 1024 * 1024 and not _r2_enabled():
+                    return send_json(self, {"error": "云端磁盘空间不足, 图片上传被拒绝(请清理或启用R2对象存储)"}, 507)
             except Exception:
                 pass
-            fp = _media_disk(rel)
-            os.makedirs(os.path.dirname(fp), exist_ok=True)
-            with open(fp, "wb") as f: f.write(raw)
-            return send_json(self, {"ok": True, "url": "/api/media/" + rel})
+            ok, url, code = _put_media(rel, raw, name)
+            if not ok:
+                return send_json(self, {"error": url}, code)
+            return send_json(self, {"ok": True, "url": url})
         send_json(self, {"error": "未知接口 " + p}, 404)
 
     def _cleanup_orphan_media(self):
@@ -888,43 +1095,14 @@ class H(BaseHTTPRequestHandler):
         引用的文件(如半截保存、重复上传、删除题目后残留)。删除安全。
 
         注意: 磁盘文件以 urlquote 编码存储, 比对前必须 urlunquote 还原。"""
-        refs = _referenced_media()
-        # 实际磁盘文件名(经 _disk_rel 编码/超长哈希)也要保留, 否则超长中文名
-        # 的试卷会被误判为孤儿而删除。
-        keep_disk = set()
-        for r in refs:
-            keep_disk.add(_disk_rel(r))
-        freed = 0
-        removed = 0
-        for root, dirs, files in os.walk(MEDIA_DIR):
-            for fn in files:
-                fp = os.path.join(root, fn)
-                raw_rel = os.path.relpath(fp, MEDIA_DIR).replace(os.sep, "/")
-                decoded = urlunquote(raw_rel)
-                if decoded in refs or raw_rel in refs or raw_rel in keep_disk:
-                    continue
-                try:
-                    freed += os.path.getsize(fp)
-                    os.remove(fp)
-                    removed += 1
-                except Exception:
-                    pass
-        # 清理空目录
-        for root, dirs, files in os.walk(MEDIA_DIR, topdown=False):
-            for d in dirs:
-                dp = os.path.join(root, d)
-                try:
-                    if not os.listdir(dp):
-                        os.rmdir(dp)
-                except Exception:
-                    pass
+        r = _run_orphan_cleanup()
         try:
             du = shutil.disk_usage(os.path.dirname(MEDIA_DIR) or ".")
             free_after = du.free
         except Exception:
             free_after = None
-        return send_json(self, {"ok": True, "referenced": len(refs),
-                                "removed": removed, "freed_bytes": freed,
+        return send_json(self, {"ok": True, "referenced": len(_referenced_media()),
+                                "removed": r["removed"], "freed_bytes": r["freed"],
                                 "disk_free_after": free_after})
 
     # ---- PUT ----
@@ -1013,6 +1191,7 @@ def main():
     _free_disk_if_needed()
     init_db()
     migrate_ts()
+    _disk_watchdog()  # 后台自动清理孤儿媒体, 防云端盘被撑满
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), H)
     print(f"[server] 云端同步后端已启动: http://0.0.0.0:{PORT}  (数据目录 {DATA_DIR})")
     try:
