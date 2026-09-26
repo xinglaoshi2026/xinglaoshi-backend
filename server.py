@@ -180,6 +180,9 @@ def _media_disk(rel):
     return os.path.normpath(os.path.join(MEDIA_DIR, urlquote(rel, safe="/")))
 
 
+MEDIA_RE = re.compile(r'media://([^\s"\'<>]+\.(?:png|jpg|jpeg|gif|webp))', re.I)
+
+
 def _file_rels(body):
     """返回 body.files[].rel（试卷附件等）。"""
     out = []
