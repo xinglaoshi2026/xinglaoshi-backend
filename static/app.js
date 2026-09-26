@@ -1917,7 +1917,10 @@
     const box = $("#sub-daily-manage");
     const items = (DB.data.dailyQuestions || []).slice()
       .sort((a, b) => (b.body.date || "").localeCompare(a.body.date || ""));
-    let html = `<div class="row" style="margin-bottom:10px"><button class="btn" style="flex:1" onclick="openDailyEditor(null)">＋ 出题</button></div>`;
+    let html = `<div class="row" style="margin-bottom:10px">
+      <button class="btn" style="flex:1" onclick="openDailyEditor(null)">＋ 出题</button>
+      <button class="btn sec" style="flex:1" onclick="openAccountEditor()">👥 学生账号</button>
+    </div>`;
     if (!items.length) html += `<div class="center">还没有每日一题<br><span style="font-size:12px">点上方「＋ 出题」录入今天 / 某天的题目</span></div>`;
     html += items.map(it => {
       const b = it.body || {};
@@ -2117,6 +2120,33 @@
   window.renderDailyStats = renderDailyStats; window.renderDailyPractice = renderDailyPractice;
   window.submitDailyAnswer = submitDailyAnswer; window.markDaily = markDaily;
   window.renderDailyWrong = renderDailyWrong;
+  window.openAccountEditor = openAccountEditor; window.saveAccount = saveAccount;
+
+  // 老师给学生建「工作台登录账号」（学生用同一工作台答题，需各自账号）
+  function openAccountEditor() {
+    $("#modalBox").innerHTML = `
+      <div class="modal-header"><span class="modal-title">新建学生账号</span><button class="modal-close" onclick="closeModal()">✕</button></div>
+      <div class="modal-body">
+        <div class="muted" style="margin-bottom:8px">学生用此账号登录同一工作台，在「每日一题 → 今日一题」答题。账号仅用于本工作台，与 CRM 学生资料相互独立。</div>
+        <label class="kv">登录用户名</label><input id="accUser" placeholder="如 xiaoming">
+        <label class="kv">密码</label><input id="accPwd" type="password" placeholder="初始密码">
+        <label class="kv">确认密码</label><input id="accPwd2" type="password" placeholder="再次输入">
+      </div>
+      <div class="modal-footer"><button class="btn sec" style="flex:1" onclick="closeModal()">取消</button><button class="btn ok" style="flex:1" onclick="saveAccount()">创建</button></div>`;
+    openModal();
+  }
+  async function saveAccount() {
+    const username = $("#accUser").value.trim();
+    const pwd = $("#accPwd").value;
+    const pwd2 = $("#accPwd2").value;
+    if (!username) return toast("请填写用户名");
+    if (pwd.length < 4) return toast("密码至少 4 位");
+    if (pwd !== pwd2) return toast("两次密码不一致");
+    try {
+      await api("POST", "/api/auth/register", { username, password: pwd, role: "user" });
+      toast("账号已创建 ✓"); closeModal();
+    } catch (e) { toast("创建失败：" + e.message); }
+  }
 
   // 全局事件委托：题库卡片（详情/答案/组卷/错题/知识点/图片放大）
   document.getElementById("qList").addEventListener("click", qListClick);
