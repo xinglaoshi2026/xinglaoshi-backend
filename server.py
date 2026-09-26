@@ -169,15 +169,28 @@ def _img_dims(data):
     return 800, 600
 
 
-def _media_disk(rel):
-    """逻辑媒体路径 -> 磁盘路径。
+def _disk_rel(rel):
+    """逻辑 rel -> 磁盘上的(相对)文件名(ASCII, 各分量独立编码)。
 
-    部分运行环境(如某些云容器的文件系统)不支持中文/全角文件名，
-    直接 open 中文路径会写出“乱码”文件、GET 时按解码路径找不到 -> 404。
-    这里统一把逻辑路径 URL 编码成 ASCII 再落盘，规避该问题；
-    rel 中的 '/' 保留为目录分隔，仅对中文等特殊字符做 %XX 转义。
-    """
-    return os.path.normpath(os.path.join(MEDIA_DIR, urlquote(rel, safe="/")))
+    注意: Linux 单文件名上限约 255 字节。超长中文名 URL 编码后易超限 ->
+    open 抛 [Errno 36] File name too long(上传 500)。因此对“编码后仍超 240
+    字节”的单个分量, 改用其 md5 哈希(保留扩展名)作为磁盘名。哈希对原名
+    确定, GET 时按同一规则还原即可命中。"""
+    safe = []
+    for p in rel.split("/"):
+        if p == "":
+            safe.append(p); continue
+        enc = urlquote(p, safe="")
+        if len(enc.encode("utf-8")) > 240:
+            ext = p[p.rfind("."):] if "." in p else ""
+            enc = hashlib.md5(p.encode("utf-8")).hexdigest() + ext
+        safe.append(enc)
+    return "/".join(safe)
+
+
+def _media_disk(rel):
+    """逻辑媒体路径 -> 磁盘绝对路径(见 _disk_rel 的编码/超长处理说明)。"""
+    return os.path.normpath(os.path.join(MEDIA_DIR, _disk_rel(rel)))
 
 
 MEDIA_RE = re.compile(r'media://([^\s"\'<>]+\.(?:png|jpg|jpeg|gif|webp))', re.I)
@@ -875,6 +888,11 @@ class H(BaseHTTPRequestHandler):
 
         注意: 磁盘文件以 urlquote 编码存储, 比对前必须 urlunquote 还原。"""
         refs = _referenced_media()
+        # 实际磁盘文件名(经 _disk_rel 编码/超长哈希)也要保留, 否则超长中文名
+        # 的试卷会被误判为孤儿而删除。
+        keep_disk = set()
+        for r in refs:
+            keep_disk.add(_disk_rel(r))
         freed = 0
         removed = 0
         for root, dirs, files in os.walk(MEDIA_DIR):
@@ -882,7 +900,7 @@ class H(BaseHTTPRequestHandler):
                 fp = os.path.join(root, fn)
                 raw_rel = os.path.relpath(fp, MEDIA_DIR).replace(os.sep, "/")
                 decoded = urlunquote(raw_rel)
-                if decoded in refs or raw_rel in refs:
+                if decoded in refs or raw_rel in refs or raw_rel in keep_disk:
                     continue
                 try:
                     freed += os.path.getsize(fp)
