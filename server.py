@@ -257,20 +257,36 @@ def _media_file(src):
 
 
 # ---------------- 对象存储(R2) + 图片压缩 + 自动清理 ----------------
-def _r2_conf():
-    """读取 Cloudflare R2 配置；未配置返回 None(回退本地磁盘)。"""
+def _s3_conf():
+    """通用 S3 兼容对象存储配置。支持 腾讯云 COS 与 Cloudflare R2 两套环境变量。
+    未配置完整则返回 None(回退本地磁盘)。优先读 COS 变量。"""
+    # ---- 腾讯云 COS ----
+    cid = os.environ.get("COS_SECRET_ID")
+    ckey = os.environ.get("COS_SECRET_KEY")
+    cbucket = os.environ.get("COS_BUCKET")
+    cregion = os.environ.get("COS_REGION")
+    cendpoint = os.environ.get("COS_ENDPOINT")
+    if cid and ckey and cbucket:
+        if not cendpoint and cregion:
+            cendpoint = "https://cos.%s.myqcloud.com" % cregion
+        if cendpoint:
+            return {"provider": "cos", "access_key_id": cid, "secret": ckey,
+                    "bucket": cbucket, "endpoint": cendpoint,
+                    "region": cregion or "ap-guangzhou"}
+    # ---- Cloudflare R2 ----
     aid = os.environ.get("R2_ACCOUNT_ID")
     key = os.environ.get("R2_ACCESS_KEY_ID")
     sec = os.environ.get("R2_SECRET_ACCESS_KEY")
     bucket = os.environ.get("R2_BUCKET")
-    if not (aid and key and sec and bucket):
-        return None
-    return {"account_id": aid, "access_key_id": key, "secret": sec, "bucket": bucket,
-            "endpoint": "https://%s.r2.cloudflarestorage.com" % aid}
+    if aid and key and sec and bucket:
+        return {"provider": "r2", "access_key_id": key, "secret": sec,
+                "bucket": bucket, "endpoint": "https://%s.r2.cloudflarestorage.com" % aid,
+                "region": "auto"}
+    return None
 
 
-def _r2_client():
-    cfg = _r2_conf()
+def _s3_client():
+    cfg = _s3_conf()
     if not cfg:
         return None
     try:
@@ -279,13 +295,21 @@ def _r2_client():
         return boto3.client("s3", endpoint_url=cfg["endpoint"],
                             aws_access_key_id=cfg["access_key_id"],
                             aws_secret_access_key=cfg["secret"],
-                            region_name="auto", config=_BC(signature_version="s3v4"))
+                            region_name=cfg["region"],
+                            config=_BC(signature_version="s3v4",
+                                       s3={"addressing_style": "virtual"}))
     except Exception:
         return None
 
 
-def _r2_enabled():
-    return _r2_client() is not None
+def _s3_enabled():
+    return _s3_client() is not None
+
+
+# 兼容旧调用名(原有 R2 逻辑已泛化为 S3 兼容)
+_r2_conf = _s3_conf
+_r2_client = _s3_client
+_r2_enabled = _s3_enabled
 
 
 def _guess_ct(name, data):
@@ -354,7 +378,7 @@ def _put_media(rel, raw, name):
             cl.put_object(Bucket=_r2_conf()["bucket"], Key=rel, Body=store, ContentType=ct)
             return True, "/api/media/" + rel, 200
         except Exception as e:
-            return False, "R2 上传失败: " + str(e), 500
+            return False, "对象存储上传失败: " + str(e), 500
     fp = _media_disk(rel)
     os.makedirs(os.path.dirname(fp), exist_ok=True)
     with open(fp, "wb") as f:
@@ -370,7 +394,7 @@ def _media_url(rel):
     try:
         return cl.generate_presigned_url("get_object",
             Params={"Bucket": _r2_conf()["bucket"], "Key": rel},
-            ExpiresIn=int(os.environ.get("R2_URL_TTL", "3600")))
+            ExpiresIn=int(os.environ.get("MEDIA_URL_TTL", "3600")))
     except Exception:
         return None
 
@@ -423,11 +447,11 @@ def _disk_watchdog():
 
 
 def _migrate_media_to_r2():
-    """把本地媒体批量上传到 R2(键=逻辑 rel), 成功后删除本地副本, 释放云端盘。
-    供切换对象存储后一次性迁移历史文件。"""
-    cl = _r2_client()
+    """把本地媒体批量上传到对象存储(键=逻辑 rel), 成功后删除本地副本, 释放云端盘。
+    兼容 腾讯云 COS / Cloudflare R2。"""
+    cl = _s3_client()
     if not cl:
-        return {"ok": False, "error": "R2 未配置"}
+        return {"ok": False, "error": "对象存储未配置"}
     bucket = _r2_conf()["bucket"]
     done = errs = 0
     for root, dirs, files in os.walk(MEDIA_DIR):
@@ -796,7 +820,7 @@ class H(BaseHTTPRequestHandler):
             # URL 路径已是 percent-encoded, 先解码回原始(可能含中文)再查盘,
             # 否则 _media_disk 的 urlquote 会二次编码导致 404。
             rel = urlunquote(p[len("/api/media/"):])
-            # R2 对象存储启用时: 302 重定向到预签名 URL(不直接占云端盘)
+            # 对象存储启用时: 302 重定向到预签名 URL(不直接占云端盘)
             r2url = _media_url(rel)
             if r2url:
                 self.send_response(302)
@@ -1078,7 +1102,7 @@ class H(BaseHTTPRequestHandler):
             try:
                 free = shutil.disk_usage(os.path.dirname(MEDIA_DIR) or ".").free
                 if free < 20 * 1024 * 1024 and not _r2_enabled():
-                    return send_json(self, {"error": "云端磁盘空间不足, 图片上传被拒绝(请清理或启用R2对象存储)"}, 507)
+                    return send_json(self, {"error": "云端磁盘空间不足, 图片上传被拒绝(请清理或启用对象存储)"}, 507)
             except Exception:
                 pass
             ok, url, code = _put_media(rel, raw, name)
