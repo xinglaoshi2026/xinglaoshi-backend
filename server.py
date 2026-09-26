@@ -769,6 +769,7 @@ class H(BaseHTTPRequestHandler):
                 "id": aid, "qId": qid, "date": q.get("date"),
                 "studentId": u["user_id"], "studentName": u.get("username") or "",
                 "answer": ans, "correct": correct, "openEnded": open_ended,
+                "answerImage": (body.get("answerImage") or "").strip(),
                 "updatedAt": now_ms(),
             }
             store_put("dailyAnswers", aid, rec)

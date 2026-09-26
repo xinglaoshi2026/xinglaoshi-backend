@@ -1890,6 +1890,28 @@
 
   // ===================== 每日一题（出题程序） =====================
   let dailySubPane = "manage";
+  let dailyDocDraft = [];   // 出题编辑器当前会话的附件文档草稿
+  function renderDailyDocList() {
+    const el = $("#dqDocList"); if (!el) return;
+    if (!dailyDocDraft.length) { el.innerHTML = '<span class="muted">暂无附件文档</span>'; return; }
+    el.innerHTML = dailyDocDraft.map((f, i) =>
+      `<div style="display:flex;gap:8px;align-items:center;margin:3px 0"><a href="${mediaUrl(encodeURIComponent(f.rel))}" target="_blank" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.name || f.rel)}</a><button class="btn danger sm" onclick="dailyRemoveDoc(${i})">移除</button></div>`).join("");
+  }
+  async function dailyUploadDoc(input) {
+    const files = Array.from(input.files || []);
+    if (!files.length) return;
+    toast("上传文档中…");
+    const id = $("#dqId").value;
+    for (const f of files) {
+      try {
+        const res = await api("POST", "/api/media?sub=" + encodeURIComponent("dailyQuestions/" + id + "/docs") + "&name=" + encodeURIComponent(f.name), f, true);
+        const rel = (res.url || "").replace(/^\/api\/media\//, "");
+        if (rel) dailyDocDraft.push({ rel, name: f.name });
+      } catch (e) { toast("文档上传失败：" + f.name); }
+    }
+    renderDailyDocList(); toast("文档已添加");
+  }
+  window.dailyRemoveDoc = (i) => { dailyDocDraft.splice(i, 1); renderDailyDocList(); };
   function _role() { try { return (user ? JSON.parse(user) : {}).role; } catch (e) { return ""; } }
   function _meName() { try { return (user ? JSON.parse(user) : {}).username || ""; } catch (e) { return ""; } }
 
@@ -1946,6 +1968,7 @@
     const qid = id || ("dq_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
     const it = isNew ? null : (DB.data.dailyQuestions || []).find(x => x.id === id);
     const b = (it && it.body) || {};
+    dailyDocDraft = (b.docs || []).slice();
     $("#modalBox").innerHTML = `
       <div class="modal-header"><span class="modal-title">${isNew ? "出题（每日一题）" : "编辑每日一题"}</span><button class="modal-close" onclick="closeModal()">✕</button></div>
       <div class="modal-body">
@@ -1954,6 +1977,11 @@
         <label class="kv">题面（可配图：选图后自动插入 media:// 引用）</label>
         <textarea id="dqStem" style="min-height:120px">${esc(b.stem || "")}</textarea>
         <div class="row" style="margin:6px 0 0"><input id="dqImg" type="file" accept="image/*" style="flex:1"></div>
+        <label class="kv">附件文档（PDF / Word / PPT / Excel 等，可多选）</label>
+        <label class="btn ok" for="dqDocs" style="display:block;text-align:center;padding:9px;margin-top:4px">📎 上传文档（可多选）<input type="file" id="dqDocs" multiple
+          accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          style="display:none" onchange="dailyUploadDoc(this)"></label>
+        <div id="dqDocList" style="margin-top:4px"></div>
         <label class="kv">标准答案（留空 = 开放题，由学生自评）</label>
         <textarea id="dqAnswer" style="min-height:60px">${esc(b.answer || "")}</textarea>
         <label class="kv">解析（可选）</label>
@@ -1961,6 +1989,7 @@
       </div>
       <div class="modal-footer"><button class="btn sec" style="flex:1" onclick="closeModal()">取消</button><button class="btn ok" style="flex:1" onclick="saveDailyQuestion()">保存</button></div>`;
     openModal();
+    renderDailyDocList();
   }
   async function saveDailyQuestion() {
     const id = $("#dqId").value;
@@ -1974,7 +2003,7 @@
         await api("POST", "/api/media?sub=" + encodeURIComponent("dailyQuestions/" + id + "/c") + "&name=" + encodeURIComponent("img_1.png"), file, true);
         stem = (stem + "\nmedia://dailyQuestions/" + id + "/c/img_1.png").trim();
       }
-      const body = { id, date, stem, answer: $("#dqAnswer").value.trim(), analysis: $("#dqAnalysis").value.trim(), updatedAt: Date.now() };
+      const body = { id, date, stem, answer: $("#dqAnswer").value.trim(), analysis: $("#dqAnalysis").value.trim(), docs: dailyDocDraft.slice(), updatedAt: Date.now() };
       if ((DB.data.dailyQuestions || []).find(x => x.id === id)) {
         await api("PUT", "/api/dailyQuestions/" + id, body);
       } else {
@@ -2030,6 +2059,12 @@
   }
 
   // ---- 学生：今日一题 ----
+  function dailyDocLinks(docs) {
+    if (!docs || !docs.length) return "";
+    return `<div style="margin:6px 0"><div class="muted" style="margin-bottom:4px">📎 附件文档</div>` +
+      docs.map(f => `<a class="btn sec sm" style="margin:3px 6px 3px 0;display:inline-block" href="${mediaUrl(encodeURIComponent(f.rel))}" target="_blank">📄 ${esc(f.name || f.rel)}</a>`).join("") +
+      `</div>`;
+  }
   function _myDaily() {
     const name = _meName();
     return (DB.data.dailyAnswers || []).filter(a => (a.body && a.body.studentName) === name);
@@ -2071,6 +2106,7 @@
       return `<div class="card">
         <div class="row" style="justify-content:space-between;align-items:center"><span class="badge-info">${esc(b.date || "")}</span>${badge}</div>
         <div class="q-content" style="margin:8px 0">${renderRich(b.stem || "")}</div>
+        ${dailyDocLinks(b.docs)}
         <div id="dqAns_${it.id}">${body}</div>
       </div>`;
     }).join("");

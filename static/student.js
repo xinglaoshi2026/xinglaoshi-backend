@@ -53,6 +53,27 @@
     const el = $("#toast"); el.textContent = msg; el.classList.add("show");
     clearTimeout(toast._t); toast._t = setTimeout(() => el.classList.remove("show"), 1800);
   }
+  // 二进制上传（图片/文档）到 /api/media，返回 rel（去掉 /api/media/ 前缀）
+  async function uploadMedia(sub, file) {
+    const base = localStorage.getItem(LS_BASE) || "";
+    const url = base + "/api/media?sub=" + encodeURIComponent(sub) + "&name=" + encodeURIComponent(file.name);
+    const r = await fetch(url, {
+      method: "POST",
+      headers: token ? { "Authorization": "Bearer " + token } : {},
+      body: file,
+    });
+    if (!r.ok) { let m = "HTTP " + r.status; try { m = (await r.json()).error || m; } catch (e) {} throw new Error(m); }
+    const j = await r.json();
+    return (j.url || "").replace(/^\/api\/media\//, "");
+  }
+  // 答案图片预览
+  window.previewDailyImg = function (qid, input) {
+    const el = $("#dqImgPrev_" + qid); if (!el) return;
+    const f = input.files && input.files[0];
+    if (!f) { el.innerHTML = ""; return; }
+    const u = URL.createObjectURL(f);
+    el.innerHTML = `<div style="margin-top:6px"><img src="${u}" style="max-width:100%;border-radius:8px;border:1px solid #eee"></div>`;
+  };
   function pad(n) { return (n < 10 ? "0" : "") + n; }
   function todayStr() { const d = new Date(); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
 
@@ -107,6 +128,12 @@
   }
   window.stuSub = (s) => { stuSub = s; renderDaily(); };
 
+  function dailyDocLinks(docs) {
+    if (!docs || !docs.length) return "";
+    return `<div style="margin:6px 0"><div class="muted" style="margin-bottom:4px">📎 附件文档</div>` +
+      docs.map(f => `<a class="btn sec sm" style="margin:3px 6px 3px 0;display:inline-block" href="${mediaUrl(encodeURIComponent(f.rel))}" target="_blank">📄 ${esc(f.name || f.rel)}</a>`).join("") +
+      `</div>`;
+  }
   function renderPractice() {
     const today = todayStr();
     const items = (DB.data.dailyQuestions || []).filter(x => (x.body && x.body.date) === today);
@@ -124,7 +151,9 @@
       const openEnded = rec && rec.body ? rec.body.openEnded : false;
       let body;
       if (!done) {
-        body = `<textarea id="dqInput_${it.id}" placeholder="输入你的答案…" style="min-height:72px;margin-top:8px"></textarea>
+        body = `<textarea id="dqInput_${it.id}" placeholder="输入你的答案…（也可拍照/传图）" style="min-height:72px;margin-top:8px"></textarea>
+          <label class="btn sec" for="dqImg_${it.id}" style="display:block;text-align:center;padding:9px;margin-top:8px">📷 上传答案图片（拍照/选图）<input type="file" id="dqImg_${it.id}" accept="image/*" style="display:none" onchange="previewDailyImg('${it.id}',this)"></label>
+          <div id="dqImgPrev_${it.id}"></div>
           <div class="row" style="margin-top:8px;gap:6px"><button class="btn ok" onclick="submitDailyAnswer('${it.id}')">提交并核对</button></div>`;
       } else {
         let tail = "";
@@ -135,6 +164,7 @@
         }
         body = `<div class="q-ans-box open" style="margin-top:8px"><div class="ans-label">答案</div>${esc(b.answer || "（开放题，无标准答案）")}</div>
           ${b.analysis ? `<div class="q-ans-box open" style="margin-top:6px;border-left-color:var(--primary)"><div class="ans-label" style="color:var(--primary)">解析</div>${esc(b.analysis)}</div>` : ""}
+          ${rec.body.answerImage ? `<div class="q-ans-box open" style="margin-top:6px"><div class="ans-label">我的答案图片</div><img class="qimg" src="${mediaUrl(rec.body.answerImage)}" onerror="imgRetry(this)" style="max-width:100%;border-radius:8px"></div>` : ""}
           ${tail}`;
       }
       const badge = !done ? `<span class="badge-gray">未答</span>`
@@ -146,15 +176,23 @@
           <span class="badge-info">${esc(b.date || "")}</span>${badge}
         </div>
         <div class="q-content" style="margin-top:6px">${renderRich(b.stem || "")}</div>
+        ${dailyDocLinks(b.docs)}
         ${body}
       </div>`;
     }).join("");
   }
   window.submitDailyAnswer = async function (qid) {
     const val = ($("#dqInput_" + qid).value || "").trim();
-    if (!val) { toast("请先输入答案"); return; }
+    const imgInput = $("#dqImg_" + qid);
+    const file = imgInput && imgInput.files && imgInput.files[0];
+    if (!val && !file) { toast("请先输入答案或上传图片"); return; }
     try {
-      await api("POST", "/api/daily/answer", { qId: qid, answer: val });
+      let answerImage = "";
+      if (file) {
+        toast("上传图片中…");
+        answerImage = await uploadMedia("dailyAnswers/" + qid + "/" + (meId || meName), file);
+      }
+      await api("POST", "/api/daily/answer", { qId: qid, answer: val, answerImage });
       await loadPull(true); renderDaily(); toast("已提交 ✓");
     } catch (e) { toast("提交失败：" + e.message); }
   };
@@ -179,6 +217,7 @@
         </div>
         <div class="q-content" style="margin-top:6px">${renderRich(b.stem || "")}</div>
         ${a.body.answer ? `<div class="muted" style="margin-top:4px">你的答案：${esc(a.body.answer)}</div>` : ""}
+        ${a.body.answerImage ? `<div style="margin-top:4px"><img class="qimg" src="${mediaUrl(a.body.answerImage)}" onerror="imgRetry(this)" style="max-width:100%;border-radius:8px"></div>` : ""}
         <div class="q-ans-box open" style="margin-top:8px"><div class="ans-label">正确答案</div>${esc(b.answer || "（开放题，无标准答案）")}</div>
         ${b.analysis ? `<div class="q-ans-box open" style="margin-top:6px;border-left-color:var(--primary)"><div class="ans-label" style="color:var(--primary)">解析</div>${esc(b.analysis)}</div>` : ""}
       </div>`;
