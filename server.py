@@ -180,6 +180,42 @@ def _media_disk(rel):
     return os.path.normpath(os.path.join(MEDIA_DIR, urlquote(rel, safe="/")))
 
 
+def _file_rels(body):
+    """返回 body.files[].rel（试卷附件等）。"""
+    out = []
+    if isinstance(body, dict):
+        for f in (body.get("files") or []):
+            if isinstance(f, dict):
+                rel = (f.get("rel") or "").strip()
+                if rel:
+                    out.append(rel)
+    return out
+
+
+def _referenced_media():
+    """扫描所有模块, 收集仍被引用的媒体 rel（题目图 media://、试卷附件 files[].rel 等）。
+    用于清理孤儿文件时判断“哪些文件可以删”。"""
+    refs = set()
+    rel_re = re.compile(r'"rel"\s*:\s*"([^"]+)"')
+    for m in MODULES:
+        try:
+            items = store_list(m, limit=100000)
+        except Exception:
+            continue
+        for it in items:
+            body = it.get("body") if isinstance(it, dict) else None
+            if not isinstance(body, dict):
+                continue
+            txt = json.dumps(body, ensure_ascii=False)
+            for mm in MEDIA_RE.findall(txt):
+                refs.add(mm)
+            for fr in _file_rels(body):
+                refs.add(fr)
+            for rm in rel_re.findall(txt):
+                refs.add(rm)
+    return refs
+
+
 def _safe_media_path(rel):
     """逻辑路径 -> 真实存在的磁盘路径(已做越界校验)；不存在返回 None。
 
@@ -666,6 +702,11 @@ class H(BaseHTTPRequestHandler):
     def route_post(self):
         p = self.path_only
         q = self.query
+        if p == "/api/admin/cleanup_orphans":
+            u = user_of(get_token(self))
+            if not u:
+                return send_json(self, {"error": "未登录"}, 401)
+            return self._cleanup_orphan_media()
         if p == "/api/auth/register":
             body, err = read_body(self)
             if err: return send_json(self, {"error": err}, 400)
@@ -821,6 +862,48 @@ class H(BaseHTTPRequestHandler):
             with open(fp, "wb") as f: f.write(raw)
             return send_json(self, {"ok": True, "url": "/api/media/" + rel})
         send_json(self, {"error": "未知接口 " + p}, 404)
+
+    def _cleanup_orphan_media(self):
+        """删除未被任何模块引用的上传文件(孤儿), 释放云端磁盘空间。
+
+        云端持久盘仅 ~430MB, media/ 累计常把磁盘吃满 -> 上传触发 507 被拒,
+        表现为「手机收藏的试卷电脑打不开」。孤儿=上传成功但从未被题目/试卷等
+        引用的文件(如半截保存、重复上传、删除题目后残留)。删除安全。
+
+        注意: 磁盘文件以 urlquote 编码存储, 比对前必须 urlunquote 还原。"""
+        refs = _referenced_media()
+        freed = 0
+        removed = 0
+        for root, dirs, files in os.walk(MEDIA_DIR):
+            for fn in files:
+                fp = os.path.join(root, fn)
+                raw_rel = os.path.relpath(fp, MEDIA_DIR).replace(os.sep, "/")
+                decoded = urlunquote(raw_rel)
+                if decoded in refs or raw_rel in refs:
+                    continue
+                try:
+                    freed += os.path.getsize(fp)
+                    os.remove(fp)
+                    removed += 1
+                except Exception:
+                    pass
+        # 清理空目录
+        for root, dirs, files in os.walk(MEDIA_DIR, topdown=False):
+            for d in dirs:
+                dp = os.path.join(root, d)
+                try:
+                    if not os.listdir(dp):
+                        os.rmdir(dp)
+                except Exception:
+                    pass
+        try:
+            du = shutil.disk_usage(os.path.dirname(MEDIA_DIR) or ".")
+            free_after = du.free
+        except Exception:
+            free_after = None
+        return send_json(self, {"ok": True, "referenced": len(refs),
+                                "removed": removed, "freed_bytes": freed,
+                                "disk_free_after": free_after})
 
     # ---- PUT ----
     def route_put(self):
