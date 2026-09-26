@@ -541,6 +541,8 @@ class H(BaseHTTPRequestHandler):
             return send_index(self)
         if p in ("/student", "/student.html"):
             return send_file(self, os.path.join(BASE, "static", "student.html"))
+        if p == "/student.webmanifest":
+            return send_file(self, os.path.join(BASE, "student.webmanifest"))
         if p.startswith("/static/"):
             fp = os.path.normpath(os.path.join(BASE, "static", p[len("/static/"):]))
             if fp.startswith(os.path.join(BASE, "static")):
