@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>错题循环训练 · 学生端</title>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#f5f6fa;color:#1f2430;font-size:16px}
+  .c{max-width:640px;margin:0 auto;padding:12px 12px 30px}
+  .bar{background:#4361ee;color:#fff;padding:14px;border-radius:12px;margin-bottom:12px;text-align:center;font-size:18px;font-weight:600}
+  .card{background:#fff;border:1px solid #e6e8ef;border-radius:12px;padding:14px;margin-bottom:12px}
+  label{display:block;margin:6px 0 4px;color:#5a6072;font-size:13px}
+  select,input,textarea{width:100%;padding:10px;border:1px solid #d7dae6;border-radius:8px;font-size:15px}
+  button{background:#4361ee;color:#fff;border:0;padding:12px 16px;border-radius:10px;font-size:16px;width:100%;margin-top:10px;cursor:pointer}
+  button.ghost{background:#eef4ff;color:#3a56d4}
+  button.sm{width:auto;padding:8px 12px;font-size:14px;margin:4px 4px 0 0}
+  .q{margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid #eee}
+  .qi{color:#8a90a2;font-size:12px;margin-bottom:4px}
+  img.qi{width:100%;border-radius:8px;margin-top:6px}
+  .ans{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .ans button{width:auto;margin:0;padding:8px 14px;font-size:14px}
+  .right{background:#e7f7ee;color:#2e9e5b}
+  .wrong{background:#fdecec;color:#e5484d}
+  .self{background:#fff3e0;color:#c77700}
+  .hidden{display:none!important}
+  .score{text-align:center;font-size:20px;margin:8px 0}
+</style>
+</head>
+<body>
+<div class="c">
+  <div class="bar">我的错题练习</div>
+
+  <div id="pick" class="card">
+    <label>请选择你的名字</label>
+    <select id="student"></select>
+    <button onclick="enter()">进入</button>
+    <div id="pmsg"></div>
+  </div>
+
+  <div id="main" class="hidden">
+    <div class="card" id="head"></div>
+    <div id="items"></div>
+    <button id="submitBtn" onclick="submit()">提交今日练习</button>
+    <div id="result"></div>
+  </div>
+</div>
+
+<script>
+const API = location.origin;
+let SID='';
+async function call(p,opts={}){
+  const r=await fetch(API+p,opts); let j=null; try{j=await r.json()}catch(e){}
+  return {status:r.status,j};
+}
+async function loadStudents(){
+  const {j}=await call('/api/train/students');
+  const sel=document.getElementById('student');
+  (j?j.items:[]).forEach(s=>sel.insertAdjacentHTML('beforeend',`<option value="${s.id}">${s.name||s.username||s.id}</option>`));
+}
+async function enter(){
+  SID=document.getElementById('student').value;
+  if(!SID){document.getElementById('pmsg').textContent='请先选择名字';return;}
+  localStorage.setItem('tt_student',SID);
+  document.getElementById('pick').classList.add('hidden');
+  document.getElementById('main').classList.remove('hidden');
+  await loadToday();
+}
+async function loadToday(){
+  const {j}=await call('/api/train/today?studentId='+encodeURIComponent(SID));
+  const task=j.task;
+  const head=document.getElementById('head');
+  if(!task){ head.innerHTML='<b>今天还没有给你的练习包</b><br><span style="color:#8a90a2">让老师先点"生成今日任务"哦</span>'; document.getElementById('submitBtn').classList.add('hidden'); return; }
+  document.getElementById('submitBtn').classList.remove('hidden');
+  head.innerHTML='<b>'+task.date+' 练习</b> · 共'+j.items.length+'题'+(task.status==='done'||task.status==='partial'?' · 已完成 ✓':' · 待完成');
+  const box=document.getElementById('items'); box.innerHTML='';
+  j.items.forEach((e,idx)=>{
+    const img=e.image?`<img class="qi" src="${API+e.image}">`:'';
+    let answerUI='';
+    const qans=(e.answer||'').trim();
+    const subj = e.qtype==='解答' || !qans;
+    if(!subj){
+      answerUI=`<label>你的答案</label><input id="ans_${idx}" placeholder="填写答案">`;
+    }else{
+      answerUI=`<label>做完后点「对答案」自评</label>
+        <div class="ans">
+          <button class="sm right" onclick="setSelf(${idx},'self_right')">做对了</button>
+          <button class="sm self" onclick="setSelf(${idx},'half')">半对</button>
+          <button class="sm wrong" onclick="setSelf(${idx},'self_wrong')">做错了</button>
+        </div>
+        <label>草稿拍照（建议上传，老师可抽查）</label>
+        <input id="draft_${idx}" type="file" accept="image/*">`;
+    }
+    box.insertAdjacentHTML('beforeend',`<div class="q" data-idx="${idx}" data-eid="${e.id}" data-subj="${subj?1:0}">
+      <div class="qi">第${idx+1}题 · ${e.knowledgePoint||''} <span style="color:#8a90a2">${e.errorReason||''}</span></div>
+      <div>${(e.stem||'(看图)')}</div>${img}
+      ${answerUI}
+      <div id="fb_${idx}"></div>
+    </div>`);
+  });
+}
+const SELF={};
+function setSelf(idx,val){ SELF[idx]=val; document.getElementById('fb_'+idx).innerHTML='已记录：'+(val==='self_right'?'做对了 ✓':val==='half'?'半对':'做错了 ✗'); }
+
+async function submit(){
+  const answers=[];
+  document.querySelectorAll('.q').forEach(q=>{
+    const idx=q.dataset.idx, eid=q.dataset.eid, subj=q.dataset.subj==='1';
+    const draft=q.querySelector('input[type=file]');
+    let obj={errorId:eid};
+    if(subj){
+      obj.result=SELF[idx]||'self_right';
+      if(draft && draft.files[0]){ /* 草稿先上传, 后续可补; 这里直接传图 */ }
+    }else{
+      obj.submittedAnswer=document.getElementById('ans_'+idx).value;
+    }
+    answers.push(obj);
+  });
+  // 草稿上传(若有)并回填 draftImage
+  for(let i=0;i<answers.length;i++){
+    const q=document.querySelector('.q[data-idx="'+i+'"]');
+    const draft=q.querySelector('input[type=file]');
+    if(draft && draft.files[0]){
+      const fr=await fetch(API+'/api/train/media?studentId='+encodeURIComponent(SID)+'&sub=drafts&name='+encodeURIComponent(draft.files[0].name),{method:'POST',body:draft.files[0]});
+      const fj=await fr.json();
+      if(fj.ok) answers[i].draftImage=fj.url.replace(API,'');
+    }
+  }
+  const {j}=await call('/api/train/submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({studentId:SID,answers})});
+  if(!j||!j.ok){ document.getElementById('result').textContent=(j&&j.error)||'提交失败'; return; }
+  let h='<div class="score">本次正确率 '+(j.total?((j.right/j.total)*100).toFixed(0):0)+'% （'+j.right+'/'+j.total+'）</div>';
+  (j.results||[]).forEach((r,i)=>{
+    const ok=r.result==='right'||r.result==='self_right';
+    h+=`<div class="card"><div class="qi">第${i+1}题 · <b>${ok?'✓ 对':'✗ 错'}</b></div>
+      <div style="color:#5a6072">解析：${r.analysis||'(无)'}</div></div>`;
+  });
+  h+='<p style="color:#8a90a2;font-size:13px">做错的题过几天会再来找你，加油！</p>';
+  document.getElementById('result').innerHTML=h;
+  document.getElementById('submitBtn').classList.add('hidden');
+}
+loadStudents();
+const saved=localStorage.getItem('tt_student'); if(saved){document.getElementById('student').value=saved;}
+</script>
+</body>
+</html>

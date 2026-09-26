@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>错题循环训练 · 老师端</title>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#f5f6fa;color:#1f2430;font-size:15px}
+  .wrap{max-width:900px;margin:0 auto;padding:14px}
+  .topbar{background:#4361ee;color:#fff;padding:14px;border-radius:12px;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+  .tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+  .tab{padding:8px 14px;background:#fff;border:1px solid #e6e8ef;border-radius:20px;cursor:pointer}
+  .tab.active{background:#4361ee;color:#fff;border-color:#4361ee}
+  .card{background:#fff;border:1px solid #e6e8ef;border-radius:12px;padding:14px;margin-bottom:12px}
+  label{display:block;margin:8px 0 4px;color:#5a6072;font-size:13px}
+  input,select,textarea{width:100%;padding:9px;border:1px solid #d7dae6;border-radius:8px;font-size:14px;font-family:inherit}
+  button{background:#4361ee;color:#fff;border:0;padding:10px 16px;border-radius:8px;font-size:14px;cursor:pointer;margin-top:10px}
+  button.ghost{background:#eef4ff;color:#3a56d4}
+  button.danger{background:#fdecec;color:#e5484d}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .row>*{flex:1;min-width:140px}
+  .err{color:#e5484d;font-size:13px}
+  .ok{color:#2e9e5b;font-size:13px}
+  .pill{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;background:#eef4ff;color:#3a56d4;margin:2px}
+  .pill.m{background:#fff3e0;color:#c77700}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{border-bottom:1px solid #eee;padding:6px;text-align:left}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+  .stat{background:#fff;border:1px solid #e6e8ef;border-radius:12px;padding:12px;text-align:center}
+  .stat b{font-size:22px;display:block}
+  img.thumb{max-width:80px;max-height:80px;border-radius:6px;border:1px solid #eee}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><b>错题循环训练</b> · 老师端</div><div id="who"></div></div>
+
+  <div id="login" class="card">
+    <h3>登录</h3>
+    <div class="row">
+      <div><label>用户名</label><input id="u" value="admin"></div>
+      <div><label>密码</label><input id="pw" type="password" value="admin123"></div>
+    </div>
+    <button onclick="login()">登录</button>
+    <div id="linfo" class="err"></div>
+  </div>
+
+  <div id="app" class="hidden">
+    <div class="tabs">
+      <div class="tab active" data-t="errors" onclick="switchTab('errors')">错题录入</div>
+      <div class="tab" data-t="tasks" onclick="switchTab('tasks')">每日任务</div>
+      <div class="tab" data-t="dash" onclick="switchTab('dash')">完成看板</div>
+    </div>
+
+    <!-- 错题录入 -->
+    <div id="t-errors">
+      <div class="card">
+        <h3>录入一道错题</h3>
+        <div class="row">
+          <div><label>学生</label><select id="e-student"></select></div>
+          <div><label>科目</label><input id="e-subject" value="物理"></div>
+        </div>
+        <div class="row">
+          <div><label>知识点</label><input id="e-kp" placeholder="如：牛顿第二定律"></div>
+          <div><label>错误原因</label><select id="e-reason">
+            <option value="概念不清">概念不清</option><option value="公式误用">公式误用</option>
+            <option value="计算失误">计算失误</option><option value="审题偏差">审题偏差</option>
+          </select></div>
+        </div>
+        <div class="row">
+          <div><label>来源</label><select id="e-source">
+            <option value="作业">作业</option><option value="测验">测验</option>
+            <option value="课堂">课堂</option><option value="新课">新课巩固</option>
+          </select></div>
+          <div><label>题型</label><select id="e-qtype">
+            <option value="选择">选择</option><option value="填空">填空</option>
+            <option value="解答">解答(主观)</option>
+          </select></div>
+        </div>
+        <label>题面</label><textarea id="e-stem" rows="3" placeholder="题目文字或图片说明"></textarea>
+        <div class="row">
+          <div><label>标准答案（客观题填，用于自动判分）</label><input id="e-answer" placeholder="客观题答案"></div>
+          <div><label>解析</label><input id="e-analysis" placeholder="标准解析"></div>
+        </div>
+        <label>错题图片（拍照/截图）</label>
+        <input id="e-img" type="file" accept="image/*">
+        <button onclick="saveError()">保存错题</button>
+        <div id="e-msg"></div>
+      </div>
+      <div class="card">
+        <h3>错题列表 <span style="font-size:12px;color:#8a90a2">（按学生筛选）</span></h3>
+        <select id="f-student" onchange="loadErrors()"><option value="">全部</option></select>
+        <div id="err-list"></div>
+      </div>
+    </div>
+
+    <!-- 每日任务 -->
+    <div id="t-tasks" class="hidden">
+      <div class="card">
+        <h3>生成每日任务</h3>
+        <p class="ok">为全体学生生成今天的练习包（到期错题 + 新课巩固，5~8 题）。</p>
+        <button onclick="genTasks()">生成今日任务</button>
+        <div id="task-msg"></div>
+      </div>
+      <div class="card">
+        <h3>今日任务概况</h3>
+        <div id="task-list"></div>
+      </div>
+    </div>
+
+    <!-- 看板 -->
+    <div id="t-dash" class="hidden">
+      <div class="card">
+        <h3>今日概览</h3>
+        <div class="grid" id="dash-overview"></div>
+      </div>
+      <div class="card">
+        <h3>每生进度</h3>
+        <div id="dash-student"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = location.origin;
+let TOKEN = localStorage.getItem('tt_token') || '';
+
+async function call(path, opts={}) {
+  opts.headers = opts.headers || {};
+  if (TOKEN) opts.headers['Authorization'] = 'Bearer ' + TOKEN;
+  if (opts.json) { opts.body = JSON.stringify(opts.json); opts.headers['Content-Type'] = 'application/json'; }
+  const r = await fetch(API + path, opts);
+  let j = null; try { j = await r.json(); } catch(e){}
+  return {status:r.status, j};
+}
+function qs(s){return document.querySelector(s).value;}
+
+async function login(){
+  const {status,j} = await call('/api/auth/login',{method:'POST',json:{username:qs('#u'),password:qs('#pw')}});
+  if(status===200 && j.token){ TOKEN=j.token; localStorage.setItem('tt_token',TOKEN); start(); }
+  else document.getElementById('linfo').textContent = (j&&j.error)||'登录失败';
+}
+function start(){
+  document.getElementById('login').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  document.getElementById('who').textContent = TOKEN? '已登录':'';
+  loadStudents();
+}
+function switchTab(t){
+  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.t===t));
+  ['errors','tasks','dash'].forEach(x=>document.getElementById('t-'+x).classList.toggle('hidden',x!==t));
+  if(t==='tasks') renderTasks();
+  if(t==='dash') loadDash();
+}
+async function loadStudents(){
+  const {j} = await call('/api/train/students');
+  const sel = document.getElementById('e-student');
+  const fsel = document.getElementById('f-student');
+  (j?j.items:[]).forEach(s=>{
+    const name = s.name||s.username||s.id;
+    sel.insertAdjacentHTML('beforeend',`<option value="${s.id}">${name}</option>`);
+    fsel.insertAdjacentHTML('beforeend',`<option value="${s.id}">${name}</option>`);
+  });
+  loadErrors();
+}
+async function saveError(){
+  const msg = document.getElementById('e-msg'); msg.textContent='';
+  const body = {
+    studentId: qs('#e-student'), subject: qs('#e-subject'), knowledgePoint: qs('#e-kp'),
+    errorReason: qs('#e-reason'), source: qs('#e-source'), qtype: qs('#e-qtype'),
+    stem: qs('#e-stem'), answer: qs('#e-answer'), analysis: qs('#e-analysis'),
+    studentName: document.querySelector('#e-student option:checked').textContent
+  };
+  if(!body.studentId){ msg.textContent='请先选择学生'; msg.className='err'; return; }
+  const {status,j} = await call('/api/train/errors',{method:'POST',json:body});
+  if(status!==200){ msg.textContent=(j&&j.error)||'保存失败'; msg.className='err'; return; }
+  // 上传图片（若有）
+  const f = document.getElementById('e-img').files[0];
+  if(f){
+    const sub = 'trainErrors/'+j.id;
+    const fr = await fetch(API+'/api/media?sub='+encodeURIComponent(sub)+'&name='+encodeURIComponent(f.name),{method:'POST',body:f});
+    const fj = await fr.json();
+    if(fj.ok){ await call('/api/train/errors',{method:'POST',json:{id:j.id, image: fj.url.replace(API,'')}}); }
+  }
+  msg.textContent='已保存错题 ✓'; msg.className='ok';
+  document.getElementById('e-stem').value=''; document.getElementById('e-answer').value=''; document.getElementById('e-analysis').value=''; document.getElementById('e-img').value='';
+  loadErrors();
+}
+async function loadErrors(){
+  const sid = document.getElementById('f-student').value;
+  const {j} = await call('/api/train/errors'+(sid?'?studentId='+encodeURIComponent(sid):''));
+  const box = document.getElementById('err-list'); box.innerHTML='';
+  (j?j.items:[]).forEach(e=>{
+    const img = e.image? `<img class="thumb" src="${API+e.image}">`:'';
+    box.insertAdjacentHTML('beforeend',`<div class="card" style="margin:8px 0">
+      <div class="row" style="align-items:center">
+        <div>${img}</div>
+        <div style="flex:3">
+          <div><b>${e.knowledgePoint||'(无知识点)'}</b> <span class="pill">${e.errorReason||''}</span> <span class="pill m">${e.source||''}</span></div>
+          <div style="color:#8a90a2;font-size:12px">${e.studentName||e.studentId} · ${e.qtype||''} · ${e.wrongDate||''}</div>
+          <div style="font-size:13px">${(e.stem||'').slice(0,80)}</div>
+        </div>
+        <div><button class="danger" onclick="delErr('${e.id}')">删</button></div>
+      </div></div>`);
+  });
+}
+async function delErr(id){
+  await call('/api/train/errors/'+id,{method:'DELETE'}); loadErrors();
+}
+async function genTasks(){
+  const {j} = await call('/api/train/tasks/generate',{method:'POST'});
+  document.getElementById('task-msg').textContent = (j&&j.students!=null)? ('已为 '+j.students+' 名学生生成 '+j.date+' 任务 ✓'):'生成失败';
+  renderTasks();
+}
+async function renderTasks(){
+  const {j} = await call('/api/train/tasks?date='+new Date().toISOString().slice(0,10));
+  const box = document.getElementById('task-list'); box.innerHTML='';
+  (j?j.items:[]).forEach(t=>{
+    box.insertAdjacentHTML('beforeend',`<div style="padding:6px;border-bottom:1px solid #eee">
+      <b>${(t.studentName)||t.studentId}</b> · ${t.date} · 共${t.errorIds.length}题 · 状态:${t.status} ${t.score!=null?('· 正确率'+(t.score*100).toFixed(0)+'%'):''}</div>`);
+  });
+}
+async function loadDash(){
+  const {j} = await call('/api/train/dashboard');
+  if(!j){return;}
+  document.getElementById('dash-overview').innerHTML =
+    stat(j.studentsTotal,'学生总数')+stat(j.tasksToday,'今日任务')+stat(j.doneToday,'今日完成')+stat(j.todayDate,'日期');
+  const box = document.getElementById('dash-student');
+  let h='<table><tr><th>学生</th><th>循环中</th><th>已毕业</th><th>新收录</th><th>今日</th><th>正确率</th></tr>';
+  (j.perStudent||[]).forEach(s=>{
+    h+=`<tr><td>${s.name||s.id}</td><td>${s.active}</td><td>${s.mastered}</td><td>${s.new}</td><td>${s.todayStatus}</td><td>${s.todayScore!=null?(s.todayScore*100).toFixed(0)+'%':'-'}</td></tr>`;
+  });
+  box.innerHTML=h+'</table>';
+}
+function stat(v,l){return `<div class="stat"><b>${v}</b>${l}</div>`;}
+
+if(TOKEN){ start(); }
+</script>
+</body>
+</html>

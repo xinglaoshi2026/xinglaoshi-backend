@@ -101,7 +101,8 @@ def migrate_ts():
 # ---------------- 存储层 ----------------
 MODULES = ["questions", "papers", "exams", "students", "schedule",
            "records", "knowledgePoints", "examCategories", "wrongNotes",
-           "dailyQuestions", "dailyAnswers"]
+           "dailyQuestions", "dailyAnswers",
+           "trainErrors", "trainCards", "trainTasks", "trainLogs"]
 
 
 def store_get(module, id):
@@ -472,6 +473,243 @@ def _migrate_media_to_r2():
     return {"ok": True, "migrated": done, "errors": errs}
 
 
+# ---------------- 错题循环训练（间隔重复 / 艾宾浩斯简化） ----------------
+TRAIN_MODULES = ["trainErrors", "trainCards", "trainTasks", "trainLogs"]
+TRAIN_INTERVALS = [1, 2, 4, 7, 15, 30]  # 各掌握等级对应的间隔天数
+
+
+def _date_today():
+    from datetime import date
+    return date.today().isoformat()
+
+
+def _date_after(d, n):
+    from datetime import date, timedelta
+    return (date.fromisoformat(d) + timedelta(days=n)).isoformat()
+
+
+def _days_between(d1, d2):
+    from datetime import date
+    try:
+        return (date.fromisoformat(d2) - date.fromisoformat(d1)).days
+    except Exception:
+        return 0
+
+
+def train_card_id(student_id, error_id):
+    return "c_%s_%s" % (student_id, error_id)
+
+
+def train_ensure_card(student_id, error_id, first_seen=None):
+    cid = train_card_id(student_id, error_id)
+    c, _ = store_get("trainCards", cid)
+    if c:
+        return c
+    c = {"id": cid, "studentId": student_id, "errorId": error_id, "level": 0,
+         "consecutiveRight": 0, "nextDueDate": _date_today(), "status": "active",
+         "firstSeen": first_seen or _date_today(), "updatedAt": now_ms()}
+    store_put("trainCards", cid, c)
+    return c
+
+
+def train_on_answer(card, result):
+    """result: right / half / wrong / self_right / self_wrong"""
+    right = result in ("right", "self_right")
+    if right:
+        card["consecutiveRight"] += 1
+        card["level"] = min(card["level"] + 1, 5)
+    else:
+        card["consecutiveRight"] = 0
+        card["level"] = max(card["level"] - 1, 0)
+        card["nextDueDate"] = _date_after(_date_today(), 1)  # 错了明天必见
+        card["updatedAt"] = now_ms()
+        store_put("trainCards", card["id"], card)
+        return
+    # 毕业判定：连续对3次 且 首次收录≥14天 且 等级到顶(level>=4)
+    if (card["consecutiveRight"] >= 3 and card["level"] >= 4
+            and _days_between(card["firstSeen"], _date_today()) >= 14):
+        card["status"] = "month_pool"  # 毕业, 进月度抽检池
+    else:
+        card["nextDueDate"] = _date_after(_date_today(), TRAIN_INTERVALS[card["level"]])
+    card["updatedAt"] = now_ms()
+    store_put("trainCards", card["id"], card)
+
+
+def train_build_daily(student_id, date_str, include_new=True):
+    """为某学生生成某天应练的错题卡（到期错题优先, 新课巩固补充, 不足则提前拉取）。"""
+    cards = [c["body"] if isinstance(c, dict) else c for c in
+             store_list("trainCards", limit=3000)]
+    due = [c for c in cards if c.get("studentId") == student_id
+           and c.get("status") == "active" and c.get("nextDueDate", "") <= date_str]
+    due.sort(key=lambda c: (c.get("level", 0),
+                            -_days_between(c.get("nextDueDate", date_str), date_str)))
+    picked = due[:6]
+    picked_ids = {p.get("errorId") for p in picked}
+    if include_new and len(picked) < 8:
+        # 新课巩固：近7天收录且仍 level0 的错题, 最多2道
+        new_errs = [e["body"] for e in store_list("trainErrors", limit=3000)]
+        cnt = 0
+        for e in new_errs:
+            if e.get("studentId") != student_id:
+                continue
+            cid = train_card_id(student_id, e["id"])
+            c = next((x for x in cards if x.get("id") == cid), None)
+            if c and c.get("level", 0) == 0 and _days_between(c.get("firstSeen", date_str), date_str) <= 7:
+                if e["id"] not in picked_ids:
+                    picked.append(c); picked_ids.add(e["id"]); cnt += 1
+            if cnt >= 2:
+                break
+    if len(picked) < 4:
+        up = [c for c in cards if c.get("studentId") == student_id
+              and c.get("status") == "active" and c.get("nextDueDate", "") > date_str
+              and _days_between(date_str, c.get("nextDueDate", date_str)) <= 1]
+        up.sort(key=lambda c: c.get("nextDueDate", date_str))
+        for c in up:
+            if c.get("errorId") not in picked_ids:
+                picked.append(c); picked_ids.add(c.get("errorId"))
+            if len(picked) >= 4:
+                break
+    return picked
+
+
+def train_monthly_sample(student_id, date_str):
+    """每月1号从 month_pool 抽取≤3题(约20%)降级回 active, 混入当天任务。"""
+    cards = [c["body"] for c in store_list("trainCards", limit=3000)]
+    pool = [c for c in cards if c.get("studentId") == student_id and c.get("status") == "month_pool"]
+    if not pool:
+        return []
+    k = min(3, max(1, round(len(pool) * 0.2)))
+    import random
+    random.seed(student_id + date_str)
+    chosen = random.sample(pool, min(k, len(pool)))
+    for c in chosen:
+        c["status"] = "active"
+        c["nextDueDate"] = date_str
+        c["updatedAt"] = now_ms()
+        store_put("trainCards", c["id"], c)
+    return chosen
+
+
+def train_generate_tasks(date_str=None):
+    """为全体学生生成某天任务包(覆盖式)。返回生成统计。"""
+    date_str = date_str or _date_today()
+    students = [s["body"] for s in store_list("students", limit=2000)]
+    if date_str[8:10] == "01":  # 每月1号先月度抽检
+        for s in students:
+            train_monthly_sample(s.get("id"), date_str)
+    made = 0
+    for s in students:
+        sid = s.get("id")
+        if not sid:
+            continue
+        cards = train_build_daily(sid, date_str)
+        err_ids = [c.get("errorId") for c in cards]
+        tid = "t_%s_%s" % (sid, date_str)
+        task = {"id": tid, "studentId": sid, "date": date_str,
+                "errorIds": err_ids, "status": "pending",
+                "score": None, "finishedAt": None, "updatedAt": now_ms()}
+        # 保留已有完成状态(若当天已做过则不全覆盖)
+        old, _ = store_get("trainTasks", tid)
+        if old and old.get("status") in ("done", "partial"):
+            continue
+        store_put("trainTasks", tid, task)
+        made += 1
+    return {"ok": True, "date": date_str, "students": made}
+
+
+def train_student_today(student_id, date_str=None):
+    """返回某学生当天的任务(含错题明细), 若不存在则即时生成。"""
+    date_str = date_str or _date_today()
+    tid = "t_%s_%s" % (student_id, date_str)
+    task, _ = store_get("trainTasks", tid)
+    if not task:
+        train_generate_tasks(date_str)
+        task, _ = store_get("trainTasks", tid)
+    if not task:
+        return {"task": None, "items": []}
+    items = []
+    for eid in task.get("errorIds", []):
+        e, _ = store_get("trainErrors", eid)
+        if not e:
+            continue
+        items.append(e)
+    return {"task": task, "items": items}
+
+
+def train_submit(student_id, date_str, answers):
+    """学生提交：自动判分 + 更新卡片 + 写流水 + 更新任务。返回逐题结果。"""
+    date_str = date_str or _date_today()
+    tid = "t_%s_%s" % (student_id, date_str)
+    task, _ = store_get("trainTasks", tid)
+    if not task:
+        return {"ok": False, "error": "今日任务不存在"}
+    results = []
+    right_n = 0
+    total = 0
+    for a in answers:
+        eid = a.get("errorId")
+        e, _ = store_get("trainErrors", eid)
+        if not e:
+            continue
+        total += 1
+        result = a.get("result")  # right/half/wrong/self_right/self_wrong
+        qans = (e.get("answer") or "").strip()
+        # 客观题自动判分(仅当明确给出 submittedAnswer 且为标准题)
+        if qans and a.get("submittedAnswer") is not None and result in (None, "", "auto"):
+            norm = lambda s: re.sub(r"\s+", "", str(s)).lower()
+            result = "right" if norm(a.get("submittedAnswer")) == norm(qans) else "wrong"
+        if result in ("right", "self_right"):
+            right_n += 1
+        cid = train_card_id(student_id, eid)
+        c, _ = store_get("trainCards", cid)
+        if not c:
+            c = train_ensure_card(student_id, eid)
+        train_on_answer(c, result)
+        lid = "log_%s_%s_%d" % (student_id, eid, now_ms())
+        log = {"id": lid, "studentId": student_id, "errorId": eid, "taskId": tid,
+               "answerDate": date_str, "result": result,
+               "submittedAnswer": a.get("submittedAnswer") or "",
+               "draftImage": (a.get("draftImage") or "").strip(),
+               "durationSec": a.get("durationSec") or 0, "updatedAt": now_ms()}
+        store_put("trainLogs", lid, log)
+        results.append({"errorId": eid, "result": result,
+                        "answer": qans, "analysis": e.get("analysis") or "",
+                        "stem": e.get("stem") or ""})
+    if total:
+        task["score"] = round(right_n / total, 2)
+        task["status"] = "done" if right_n == total else "partial"
+        task["finishedAt"] = now_ms()
+        task["updatedAt"] = now_ms()
+        store_put("trainTasks", tid, task)
+    return {"ok": True, "score": task.get("score"), "total": total,
+            "right": right_n, "results": results}
+
+
+def train_dashboard():
+    """老师看板数据：今日任务概况 + 每生掌握进度 + 每题作答历史概览。"""
+    students = [s["body"] for s in store_list("students", limit=2000)]
+    today = _date_today()
+    tasks_today = [t["body"] for t in store_list("trainTasks", limit=4000)
+                   if t["body"].get("date") == today]
+    done = sum(1 for t in tasks_today if t.get("status") in ("done", "partial"))
+    cards = [c["body"] for c in store_list("trainCards", limit=6000)]
+    per_student = []
+    for s in students:
+        sid = s.get("id")
+        sc = [c for c in cards if c.get("studentId") == sid]
+        mastered = sum(1 for c in sc if c.get("status") == "month_pool")
+        active = sum(1 for c in sc if c.get("status") == "active")
+        new0 = sum(1 for c in sc if c.get("status") == "active" and c.get("level", 0) == 0)
+        t = next((x for x in tasks_today if x.get("studentId") == sid), None)
+        per_student.append({"id": sid, "name": s.get("name") or s.get("username") or "",
+                            "active": active, "mastered": mastered, "new": new0,
+                            "todayStatus": t.get("status") if t else "none",
+                            "todayScore": t.get("score")})
+    return {"todayDate": today, "studentsTotal": len(students),
+            "tasksToday": len(tasks_today), "doneToday": done,
+            "perStudent": per_student}
+
+
 def _content_segments(html):
     """题干 HTML -> [("text", s) | ("img", 本地路径)] 序列。"""
     segs = []
@@ -672,6 +910,7 @@ def send_json(h, obj, code=200):
     h.send_cors()
     h.end_headers()
     h.wfile.write(data)
+    h._responded = True
 
 
 def _sniff_content_type(path):
@@ -715,6 +954,7 @@ def send_index(h):
 
 
 def send_file(h, path, filename=None):
+    h._responded = True
     if not os.path.exists(path):
         h.send_response(404); h.send_cors(); h.end_headers(); return
     mt = _sniff_content_type(path)
@@ -762,6 +1002,7 @@ class H(BaseHTTPRequestHandler):
     def _setup(self):
         self.query = parse_qs(urlparse(self.path).query)
         self.path_only = urlparse(self.path).path
+        self._responded = False
 
     def send_cors(self):
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -803,7 +1044,128 @@ class H(BaseHTTPRequestHandler):
             send_json(self, {"error": str(e)}, 500)
 
     # ---- GET ----
+    # ---------------- 错题循环训练 路由 ----------------
+    def _train_route_get(self, p, q):
+        if p in ("/train", "/train.html"):
+            return send_file(self, os.path.join(BASE, "static", "train_teacher.html"))
+        if p in ("/train_student", "/train_student.html"):
+            return send_file(self, os.path.join(BASE, "static", "train_student.html"))
+        if p == "/api/train/students":
+            return send_json(self, {"items": [s["body"] for s in store_list("students", limit=1000)]})
+        if p == "/api/train/errors":
+            sid = q.get("studentId", [None])[0]
+            items = [e["body"] for e in store_list("trainErrors", limit=5000)]
+            if sid:
+                items = [e for e in items if e.get("studentId") == sid]
+            return send_json(self, {"items": items, "count": len(items)})
+        if p == "/api/train/cards":
+            sid = q.get("studentId", [None])[0]
+            items = [c["body"] for c in store_list("trainCards", limit=8000)]
+            if sid:
+                items = [c for c in items if c.get("studentId") == sid]
+            return send_json(self, {"items": items, "count": len(items)})
+        if p == "/api/train/tasks":
+            d = q.get("date", [None])[0]
+            items = [t["body"] for t in store_list("trainTasks", limit=8000)]
+            if d:
+                items = [t for t in items if t.get("date") == d]
+            return send_json(self, {"items": items, "count": len(items)})
+        if p == "/api/train/today":
+            sid = q.get("studentId", [None])[0]
+            d = q.get("date", [None])[0]
+            if not sid:
+                return send_json(self, {"error": "缺少 studentId"}, 400)
+            return send_json(self, train_student_today(sid, d))
+        if p == "/api/train/dashboard":
+            u = user_of(get_token(self))
+            if not u:
+                return send_json(self, {"error": "未登录"}, 401)
+            return send_json(self, train_dashboard())
+        return None
+
+    def _train_route_post(self, p, q):
+        # 学生提交作答(免登录, 通过 studentId 识别)
+        if p == "/api/train/submit":
+            body, err = read_body(self)
+            if err:
+                return send_json(self, {"error": err}, 400)
+            sid = body.get("studentId")
+            if not sid:
+                return send_json(self, {"error": "缺少 studentId"}, 400)
+            return send_json(self, train_submit(sid, body.get("date"), body.get("answers") or []))
+        # 学生上传草稿/错题图片(免登录, 通过 studentId 识别; 仅允许图片, 防任意文件上传滥用)
+        if p == "/api/train/media":
+            sid = (q.get("studentId", [None])[0] or "").strip()
+            if not sid:
+                return send_json(self, {"error": "缺少 studentId"}, 400)
+            # studentId 限制为安全单段, 防止目录穿越
+            sid = re.sub(r"[^A-Za-z0-9_\-]", "_", sid)[:48]
+            sub = (q.get("sub", ["drafts"])[0] or "drafts").strip()
+            sub = re.sub(r"[^A-Za-z0-9_\-]", "_", sub)[:48]
+            name = q.get("name", [None])[0] or self.headers.get("X-Filename") or "upload.bin"
+            name = os.path.basename(name)
+            raw, _ = read_body(self)
+            if not isinstance(raw, bytes) or len(raw) == 0:
+                return send_json(self, {"error": "空文件"}, 400)
+            if len(raw) > 12 * 1024 * 1024:
+                return send_json(self, {"error": "图片过大(>12MB)"}, 413)
+            ct = _guess_ct(name, raw)
+            if not ct.startswith("image/"):
+                return send_json(self, {"error": "仅支持图片上传"}, 415)
+            d = _date_today()
+            rel = "train/%s/%s/%s/%s" % (sid, sub, d, name)
+            ok, url, code = _put_media(rel, raw, name)
+            if not ok:
+                return send_json(self, {"error": url}, code)
+            return send_json(self, {"ok": True, "url": url})
+        u = user_of(get_token(self))
+        if not u and p.startswith("/api/train/"):
+            return send_json(self, {"error": "未登录"}, 401)
+        if p == "/api/train/errors":
+            body, err = read_body(self)
+            if err:
+                return send_json(self, {"error": err}, 400)
+            eid = body.get("id") or ("te_" + uuid.uuid4().hex[:12])
+            body["id"] = eid
+            body["createdAt"] = now_ms()
+            if not body.get("wrongDate"):
+                body["wrongDate"] = _date_today()
+            store_put("trainErrors", eid, body)
+            # 自动建卡
+            train_ensure_card(body.get("studentId"), eid, first_seen=body["wrongDate"])
+            return send_json(self, {"ok": True, "id": eid})
+        if p.startswith("/api/train/errors/"):
+            eid = p[len("/api/train/errors/"):]
+            store_delete("trainErrors", eid)
+            # 同步删卡(若存在)
+            for s in store_list("students", limit=2000):
+                cid = train_card_id(s.get("id"), eid)
+                c, _ = store_get("trainCards", cid)
+                if c:
+                    store_delete("trainCards", cid)
+            return send_json(self, {"ok": True})
+        if p == "/api/train/tasks/generate":
+            d = q.get("date", [None])[0]
+            return send_json(self, train_generate_tasks(d))
+        if p == "/api/train/logs":
+            body, err = read_body(self)
+            if err:
+                return send_json(self, {"error": err}, 400)
+            lid = body.get("id") or ("logm_" + uuid.uuid4().hex[:12])
+            body["id"] = lid; body["updatedAt"] = now_ms()
+            store_put("trainLogs", lid, body)
+            # 同步更新卡片(老师手动登记结果)
+            if body.get("errorId") and body.get("studentId"):
+                c, _ = store_get("trainCards", train_card_id(body["studentId"], body["errorId"]))
+                if c:
+                    train_on_answer(c, body.get("result", "self_right"))
+            return send_json(self, {"ok": True, "id": lid})
+        return None
+
     def route_get(self):
+        self._train_route_get(self.path_only, self.query)
+        if self._responded:
+            return
         p = self.path_only
         if p == "/" or p == "/index.html":
             return send_index(self)
@@ -938,6 +1300,9 @@ class H(BaseHTTPRequestHandler):
 
     # ---- POST ----
     def route_post(self):
+        self._train_route_post(self.path_only, self.query)
+        if self._responded:
+            return
         p = self.path_only
         q = self.query
         if p == "/api/admin/cleanup_orphans":
