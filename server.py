@@ -100,7 +100,8 @@ def migrate_ts():
 
 # ---------------- 存储层 ----------------
 MODULES = ["questions", "papers", "exams", "students", "schedule",
-           "records", "knowledgePoints", "examCategories", "wrongNotes"]
+           "records", "knowledgePoints", "examCategories", "wrongNotes",
+           "dailyQuestions", "dailyAnswers"]
 
 
 def store_get(module, id):
@@ -683,6 +684,38 @@ class H(BaseHTTPRequestHandler):
         # 以下需登录
         u = user_of(get_token(self))
         if not u: return send_json(self, {"error": "未登录"}, 401)
+        # ---- 每日一题：学生提交答案并判分 ----
+        if p == "/api/daily/answer":
+            body, err = read_body(self)
+            if err: return send_json(self, {"error": err}, 400)
+            qid = body.get("qId")
+            if not qid: return send_json(self, {"error": "缺少 qId"}, 400)
+            q, _ = store_get("dailyQuestions", qid)
+            if q is None: return send_json(self, {"error": "题目不存在"}, 404)
+            ans = (body.get("answer") or "").strip()
+            qans = (q.get("answer") or "").strip()
+            if qans:
+                # 标准答案非空：自动比对（去空白、忽略大小写）
+                norm = lambda s: re.sub(r"\s+", "", s).lower()
+                correct = 1 if norm(ans) == norm(qans) else 0
+                open_ended = False
+            else:
+                # 开放题：由学生自评（仅当明确传 correct=0/1 时记录）
+                correct = body.get("correct") if body.get("correct") in (0, 1) else None
+                open_ended = True
+            aid = "a_" + u["user_id"] + "_" + qid
+            rec = {
+                "id": aid, "qId": qid, "date": q.get("date"),
+                "studentId": u["user_id"], "studentName": u.get("username") or "",
+                "answer": ans, "correct": correct, "openEnded": open_ended,
+                "updatedAt": now_ms(),
+            }
+            store_put("dailyAnswers", aid, rec)
+            return send_json(self, {
+                "ok": True, "correct": correct, "openEnded": open_ended,
+                "answer": q.get("answer") or "", "analysis": q.get("analysis") or "",
+                "stem": q.get("stem") or "",
+            })
         if p == "/api/questions":
             body, err = read_body(self)
             if err: return send_json(self, {"error": err}, 400)
@@ -832,7 +865,9 @@ class H(BaseHTTPRequestHandler):
                             ("/api/exams/", "exams"), ("/api/students/", "students"),
                             ("/api/schedule/", "schedule"), ("/api/records/", "records"),
                             ("/api/knowledgePoints/", "knowledgePoints"),
-                            ("/api/examCategories/", "examCategories")):
+                            ("/api/examCategories/", "examCategories"),
+                            ("/api/dailyQuestions/", "dailyQuestions"),
+                            ("/api/dailyAnswers/", "dailyAnswers")):
             if p.startswith(prefix):
                 id = p[len(prefix):]
                 store_delete(mod, id)

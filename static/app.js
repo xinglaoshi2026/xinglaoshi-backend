@@ -1015,16 +1015,18 @@
     else if (mainTab === "schedule") schedSub(schedSubPane);
     else if (mainTab === "students") renderStudents();
     else if (mainTab === "settings") renderSettings();
+    else if (mainTab === "daily") renderDaily();
   }
   function switchMain(m) {
     mainTab = m;
-    ["questions", "schedule", "students", "settings"].forEach(id =>
+    ["questions", "schedule", "students", "settings", "daily"].forEach(id =>
       $("#view-" + id).classList.toggle("hidden", id !== m));
     document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.main === m));
     if (m === "questions") qSub(qSubPane);
     else if (m === "schedule") schedSub(schedSubPane);
     else if (m === "students") renderStudents();
     else if (m === "settings") renderSettings();
+    else if (m === "daily") renderDaily();
   }
   function qSub(s) {
     qSubPane = s;
@@ -1885,6 +1887,236 @@
   window.catCancelEdit = catCancelEdit; window.catSaveAdd = catSaveAdd; window.catSaveRename = catSaveRename;
   window.delExamCatM = delExamCatM;
   window.logout = logout;
+
+  // ===================== 每日一题（出题程序） =====================
+  let dailySubPane = "manage";
+  function _role() { try { return (user ? JSON.parse(user) : {}).role; } catch (e) { return ""; } }
+  function _meName() { try { return (user ? JSON.parse(user) : {}).username || ""; } catch (e) { return ""; } }
+
+  function renderDaily() {
+    const isTeacher = _role() === "admin";
+    const tabs = isTeacher
+      ? [["manage", "出题 / 排期"], ["stats", "答题统计"]]
+      : [["practice", "今日一题"], ["wrong", "我的错题本"]];
+    if (!tabs.find(t => t[0] === dailySubPane)) dailySubPane = tabs[0][0];
+    const tt = $("#dailySubTabs");
+    tt.innerHTML = tabs.map(t =>
+      `<button class="subtab ${t[0] === dailySubPane ? "on" : ""}" data-sub="${t[0]}" onclick="dailySub('${t[0]}')">${t[1]}</button>`
+    ).join("");
+    ["manage", "stats", "practice", "wrong"].forEach(id =>
+      $("#sub-daily-" + id).classList.toggle("hidden", id !== dailySubPane));
+    if (dailySubPane === "manage") renderDailyManage();
+    else if (dailySubPane === "stats") renderDailyStats();
+    else if (dailySubPane === "practice") renderDailyPractice();
+    else if (dailySubPane === "wrong") renderDailyWrong();
+  }
+  function dailySub(s) { dailySubPane = s; renderDaily(); }
+
+  // ---- 老师：出题 / 排期 ----
+  function renderDailyManage() {
+    const box = $("#sub-daily-manage");
+    const items = (DB.data.dailyQuestions || []).slice()
+      .sort((a, b) => (b.body.date || "").localeCompare(a.body.date || ""));
+    let html = `<div class="row" style="margin-bottom:10px"><button class="btn" style="flex:1" onclick="openDailyEditor(null)">＋ 出题</button></div>`;
+    if (!items.length) html += `<div class="center">还没有每日一题<br><span style="font-size:12px">点上方「＋ 出题」录入今天 / 某天的题目</span></div>`;
+    html += items.map(it => {
+      const b = it.body || {};
+      const preview = (b.stem || "").replace(/<[^>]+>/g, "").replace(/media:\/\/\S+/g, "[图]").slice(0, 30);
+      return `<div class="card">
+        <div class="row" style="justify-content:space-between;align-items:center">
+          <span class="badge-info">${esc(b.date || "")}</span>
+          <span class="muted">${esc(preview)}</span>
+        </div>
+        <div class="q-content" style="margin:6px 0">${renderRich(b.stem || "")}</div>
+        <div class="q-ans-box open" style="margin-top:6px"><div class="ans-label">答案</div>${esc(b.answer || "（开放题，无标准答案）")}</div>
+        ${b.analysis ? `<div class="q-ans-box open" style="margin-top:6px;border-left-color:var(--primary)"><div class="ans-label" style="color:var(--primary)">解析</div>${esc(b.analysis)}</div>` : ""}
+        <div class="row" style="margin-top:8px;gap:6px">
+          <button class="btn sec sm" onclick="openDailyEditor('${it.id}')">编辑</button>
+          <button class="btn danger sm" onclick="delDaily('${it.id}')">删除</button>
+        </div>
+      </div>`;
+    }).join("");
+    box.innerHTML = html;
+  }
+  function openDailyEditor(id) {
+    const isNew = !id;
+    const qid = id || ("dq_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
+    const it = isNew ? null : (DB.data.dailyQuestions || []).find(x => x.id === id);
+    const b = (it && it.body) || {};
+    $("#modalBox").innerHTML = `
+      <div class="modal-header"><span class="modal-title">${isNew ? "出题（每日一题）" : "编辑每日一题"}</span><button class="modal-close" onclick="closeModal()">✕</button></div>
+      <div class="modal-body">
+        <input type="hidden" id="dqId" value="${esc(qid)}">
+        <label class="kv">日期（发题日）</label><input id="dqDate" type="date" value="${esc(b.date || todayStr())}">
+        <label class="kv">题面（可配图：选图后自动插入 media:// 引用）</label>
+        <textarea id="dqStem" style="min-height:120px">${esc(b.stem || "")}</textarea>
+        <div class="row" style="margin:6px 0 0"><input id="dqImg" type="file" accept="image/*" style="flex:1"></div>
+        <label class="kv">标准答案（留空 = 开放题，由学生自评）</label>
+        <textarea id="dqAnswer" style="min-height:60px">${esc(b.answer || "")}</textarea>
+        <label class="kv">解析（可选）</label>
+        <textarea id="dqAnalysis" style="min-height:60px">${esc(b.analysis || "")}</textarea>
+      </div>
+      <div class="modal-footer"><button class="btn sec" style="flex:1" onclick="closeModal()">取消</button><button class="btn ok" style="flex:1" onclick="saveDailyQuestion()">保存</button></div>`;
+    openModal();
+  }
+  async function saveDailyQuestion() {
+    const id = $("#dqId").value;
+    const date = $("#dqDate").value || todayStr();
+    let stem = $("#dqStem").value;
+    const file = $("#dqImg") && $("#dqImg").files && $("#dqImg").files[0];
+    try {
+      if (file) {
+        // 去除旧的同路径图片引用，再追加新的
+        stem = stem.replace(new RegExp("media://dailyQuestions/" + id + "/c/img_1\\.png", "g"), "");
+        await api("POST", "/api/media?sub=" + encodeURIComponent("dailyQuestions/" + id + "/c") + "&name=" + encodeURIComponent("img_1.png"), file, true);
+        stem = (stem + "\nmedia://dailyQuestions/" + id + "/c/img_1.png").trim();
+      }
+      const body = { id, date, stem, answer: $("#dqAnswer").value.trim(), analysis: $("#dqAnalysis").value.trim(), updatedAt: Date.now() };
+      if ((DB.data.dailyQuestions || []).find(x => x.id === id)) {
+        await api("PUT", "/api/dailyQuestions/" + id, body);
+      } else {
+        await api("POST", "/api/dailyQuestions", body);
+      }
+      toast("已保存 ✓"); closeModal(); await loadPull(true); renderDaily();
+    } catch (e) { toast("保存失败：" + e.message); }
+  }
+  async function delDaily(id) {
+    confirmModal("删除该题", "确定删除这道每日一题？学生已答记录会保留用于统计。", async () => {
+      try { await api("DELETE", "/api/dailyQuestions/" + id); toast("已删除"); await loadPull(true); renderDaily(); }
+      catch (e) { toast("删除失败：" + e.message); }
+    });
+  }
+
+  // ---- 老师：答题统计 ----
+  function renderDailyStats() {
+    const qs = DB.data.dailyQuestions || [];
+    const ans = DB.data.dailyAnswers || [];
+    const byQ = {};
+    ans.forEach(a => {
+      const b = a.body || {}; const k = b.qId; if (!k) return;
+      byQ[k] = byQ[k] || { total: 0, correct: 0 };
+      byQ[k].total++; if (b.correct === 1) byQ[k].correct++;
+    });
+    let html = `<div class="card"><div class="muted">共 ${qs.length} 道每日一题 · ${ans.length} 条答题记录</div></div>`;
+    const sorted = qs.slice().sort((a, b) => (b.body.date || "").localeCompare(a.body.date || ""));
+    if (!sorted.length) html += `<div class="center">还没有题目</div>`;
+    html += sorted.map(it => {
+      const b = it.body || {}; const s = byQ[it.id] || { total: 0, correct: 0 };
+      const rate = s.total ? Math.round(s.correct / s.total * 100) : 0;
+      return `<div class="card">
+        <div class="row" style="justify-content:space-between;align-items:center">
+          <span class="badge-info">${esc(b.date || "")}</span>
+          <span class="muted">${s.total} 人答 · 正确率 ${rate}%</span>
+        </div>
+        <div class="q-content" style="margin:6px 0">${renderRich(b.stem || "")}</div>
+      </div>`;
+    }).join("");
+    // 学生答题榜
+    const byS = {};
+    ans.forEach(a => {
+      const b = a.body || {}; if (!b.studentId) return;
+      byS[b.studentId] = byS[b.studentId] || { name: b.studentName, total: 0, correct: 0 };
+      byS[b.studentId].total++; if (b.correct === 1) byS[b.studentId].correct++;
+    });
+    const st = Object.values(byS).sort((a, b) => b.total - a.total);
+    if (st.length) {
+      html += `<div class="card"><div style="font-weight:600;margin-bottom:6px">学生答题榜</div>` +
+        st.map(s => `<div class="row" style="justify-content:space-between"><span>${esc(s.name || "")}</span><span class="muted">${s.total} 题 · 正确 ${s.correct}</span></div>`).join("") + `</div>`;
+    }
+    $("#sub-daily-stats").innerHTML = html;
+  }
+
+  // ---- 学生：今日一题 ----
+  function _myDaily() {
+    const name = _meName();
+    return (DB.data.dailyAnswers || []).filter(a => (a.body && a.body.studentName) === name);
+  }
+  function renderDailyPractice() {
+    const today = todayStr();
+    const items = (DB.data.dailyQuestions || []).filter(x => (x.body && x.body.date) === today);
+    const mine = _myDaily();
+    const box = $("#sub-daily-practice");
+    if (!items.length) {
+      box.innerHTML = `<div class="center">今天还没有出题~<br><span style="font-size:12px">老师会在「出题 / 排期」里录入每日一题</span></div>`;
+      return;
+    }
+    box.innerHTML = items.map(it => {
+      const b = it.body || {};
+      const rec = mine.find(a => a.body && a.body.qId === it.id);
+      const done = !!rec;
+      const correct = rec && rec.body ? rec.body.correct : null;
+      const openEnded = rec && rec.body ? rec.body.openEnded : false;
+      let body;
+      if (!done) {
+        body = `<textarea id="dqInput_${it.id}" placeholder="输入你的答案…" style="min-height:70px;margin-top:8px"></textarea>
+          <div class="row" style="margin-top:8px;gap:6px"><button class="btn ok" onclick="submitDailyAnswer('${it.id}')">提交并核对</button></div>`;
+      } else {
+        let tail = "";
+        if (openEnded && correct === null) {
+          tail = `<div class="row" style="margin-top:8px;gap:6px">
+            <button class="btn ok sm" onclick="markDaily('${it.id}',1)">我答对了</button>
+            <button class="btn danger sm" onclick="markDaily('${it.id}',0)">我答错了</button></div>`;
+        }
+        body = `<div class="q-ans-box open" style="margin-top:8px"><div class="ans-label">答案</div>${esc(b.answer || "（开放题，无标准答案）")}</div>
+          ${b.analysis ? `<div class="q-ans-box open" style="margin-top:6px;border-left-color:var(--primary)"><div class="ans-label" style="color:var(--primary)">解析</div>${esc(b.analysis)}</div>` : ""}
+          ${tail}`;
+      }
+      const badge = !done ? `<span class="badge-gray">未答</span>`
+        : correct === 1 ? `<span class="badge-success">已答对</span>`
+        : correct === 0 ? `<span class="badge-danger">答错</span>`
+        : `<span class="badge-gray">已提交</span>`;
+      return `<div class="card">
+        <div class="row" style="justify-content:space-between;align-items:center"><span class="badge-info">${esc(b.date || "")}</span>${badge}</div>
+        <div class="q-content" style="margin:8px 0">${renderRich(b.stem || "")}</div>
+        <div id="dqAns_${it.id}">${body}</div>
+      </div>`;
+    }).join("");
+  }
+  async function submitDailyAnswer(qid) {
+    const input = $("#dqInput_" + qid);
+    const answer = input ? input.value : "";
+    if (!answer.trim()) return toast("请先输入答案");
+    try {
+      const r = await api("POST", "/api/daily/answer", { qId: qid, answer });
+      toast(r.correct === 1 ? "答对啦 🎉" : r.correct === 0 ? "答错了，看下答案吧" : "已提交");
+      await loadPull(true); renderDailyPractice();
+    } catch (e) { toast("提交失败：" + e.message); }
+  }
+  async function markDaily(qid, correct) {
+    try {
+      await api("POST", "/api/daily/answer", { qId: qid, correct });
+      await loadPull(true); renderDailyPractice();
+    } catch (e) { toast("提交失败：" + e.message); }
+  }
+
+  // ---- 学生：我的错题本 ----
+  function renderDailyWrong() {
+    const wrong = _myDaily().filter(a => a.body && a.body.correct === 0);
+    const box = $("#sub-daily-wrong");
+    if (!wrong.length) {
+      box.innerHTML = `<div class="center">暂无错题 🎉<br><span style="font-size:12px">答对越多，错题越少</span></div>`;
+      return;
+    }
+    const qmap = {};
+    (DB.data.dailyQuestions || []).forEach(q => { qmap[q.id] = q.body || {}; });
+    box.innerHTML = wrong.map(a => {
+      const b = a.body || {}; const q = qmap[b.qId] || {};
+      return `<div class="card">
+        <div class="row" style="justify-content:space-between"><span class="badge-danger">错题</span><span class="muted">${esc(b.date || "")}</span></div>
+        <div class="q-content" style="margin:6px 0">${renderRich(q.stem || "（题目已删除）")}</div>
+        <div class="q-ans-box open" style="margin-top:6px"><div class="ans-label">你的答案</div>${esc(b.answer || "（未填写）")}</div>
+        <div class="q-ans-box open" style="margin-top:6px"><div class="ans-label">正确答案</div>${esc(q.answer || "（开放题）")}</div>
+        ${q.analysis ? `<div class="q-ans-box open" style="margin-top:6px;border-left-color:var(--primary)"><div class="ans-label" style="color:var(--primary)">解析</div>${esc(q.analysis)}</div>` : ""}
+      </div>`;
+    }).join("");
+  }
+
+  window.renderDaily = renderDaily; window.dailySub = dailySub;
+  window.renderDailyManage = renderDailyManage; window.openDailyEditor = openDailyEditor;
+  window.saveDailyQuestion = saveDailyQuestion; window.delDaily = delDaily;
+  window.renderDailyStats = renderDailyStats; window.renderDailyPractice = renderDailyPractice;
+  window.submitDailyAnswer = submitDailyAnswer; window.markDaily = markDaily;
+  window.renderDailyWrong = renderDailyWrong;
 
   // 全局事件委托：题库卡片（详情/答案/组卷/错题/知识点/图片放大）
   document.getElementById("qList").addEventListener("click", qListClick);
