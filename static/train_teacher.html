@@ -29,7 +29,7 @@
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
   .stat{background:#fff;border:1px solid #e6e8ef;border-radius:12px;padding:12px;text-align:center}
   .stat b{font-size:22px;display:block}
-  img.thumb{max-width:80px;max-height:80px;border-radius:6px;border:1px solid #eee}
+  img.thumb{max-width:80px;max-height:80px;border-radius:6px;border:1px solid #eee;cursor:zoom-in}
   .hidden{display:none!important}
   .chk{display:inline-block;margin:4px 6px 4px 0;background:#f3f5fb;border:1px solid #e2e6f0;border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer}
   .chk input{width:auto;margin-right:6px}
@@ -213,6 +213,7 @@ function selAllStu(on){
 let qbCache = {};        // id -> question body
 let qbKpName = {};       // kpId -> 名称(来自 knowledgePoints，若无则为空)
 let pickedImgs = [];     // 从题库选入的题目图片(相对 /api/media/... 路径)
+let pickedAnsImgs = [];  // 从题库选入的【答案】图片 -> 存 answerImages，学生提交后才可见
 // 待上传图片（粘贴/选文件），按区域(stem/answer)分别维护
 let pendingImgs = {stem:[], answer:[]};
 let qbKpLoaded = false;  // 知识点树是否已加载（避免每次展开题库都重拉）
@@ -357,17 +358,18 @@ function pickQb(id){
   const q = qbCache[id]; if(!q) return;
   document.getElementById('e-stem').value = stripHtml(q.content||'');
   document.getElementById('e-analysis').value = stripHtml(q.answer||'');
-  // 题目图(题面+答案)并入待保存图片
-  const urls = [...new Set(extractMediaRel(q.content||'').concat(extractMediaRel(q.answer||'')))];
-  urls.forEach(u=>{ if(!pickedImgs.includes(u)) pickedImgs.push(u); });
+  // 题面图归题面、答案图归答案（答案图学生提交后才可见）
+  extractMediaRel(q.content||'').forEach(u=>{ if(!pickedImgs.includes(u)) pickedImgs.push(u); });
+  extractMediaRel(q.answer||'').forEach(u=>{ if(!pickedAnsImgs.includes(u)) pickedAnsImgs.push(u); });
   updatePickedHint();
   document.getElementById('qb').classList.add('hidden');
   const msg = document.getElementById('e-msg');
-  msg.textContent = '已从题库选入（'+ (q.type||'题') +'，含'+urls.length+'张图）'; msg.className='ok';
+  msg.textContent = '已从题库选入（题图 '+pickedImgs.length+' 张、答案图 '+pickedAnsImgs.length+' 张；答案图学生提交后才可见）'; msg.className='ok';
 }
 function updatePickedHint(){
   const el = document.getElementById('picked-hint');
-  if(pickedImgs.length){ el.classList.remove('hidden'); el.textContent='题库带入图片：'+pickedImgs.length+' 张（保存时一并存入错题）'; }
+  const n = pickedImgs.length + pickedAnsImgs.length;
+  if(n){ el.classList.remove('hidden'); el.textContent='题库带入图片：题图 '+pickedImgs.length+' 张、答案图 '+pickedAnsImgs.length+' 张（答案图学生提交后才可见）'; }
   else el.classList.add('hidden');
 }
 async function saveError(){
@@ -381,8 +383,8 @@ async function saveError(){
     if(!fj.ok){ msg.textContent='题面图片上传失败：'+(fj.error||''); msg.className='err'; return; }
     images.push(fj.url.replace(API,''));
   }
-  // 答案图：粘贴/选文件
-  const answerImages = [];
+  // 答案图：题库带入 + 粘贴/选文件（学生提交后才可见）
+  const answerImages = pickedAnsImgs.slice();
   for(const it of pendingImgs.answer){
     const fj = await uploadMedia(it.file, 'trainErrors');
     if(!fj.ok){ msg.textContent='答案图片上传失败：'+(fj.error||''); msg.className='err'; return; }
@@ -406,7 +408,7 @@ async function saveError(){
   document.getElementById('e-stem').value=''; document.getElementById('e-analysis').value='';
   document.getElementById('e-files').value='';
   pendingImgs={stem:[], answer:[]}; renderThumbs('stem'); renderThumbs('answer');
-  pickedImgs=[]; updatePickedHint();
+  pickedImgs=[]; pickedAnsImgs=[]; updatePickedHint();
   document.querySelectorAll('#e-student-box input:checked').forEach(c=>c.checked=false);
   loadErrors();
 }
@@ -420,13 +422,16 @@ async function loadErrors(){
   const box = document.getElementById('err-list'); box.innerHTML='';
   (j?j.items:[]).forEach(e=>{
     const imgs = (e.images&&e.images.length)?e.images:(e.image?[e.image]:[]);
-    const img = imgs.length? `<img class="thumb" src="${API+imgs[0]}">`+(imgs.length>1?` <span class="pill">+${imgs.length-1}图</span>`:''):'';
+    // 题图缩略图全部展示，点击放大
+    const ri = imgs.length ? (zoomReg.push(imgs.map(u=>API+u))-1) : -1;
+    const img = imgs.map((u,k)=>`<img class="thumb" src="${API+u}" onclick="zoomList(${ri},${k})">`).join('');
     const files = (e.files&&e.files.length)?(' <span class="pill m">'+e.files.length+'附件</span>'):'';
-    const ans = (e.answerImages&&e.answerImages.length)?' <span class="pill">'+e.answerImages.length+'答案图</span>':'';
+    const ai = (e.answerImages&&e.answerImages.length) ? (zoomReg.push(e.answerImages.map(u=>API+u))-1) : -1;
+    const ans = ai>=0?` <button class="pract" onclick="zoomList(${ai},0)">答案图 <b>${e.answerImages.length}</b> 张（点看）</button>`:'';
     const n = counts[e.id]||0;
     box.insertAdjacentHTML('beforeend',`<div class="card" style="margin:8px 0">
       <div class="row" style="align-items:center">
-        <div>${img}</div>
+        <div style="flex:2;min-width:170px">${img}</div>
         <div style="flex:3">
           <div>${e.knowledgePoint?('<b>'+e.knowledgePoint+'</b> '):'<b>错题</b> '}${e.errorReason?('<span class="pill">'+e.errorReason+'</span> '):''}${e.source?('<span class="pill m">'+e.source+'</span>'):''}${files}${ans}</div>
           <div style="color:#8a90a2;font-size:12px">${e.studentName||e.studentId} · ${e.wrongDate||''}</div>
@@ -464,6 +469,28 @@ function showModalHtml(html){
   mask.style.display='flex';
 }
 function closeModal(){ const m=document.getElementById('modal-mask'); if(m) m.style.display='none'; }
+// ---------- 图片放大查看 ----------
+let zoomReg = [];  // 注册表：zoomReg[i] = 图片URL数组
+function zoomList(ri, start){
+  const urls = zoomReg[ri]||[]; if(!urls.length) return;
+  window._zi = start||0; window._zurls = urls;
+  showModalHtml('<div class="modal-box" style="text-align:center;max-width:92vw">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px">'
+    +'<b id="zoom-cnt"></b>'
+    +'<div><button class="ghost sm" onclick="zoomNav(-1)">‹ 上一张</button> '
+    +'<button class="ghost sm" onclick="zoomNav(1)">下一张 ›</button> '
+    +'<button class="ghost sm" onclick="closeModal()">关闭</button></div></div>'
+    +'<div id="zoom-body"></div>');
+  zoomDraw();
+}
+function zoomDraw(){
+  const i=window._zi, urls=window._zurls;
+  const c=document.getElementById('zoom-cnt'), b=document.getElementById('zoom-body');
+  if(!c||!b) return;
+  c.textContent = '图片 '+(i+1)+' / '+urls.length;
+  b.innerHTML = '<img src="'+urls[i]+'" style="max-width:86vw;max-height:72vh;border-radius:8px">';
+}
+function zoomNav(d){ window._zi=(window._zi+d+window._zurls.length)%window._zurls.length; zoomDraw(); }
 async function delErr(id){
   if(!confirm('确认删除这道错题？（同时清除对应训练卡）')) return;
   await call('/api/train/errors/'+id,{method:'DELETE'}); loadErrors();
@@ -476,9 +503,10 @@ async function loadStuMgmt(){
   ]);
   const accMap = {};
   (acc?acc.items:[]).forEach(a=>accMap[a.studentId]=a.username);
-  // 统计每位学生的错题数（一道错题可能发给多名学生，逐一累加）
+  // 统计每位学生的错题数（服务端每生一条记录：studentId；兼容旧 studentIds 数组）
   const errCount = {};
   (errs?errs.items:[]).forEach(e=>{
+    if(e.studentId) errCount[e.studentId]=(errCount[e.studentId]||0)+1;
     (e.studentIds||[]).forEach(id=>{ errCount[id]=(errCount[id]||0)+1; });
   });
   const box = document.getElementById('stu-mgmt'); box.innerHTML='';

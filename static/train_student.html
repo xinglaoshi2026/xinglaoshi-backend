@@ -118,7 +118,7 @@ async function loadToday(){
   const box=document.getElementById('items'); box.innerHTML='';
   j.items.forEach((e,idx)=>{
     const imgs = (e.images&&e.images.length)?e.images:(e.image?[e.image]:[]);
-    const imgHtml = imgs.map(u=>`<img class="qi" src="${API+u}">`).join('');
+    const imgHtml = imgs.map(u=>`<img class="qi" style="cursor:zoom-in" src="${API+u}" onclick="zoomImg('${API+u}')">`).join('');
     const files = (e.files&&e.files.length)? e.files.map(f=>{
       const fu = (typeof f==='string')?f:(f.url||''); const fn=(typeof f==='string')?'附件':(f.name||'附件');
       return `<a class="filetag" href="${API+fu}" target="_blank" rel="noopener">📎 ${fn}</a>`;
@@ -149,6 +149,17 @@ async function loadToday(){
 }
 const SELF={};
 function setSelf(idx,val){ SELF[idx]=val; document.getElementById('fb_'+idx).innerHTML='已记录：'+(val==='self_right'?'做对了 ✓':val==='half'?'半对':'做错了 ✗'); }
+
+// 点击放大图片
+function zoomImg(url){
+  let m=document.getElementById('zoom-mask');
+  if(!m){ m=document.createElement('div'); m.id='zoom-mask';
+    m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.78);display:flex;align-items:center;justify-content:center;z-index:99;cursor:zoom-out';
+    m.onclick=function(){ m.style.display='none'; };
+    document.body.appendChild(m); }
+  m.innerHTML='<img src="'+url+'" style="max-width:94%;max-height:88%;border-radius:10px">';
+  m.style.display='flex';
+}
 
 async function submit(){
   const answers=[];
@@ -212,8 +223,8 @@ async function loadWeek(){
   const box = document.getElementById('weekList');
   if(!recent.length){ box.innerHTML = '<div style="color:#8a90a2;font-size:14px;padding:6px 0">最近一周还没有错题记录</div>'; return; }
   box.innerHTML = recent.map((e,i)=>{
-    const imgs = ((e.images&&e.images.length)?e.images:(e.image?[e.image]:[])).map(u=>`<img class="qi" src="${API+u}">`).join('');
-    const ansImgs = (e.answerImages&&e.answerImages.length)?e.answerImages.map(u=>`<img class="qi" src="${API+u}">`).join(''):'';
+    const imgs = ((e.images&&e.images.length)?e.images:(e.image?[e.image]:[])).map(u=>`<img class="qi" style="cursor:zoom-in" src="${API+u}" onclick="zoomImg('${API+u}')">`).join('');
+    const ansImgs = (e.answerImages&&e.answerImages.length)?e.answerImages.map(u=>`<img class="qi" style="cursor:zoom-in" src="${API+u}" onclick="zoomImg('${API+u}')">`).join(''):'';
     const files = (e.files&&e.files.length)? e.files.map(f=>{
       const fu=(typeof f==='string')?f:(f.url||''); const fn=(typeof f==='string')?'附件':(f.name||'附件');
       return `<a class="filetag" href="${API+fu}" target="_blank" rel="noopener">📎 ${fn}</a>`;
