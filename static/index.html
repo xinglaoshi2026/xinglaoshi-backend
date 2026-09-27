@@ -149,11 +149,6 @@
     padding:16px;animation:fadeIn .15s}
   .lightbox img{max-width:100%;max-height:92vh;border-radius:8px;object-fit:contain}
 
-  /* ===== 错题本 ===== */
-  .wn-card{border-left:4px solid var(--danger)}
-  .wn-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px}
-  .wn-note{font-size:12px;color:var(--danger);background:var(--danger-bg);border-radius:6px;padding:4px 8px;margin-top:6px}
-
   /* ===== 课时统计（无边框） ===== */
   .rec-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
   .rec-stat{background:var(--bg,#f6f7f9);border-radius:12px;padding:10px 12px}
@@ -328,7 +323,6 @@
           <button class="subtab on" data-sub="q" onclick="qSub('q')">题库</button>
           <button class="subtab" data-sub="compose" onclick="qSub('compose')">组卷</button>
           <button class="subtab" data-sub="paper" onclick="qSub('paper')">试卷</button>
-          <button class="subtab" data-sub="wrong" onclick="qSub('wrong')">错题</button>
           <button class="subtab" data-sub="add" onclick="qSub('add')">添加题目</button>
         </div>
 
@@ -348,7 +342,6 @@
         <div id="sub-compose" class="subpane hidden">
           <div class="row compose-actions" style="margin-bottom:10px">
             <button class="btn" style="flex:1" onclick="openComposeModal()">＋ 新建组卷</button>
-            <button class="btn sec" style="flex:1" onclick="openWrongPaperBuilder()">📕 错题重组卷</button>
           </div>
           <div id="myPapers"></div>
         </div>
@@ -367,14 +360,6 @@
             <div id="examListM"></div>
           </div>
           <div id="allPapers"></div>
-        </div>
-
-        <div id="sub-wrong" class="subpane hidden">
-          <div class="search">
-            <input id="wrongSearch" placeholder="搜索学生/备注…" oninput="debounce(loadWrong,300)()">
-            <button class="btn sec" onclick="loadWrong()">搜</button>
-          </div>
-          <div id="wrongList"></div>
         </div>
 
         <div id="sub-add" class="subpane hidden">
@@ -425,15 +410,6 @@
         <div class="muted center">邢老师工作台·手机端 · 与电脑端实时同步</div>
       </section>
 
-      <!-- 每日一题主视图 -->
-      <section id="view-daily" class="main-view hidden">
-        <div class="subtabs" id="dailySubTabs"></div>
-        <div id="sub-daily-manage" class="subpane hidden"></div>
-        <div id="sub-daily-stats" class="subpane hidden"></div>
-        <div id="sub-daily-practice" class="subpane hidden"></div>
-        <div id="sub-daily-wrong" class="subpane hidden"></div>
-      </section>
-
     </main>
 
     <!-- 底部四主菜单 -->
@@ -449,10 +425,6 @@
       <button class="tab-btn" data-main="students" onclick="switchMain('students')">
         <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         <span>学生</span>
-      </button>
-      <button class="tab-btn" data-main="daily" onclick="switchMain('daily')">
-        <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-        <span>每日一题</span>
       </button>
       <button class="tab-btn" data-main="settings" onclick="switchMain('settings')">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.08a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.08a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.08a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>

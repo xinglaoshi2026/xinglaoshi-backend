@@ -261,11 +261,6 @@
   }
 
   // ---------- 题库（题型/知识点/关键词 筛选 + 本地分页） ----------
-  function wrongQIds() {
-    const s = new Set();
-    (DB.data.wrongNotes || []).forEach(it => { const b = it.body || {}; if (!b.resolved && b.questionId) s.add(b.questionId); });
-    return s;
-  }
   function applyFilter() {
     qf.kw = ($("#qSearch").value || "").trim().toLowerCase();
     const all = DB.data.questions || [];
@@ -359,7 +354,6 @@
       t.innerHTML = box.classList.contains("open") ? "收起解析" : "查看解析";
     }
     else if (act === "compose") quickCompose(id);
-    else if (act === "wrong") markWrong(id);
     else if (act === "kp") { setKpFilter(t.getAttribute("data-kp")); window.scrollTo(0, 0); }
   }
   function quickCompose(id) {
@@ -506,109 +500,6 @@
     } catch (e) { toast("创建失败：" + e.message); }
   }
 
-  // ---------- 标记错题 ----------
-  function markWrong(qId) {
-    const students = DB.data.students || [];
-    const existing = (DB.data.wrongNotes || []).find(it => (it.body || {}).questionId === qId && !(it.body || {}).resolved);
-    const qb = (qMap[qId] && qMap[qId].body) || {};
-    const box = $("#modalBox");
-    box.innerHTML =
-      '<div class="modal-header"><span class="modal-title">📕 ' + (existing ? "编辑错题" : "标记错题") + '</span><button class="modal-close" onclick="closeModal()">✕</button></div>' +
-      '<div class="modal-body">' +
-        '<div class="q-preview-card">' + (renderRich(qb.content) || '<span class="muted">（题目内容为空）</span>') + "</div>" +
-        '<div class="form-group"><label class="kv">哪位学生做错<span class="opt">（可先不选）</span></label>' +
-        '<select id="wnStudent"><option value="">— 暂不指定 —</option>' +
-        students.map(s => '<option value="' + esc(s.id) + '">' + esc((s.body || {}).name || s.id) + "</option>").join("") +
-        "</select></div>" +
-        '<div class="form-group"><label class="kv">备注 / 错因<span class="opt">（可选）</span></label>' +
-        '<textarea id="wnNote" style="min-height:88px" placeholder="例如：概念不清 / 公式记错 / 计算失误…">' + esc(existing ? (existing.body.note || "") : "") + "</textarea></div>" +
-      "</div>" +
-      '<div class="modal-footer">' +
-        '<button class="btn sec" style="flex:1" onclick="closeModal()">取消</button>' +
-        '<button class="btn ok" style="flex:2" onclick="saveWrong(\'' + qId + '\')">' + (existing ? "保存修改" : "保存错题") + "</button>" +
-      "</div>";
-    if (existing && existing.body.studentId) $("#wnStudent").value = existing.body.studentId;
-    openModal();
-  }
-  async function saveWrong(qId) {
-    const existing = (DB.data.wrongNotes || []).find(it => (it.body || {}).questionId === qId && !(it.body || {}).resolved);
-    const studentId = $("#wnStudent").value || "";
-    const stu = (DB.data.students || []).find(s => s.id === studentId);
-    const base = existing ? existing.body : { id: "wn_" + Date.now().toString(36), source: "手机端", createdAt: Date.now() };
-    const body = Object.assign({}, base, {
-      questionId: qId,
-      studentId, studentName: stu ? ((stu.body || {}).name || "") : "",
-      note: ($("#wnNote").value || "").trim(),
-      resolved: false, updatedAt: Date.now()
-    });
-    try {
-      if (existing) {
-        await api("PUT", "/api/wrongNotes/" + existing.id, body);
-        existing.body = body;
-        toast("错题已更新 ✓");
-      } else {
-        await api("POST", "/api/wrongNotes", body);
-        DB.data.wrongNotes = DB.data.wrongNotes || [];
-        DB.data.wrongNotes.push({ id: body.id, updated_at: body.updatedAt, body });
-        toast("已标记错题 ✓");
-      }
-      closeModal();
-      if (paperReopenId) {
-        const pid = paperReopenId; paperReopenId = null;
-        openPaper(pid);
-      } else {
-        applyFilter(); loadWrong();
-      }
-    } catch (e) { toast("保存失败：" + e.message); }
-  }
-
-  // ---------- 错题本 ----------
-  function loadWrong() {
-    const box = $("#wrongList");
-    const kw = ($("#wrongSearch") ? $("#wrongSearch").value : "").trim().toLowerCase();
-    let items = (DB.data.wrongNotes || []).slice().reverse();
-    if (kw) items = items.filter(it => { const b = it.body || {}; return ((b.studentName || "") + " " + (b.note || "")).toLowerCase().includes(kw); });
-    if (!items.length) { box.innerHTML = '<div class="center">还没有错题记录<br><span style="font-size:12px">在「组卷」打开某份试卷，每题下方点「📕 标记错题」即可添加</span></div>'; return; }
-    box.innerHTML = "";
-    items.forEach(it => {
-      const b = it.body || {};
-      const q = qMap[b.questionId] || {};
-      const qb = q.body || {};
-      const div = document.createElement("div");
-      div.className = "card wn-card";
-      div.innerHTML =
-        '<div class="wn-meta">' +
-          '<span class="badge ' + (b.resolved ? "badge-success" : "badge-danger") + '">' + (b.resolved ? "已掌握" : "未掌握") + "</span>" +
-          (b.studentName ? '<span class="badge badge-gray">👤 ' + esc(b.studentName) + "</span>" : "") +
-          (qb.type ? '<span class="tag">' + esc(qb.type) + "</span>" : "") +
-          (qb.qid ? '<span class="badge badge-gray">' + esc(qb.qid) + "</span>" : "") +
-        "</div>" +
-        '<div onclick="openDetail(\'' + esc(b.questionId) + '\')">' + (renderRich(qb.content) || '<span class="muted">（题目已删除或未同步）</span>') + "</div>" +
-        (b.note ? '<div class="wn-note">📝 ' + esc(b.note) + "</div>" : "") +
-        '<div class="row" style="margin-top:8px">' +
-          '<button class="btn sm ' + (b.resolved ? "sec" : "ok") + '" onclick="toggleWrongResolved(\'' + it.id + '\')">' + (b.resolved ? "标为未掌握" : "✓ 已掌握") + "</button>" +
-          '<button class="btn danger sm" onclick="delWrong(\'' + it.id + '\')">删除</button>' +
-        "</div>";
-      box.appendChild(div);
-    });
-  }
-  async function toggleWrongResolved(id) {
-    const it = (DB.data.wrongNotes || []).find(x => x.id === id);
-    if (!it) return;
-    const body = Object.assign({}, it.body, { resolved: !it.body.resolved, updatedAt: Date.now() });
-    try {
-      await api("PUT", "/api/wrongNotes/" + id, body);
-      it.body = body; toast(body.resolved ? "已标为掌握 ✓" : "已标为未掌握"); loadWrong(); 
-    } catch (e) { toast("操作失败：" + e.message); }
-  }
-  async function delWrong(id) {
-    if (!confirm("确认删除该错题记录？")) return;
-    try {
-      await api("DELETE", "/api/wrongNotes/" + id);
-      DB.data.wrongNotes = (DB.data.wrongNotes || []).filter(x => x.id !== id);
-      toast("已删除"); loadWrong();
-    } catch (e) { toast("删除失败：" + e.message); }
-  }
 
   async function openDetail(id) {
     let b = (qMap[id] && qMap[id].body) || null;
@@ -742,18 +633,14 @@
     const base = localStorage.getItem(LS_BASE) || "";
     const title = b.title || "试卷";
     const ids = b.questionIds || [];
-    currentPaperId = id;
     let qs = "";
     for (const qid of ids.slice(0, 50)) {
       const q = qMap[qid];
       if (q) {
         const qb = q.body || {};
-        const wn = (DB.data.wrongNotes || []).find(w => (w.body || {}).questionId === qid && !(w.body || {}).resolved);
         qs += `<div class="card" style="margin:6px 0">${renderRich(qb.content)}` +
           `<div class="muted">答：${renderRich(qb.answer) || "—"}</div>` +
-          `<div class="q-actions" style="margin-top:6px;padding:0">` +
-            `<button class="q-link ${wn ? " on" : ""}" onclick="openPaperWrong('${esc(qid)}')">${wn ? "✓ 已标错题" : "📕 标记错题"}</button>` +
-          `</div></div>`;
+          `</div>`;
       } else {
         qs += `<div class="muted">（题 ${esc(qid)} 未同步）</div>`;
       }
@@ -762,7 +649,6 @@
       <div class="modal-body"><div class="muted">${esc(b.note || "")}</div>${qs}</div>
       <div class="modal-footer" style="flex-wrap:wrap;gap:8px">
         <button class="btn ok" style="flex:1 1 100%" onclick="downloadPaper('${esc(id)}')">⬇ 下载 Word 试卷</button>
-        <button class="btn sec" style="flex:1 1 100%" onclick="buildWrongPaperFromPaper('${esc(id)}')">📕 本卷错题重组卷</button>
         <button class="btn sec" style="flex:1 1 100%" onclick="closeModal()">关闭</button>
       </div>`;
     openModal();
@@ -770,79 +656,6 @@
     const ua = navigator.userAgent || "";
     if (/MicroMessenger|WXWork|QQ\/|Weibo|Alipay/i.test(ua))
       toast("若没自动保存，点右上角 ⋯ 选「用浏览器打开」本页后再下载", 2600);
-  }
-  // 试卷视图内点「标记错题」：记录来源试卷，保存后回重开该试卷
-  function openPaperWrong(qId) {
-    paperReopenId = currentPaperId;
-    markWrong(qId);
-  }
-  // 收集未掌握的错题题目 id（可限定学生 / 限定某份试卷的题目范围）
-  function wrongQidsFor({ studentId, paperIds } = {}) {
-    const scope = new Set();
-    if (paperIds) {
-      (DB.data.papers || []).forEach(p => {
-        if (paperIds.includes(p.id)) (p.body.questionIds || []).forEach(q => scope.add(q));
-      });
-    }
-    const out = []; const seen = new Set();
-    (DB.data.wrongNotes || []).forEach(w => {
-      const b = w.body || {};
-      if (b.resolved) return;
-      if (studentId && b.studentId !== studentId) return;
-      const qid = b.questionId;
-      if (!qid || !qMap[qid]) return;
-      if (paperIds && !scope.has(qid)) return;
-      if (seen.has(qid)) return;
-      seen.add(qid); out.push(qid);
-    });
-    return out;
-  }
-  // 弹窗：按学生组「错题练习卷」
-  function openWrongPaperBuilder() {
-    const students = DB.data.students || [];
-    const opts = ['<option value="">全部学生</option>'].concat(
-      students.map(s => '<option value="' + esc(s.id) + '">' + esc((s.body || {}).name || s.id) + "</option>")).join("");
-    $("#modalBox").innerHTML = `
-      <div class="modal-header"><span class="modal-title">📕 错题重组卷</span><button class="modal-close" onclick="closeModal()">✕</button></div>
-      <div class="modal-body">
-        <div class="muted" style="margin-bottom:10px">把标记给某位（或全部）学生的未掌握错题，整理成一份新的练习卷，发给学生再次练习。</div>
-        <div class="form-group"><label class="kv">学生</label><select id="wpStudent">${opts}</select></div>
-        <div class="form-group"><label class="kv">试卷标题</label><input id="wpTitle" placeholder="如：小明错题练习卷"></div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn sec" style="flex:1" onclick="closeModal()">取消</button>
-        <button class="btn ok" style="flex:1" onclick="buildWrongPaperFromStudent()">生成练习卷</button>
-      </div>`;
-    openModal();
-  }
-  async function buildWrongPaperFromStudent() {
-    const sid = ($("#wpStudent") ? $("#wpStudent").value : "") || "";
-    const stu = (DB.data.students || []).find(s => s.id === sid);
-    const qids = wrongQidsFor({ studentId: sid });
-    if (!qids.length) return toast("没有可组卷的错题");
-    const title = ($("#wpTitle") && $("#wpTitle").value ? $("#wpTitle").value : "").trim() || ("错题练习" + (stu ? "·" + (stu.body || {}).name : ""));
-    await saveWrongPaper(title, "错题重组" + (stu ? "·" + (stu.body || {}).name : ""), qids);
-  }
-  async function buildWrongPaperFromPaper(paperId) {
-    const paper = (DB.data.papers || []).find(p => p.id === paperId);
-    const qids = wrongQidsFor({ paperIds: [paperId] });
-    if (!qids.length) return toast("本卷还没有标记错题");
-    const title = ((paper && (paper.body || {}).title) || "试卷") + "·错题练习";
-    await saveWrongPaper(title, "本卷错题重组", qids);
-  }
-  async function saveWrongPaper(title, note, qids) {
-    const body = {
-      id: "p_" + Date.now().toString(36),
-      title, note,
-      questionIds: qids.slice(),
-      source: "mobile",
-      createdAt: Date.now()
-    };
-    try {
-      await api("POST", "/api/papers", body);
-      toast("练习卷已生成 ✓"); closeModal();
-      await loadPull(true); qSub("compose");
-    } catch (e) { toast("生成失败：" + e.message); }
   }
 
   // 试卷下载：微信/QQ 等 webview 会拦截所有 <a> 下载与新窗口打开，唯一可靠的是复制链接。
@@ -1015,27 +828,24 @@
     else if (mainTab === "schedule") schedSub(schedSubPane);
     else if (mainTab === "students") renderStudents();
     else if (mainTab === "settings") renderSettings();
-    else if (mainTab === "daily") renderDaily();
   }
   function switchMain(m) {
     mainTab = m;
-    ["questions", "schedule", "students", "settings", "daily"].forEach(id =>
+    ["questions", "schedule", "students", "settings"].forEach(id =>
       $("#view-" + id).classList.toggle("hidden", id !== m));
     document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.main === m));
     if (m === "questions") qSub(qSubPane);
     else if (m === "schedule") schedSub(schedSubPane);
     else if (m === "students") renderStudents();
     else if (m === "settings") renderSettings();
-    else if (m === "daily") renderDaily();
   }
   function qSub(s) {
     qSubPane = s;
     document.querySelectorAll("#qSubTabs .subtab").forEach(b => b.classList.toggle("on", b.dataset.sub === s));
-    ["q", "compose", "paper", "wrong", "add"].forEach(id => $("#sub-" + id).classList.toggle("hidden", id !== s));
+    ["q", "compose", "paper", "add"].forEach(id => $("#sub-" + id).classList.toggle("hidden", id !== s));
     if (s === "q") applyFilter();
     else if (s === "compose") renderMyPapers();
     else if (s === "paper") renderAllPapers();
-    else if (s === "wrong") loadWrong();
     else if (s === "add") renderAddQForm();
     updateComposeBar();
   }
@@ -1051,8 +861,6 @@
 
   // ---------- 组卷（在题库点「加入组卷」收集，底部浮条保存） ----------
   let composeSet = [];   // 已选题目 id（有序）
-  let currentPaperId = null;  // 当前打开的试卷（用于试卷内标记错题后回显）
-  let paperReopenId = null;   // 标记错题来自试卷视图时，保存后回重开该试卷
   // 底部浮条：仅当在「题库」子视图且已选题目时显示
   function updateComposeBar() {
     const bar = $("#composeBar");
@@ -1860,13 +1668,10 @@
   window.setTypeFilter = setTypeFilter; window.setKpFilter = setKpFilter; window.openKpSheet = openKpSheet; window.closeKpSheet = closeKpSheet;
   window.renderKpTree = renderKpTree; window.pickKp = pickKp;
   window.kpNewChildAt = kpNewChildAt; window.kpSaveNewChild = kpSaveNewChild;
-  window.quickCompose = quickCompose; window.markWrong = markWrong; window.saveWrong = saveWrong;
-  window.loadWrong = loadWrong; window.toggleWrongResolved = toggleWrongResolved; window.delWrong = delWrong;
+  window.quickCompose = quickCompose;
   window.showLightbox = showLightbox;
   window.openDetail = openDetail; window.openEditor = openEditor; window.saveQ = saveQ;
   window.delQ = delQ; window.closeModal = closeModal; window.openPaper = openPaper;
-  window.openPaperWrong = openPaperWrong; window.buildWrongPaperFromPaper = buildWrongPaperFromPaper;
-  window.openWrongPaperBuilder = openWrongPaperBuilder; window.buildWrongPaperFromStudent = buildWrongPaperFromStudent;
   window.downloadPaper = downloadPaper;
   window.switchMain = switchMain; window.qSub = qSub; window.schedSub = schedSub;
   window.renderStudents = renderStudents; window.openStudentEditor = openStudentEditor; window.saveStudentEditor = saveStudentEditor; window.doRecharge = doRecharge;
@@ -1888,301 +1693,6 @@
   window.delExamCatM = delExamCatM;
   window.logout = logout;
 
-  // ===================== 每日一题（出题程序） =====================
-  let dailySubPane = "manage";
-  let dailyDocDraft = [];   // 出题编辑器当前会话的附件文档草稿
-  function renderDailyDocList() {
-    const el = $("#dqDocList"); if (!el) return;
-    if (!dailyDocDraft.length) { el.innerHTML = '<span class="muted">暂无附件文档</span>'; return; }
-    el.innerHTML = dailyDocDraft.map((f, i) =>
-      `<div style="display:flex;gap:8px;align-items:center;margin:3px 0"><a href="${mediaUrl(encodeURIComponent(f.rel))}" target="_blank" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.name || f.rel)}</a><button class="btn danger sm" onclick="dailyRemoveDoc(${i})">移除</button></div>`).join("");
-  }
-  async function dailyUploadDoc(input) {
-    const files = Array.from(input.files || []);
-    if (!files.length) return;
-    toast("上传文档中…");
-    const id = $("#dqId").value;
-    for (const f of files) {
-      try {
-        const res = await api("POST", "/api/media?sub=" + encodeURIComponent("dailyQuestions/" + id + "/docs") + "&name=" + encodeURIComponent(f.name), f, true);
-        const rel = (res.url || "").replace(/^\/api\/media\//, "");
-        if (rel) dailyDocDraft.push({ rel, name: f.name });
-      } catch (e) { toast("文档上传失败：" + f.name); }
-    }
-    renderDailyDocList(); toast("文档已添加");
-  }
-  window.dailyRemoveDoc = (i) => { dailyDocDraft.splice(i, 1); renderDailyDocList(); };
-  function _role() { try { return (user ? JSON.parse(user) : {}).role; } catch (e) { return ""; } }
-  function _meName() { try { return (user ? JSON.parse(user) : {}).username || ""; } catch (e) { return ""; } }
-
-  function renderDaily() {
-    const isTeacher = _role() === "admin";
-    const tabs = isTeacher
-      ? [["manage", "出题 / 排期"], ["stats", "答题统计"]]
-      : [["practice", "今日一题"], ["wrong", "我的错题本"]];
-    if (!tabs.find(t => t[0] === dailySubPane)) dailySubPane = tabs[0][0];
-    const tt = $("#dailySubTabs");
-    tt.innerHTML = tabs.map(t =>
-      `<button class="subtab ${t[0] === dailySubPane ? "on" : ""}" data-sub="${t[0]}" onclick="dailySub('${t[0]}')">${t[1]}</button>`
-    ).join("");
-    ["manage", "stats", "practice", "wrong"].forEach(id =>
-      $("#sub-daily-" + id).classList.toggle("hidden", id !== dailySubPane));
-    if (dailySubPane === "manage") renderDailyManage();
-    else if (dailySubPane === "stats") renderDailyStats();
-    else if (dailySubPane === "practice") renderDailyPractice();
-    else if (dailySubPane === "wrong") renderDailyWrong();
-  }
-  function dailySub(s) { dailySubPane = s; renderDaily(); }
-
-  // ---- 老师：出题 / 排期 ----
-  function renderDailyManage() {
-    const box = $("#sub-daily-manage");
-    const items = (DB.data.dailyQuestions || []).slice()
-      .sort((a, b) => (b.body.date || "").localeCompare(a.body.date || ""));
-    let html = `<div class="row" style="margin-bottom:10px">
-      <button class="btn" style="flex:1" onclick="openDailyEditor(null)">＋ 出题</button>
-      <button class="btn sec" style="flex:1" onclick="openAccountEditor()">👥 学生账号</button>
-    </div>`;
-    if (!items.length) html += `<div class="center">还没有每日一题<br><span style="font-size:12px">点上方「＋ 出题」录入今天 / 某天的题目</span></div>`;
-    html += items.map(it => {
-      const b = it.body || {};
-      const preview = (b.stem || "").replace(/<[^>]+>/g, "").replace(/media:\/\/\S+/g, "[图]").slice(0, 30);
-      return `<div class="card">
-        <div class="row" style="justify-content:space-between;align-items:center">
-          <span class="badge-info">${esc(b.date || "")}</span>
-          <span class="muted">${esc(preview)}</span>
-        </div>
-        <div class="q-content" style="margin:6px 0">${renderRich(b.stem || "")}</div>
-        <div class="q-ans-box open" style="margin-top:6px"><div class="ans-label">答案</div>${esc(b.answer || "（开放题，无标准答案）")}</div>
-        ${b.analysis ? `<div class="q-ans-box open" style="margin-top:6px;border-left-color:var(--primary)"><div class="ans-label" style="color:var(--primary)">解析</div>${esc(b.analysis)}</div>` : ""}
-        <div class="row" style="margin-top:8px;gap:6px">
-          <button class="btn sec sm" onclick="openDailyEditor('${it.id}')">编辑</button>
-          <button class="btn danger sm" onclick="delDaily('${it.id}')">删除</button>
-        </div>
-      </div>`;
-    }).join("");
-    box.innerHTML = html;
-  }
-  function openDailyEditor(id) {
-    const isNew = !id;
-    const qid = id || ("dq_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
-    const it = isNew ? null : (DB.data.dailyQuestions || []).find(x => x.id === id);
-    const b = (it && it.body) || {};
-    dailyDocDraft = (b.docs || []).slice();
-    $("#modalBox").innerHTML = `
-      <div class="modal-header"><span class="modal-title">${isNew ? "出题（每日一题）" : "编辑每日一题"}</span><button class="modal-close" onclick="closeModal()">✕</button></div>
-      <div class="modal-body">
-        <input type="hidden" id="dqId" value="${esc(qid)}">
-        <label class="kv">日期（发题日）</label><input id="dqDate" type="date" value="${esc(b.date || todayStr())}">
-        <label class="kv">题面（可配图：选图后自动插入 media:// 引用）</label>
-        <textarea id="dqStem" style="min-height:120px">${esc(b.stem || "")}</textarea>
-        <div class="row" style="margin:6px 0 0"><input id="dqImg" type="file" accept="image/*" style="flex:1"></div>
-        <label class="kv">附件文档（PDF / Word / PPT / Excel 等，可多选）</label>
-        <label class="btn ok" for="dqDocs" style="display:block;text-align:center;padding:9px;margin-top:4px">📎 上传文档（可多选）<input type="file" id="dqDocs" multiple
-          accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-          style="display:none" onchange="dailyUploadDoc(this)"></label>
-        <div id="dqDocList" style="margin-top:4px"></div>
-        <label class="kv">标准答案（留空 = 开放题，由学生自评）</label>
-        <textarea id="dqAnswer" style="min-height:60px">${esc(b.answer || "")}</textarea>
-        <label class="kv">解析（可选）</label>
-        <textarea id="dqAnalysis" style="min-height:60px">${esc(b.analysis || "")}</textarea>
-      </div>
-      <div class="modal-footer"><button class="btn sec" style="flex:1" onclick="closeModal()">取消</button><button class="btn ok" style="flex:1" onclick="saveDailyQuestion()">保存</button></div>`;
-    openModal();
-    renderDailyDocList();
-  }
-  async function saveDailyQuestion() {
-    const id = $("#dqId").value;
-    const date = $("#dqDate").value || todayStr();
-    let stem = $("#dqStem").value;
-    const file = $("#dqImg") && $("#dqImg").files && $("#dqImg").files[0];
-    try {
-      if (file) {
-        // 去除旧的同路径图片引用，再追加新的
-        stem = stem.replace(new RegExp("media://dailyQuestions/" + id + "/c/img_1\\.png", "g"), "");
-        await api("POST", "/api/media?sub=" + encodeURIComponent("dailyQuestions/" + id + "/c") + "&name=" + encodeURIComponent("img_1.png"), file, true);
-        stem = (stem + "\nmedia://dailyQuestions/" + id + "/c/img_1.png").trim();
-      }
-      const body = { id, date, stem, answer: $("#dqAnswer").value.trim(), analysis: $("#dqAnalysis").value.trim(), docs: dailyDocDraft.slice(), updatedAt: Date.now() };
-      if ((DB.data.dailyQuestions || []).find(x => x.id === id)) {
-        await api("PUT", "/api/dailyQuestions/" + id, body);
-      } else {
-        await api("POST", "/api/dailyQuestions", body);
-      }
-      toast("已保存 ✓"); closeModal(); await loadPull(true); renderDaily();
-    } catch (e) { toast("保存失败：" + e.message); }
-  }
-  async function delDaily(id) {
-    confirmModal("删除该题", "确定删除这道每日一题？学生已答记录会保留用于统计。", async () => {
-      try { await api("DELETE", "/api/dailyQuestions/" + id); toast("已删除"); await loadPull(true); renderDaily(); }
-      catch (e) { toast("删除失败：" + e.message); }
-    });
-  }
-
-  // ---- 老师：答题统计 ----
-  function renderDailyStats() {
-    const qs = DB.data.dailyQuestions || [];
-    const ans = DB.data.dailyAnswers || [];
-    const byQ = {};
-    ans.forEach(a => {
-      const b = a.body || {}; const k = b.qId; if (!k) return;
-      byQ[k] = byQ[k] || { total: 0, correct: 0 };
-      byQ[k].total++; if (b.correct === 1) byQ[k].correct++;
-    });
-    let html = `<div class="card"><div class="muted">共 ${qs.length} 道每日一题 · ${ans.length} 条答题记录</div></div>`;
-    const sorted = qs.slice().sort((a, b) => (b.body.date || "").localeCompare(a.body.date || ""));
-    if (!sorted.length) html += `<div class="center">还没有题目</div>`;
-    html += sorted.map(it => {
-      const b = it.body || {}; const s = byQ[it.id] || { total: 0, correct: 0 };
-      const rate = s.total ? Math.round(s.correct / s.total * 100) : 0;
-      return `<div class="card">
-        <div class="row" style="justify-content:space-between;align-items:center">
-          <span class="badge-info">${esc(b.date || "")}</span>
-          <span class="muted">${s.total} 人答 · 正确率 ${rate}%</span>
-        </div>
-        <div class="q-content" style="margin:6px 0">${renderRich(b.stem || "")}</div>
-      </div>`;
-    }).join("");
-    // 学生答题榜
-    const byS = {};
-    ans.forEach(a => {
-      const b = a.body || {}; if (!b.studentId) return;
-      byS[b.studentId] = byS[b.studentId] || { name: b.studentName, total: 0, correct: 0 };
-      byS[b.studentId].total++; if (b.correct === 1) byS[b.studentId].correct++;
-    });
-    const st = Object.values(byS).sort((a, b) => b.total - a.total);
-    if (st.length) {
-      html += `<div class="card"><div style="font-weight:600;margin-bottom:6px">学生答题榜</div>` +
-        st.map(s => `<div class="row" style="justify-content:space-between"><span>${esc(s.name || "")}</span><span class="muted">${s.total} 题 · 正确 ${s.correct}</span></div>`).join("") + `</div>`;
-    }
-    $("#sub-daily-stats").innerHTML = html;
-  }
-
-  // ---- 学生：今日一题 ----
-  function dailyDocLinks(docs) {
-    if (!docs || !docs.length) return "";
-    return `<div style="margin:6px 0"><div class="muted" style="margin-bottom:4px">📎 附件文档</div>` +
-      docs.map(f => `<a class="btn sec sm" style="margin:3px 6px 3px 0;display:inline-block" href="${mediaUrl(encodeURIComponent(f.rel))}" target="_blank">📄 ${esc(f.name || f.rel)}</a>`).join("") +
-      `</div>`;
-  }
-  function _myDaily() {
-    const name = _meName();
-    return (DB.data.dailyAnswers || []).filter(a => (a.body && a.body.studentName) === name);
-  }
-  function renderDailyPractice() {
-    const today = todayStr();
-    const items = (DB.data.dailyQuestions || []).filter(x => (x.body && x.body.date) === today);
-    const mine = _myDaily();
-    const box = $("#sub-daily-practice");
-    if (!items.length) {
-      box.innerHTML = `<div class="center">今天还没有出题~<br><span style="font-size:12px">老师会在「出题 / 排期」里录入每日一题</span></div>`;
-      return;
-    }
-    box.innerHTML = items.map(it => {
-      const b = it.body || {};
-      const rec = mine.find(a => a.body && a.body.qId === it.id);
-      const done = !!rec;
-      const correct = rec && rec.body ? rec.body.correct : null;
-      const openEnded = rec && rec.body ? rec.body.openEnded : false;
-      let body;
-      if (!done) {
-        body = `<textarea id="dqInput_${it.id}" placeholder="输入你的答案…" style="min-height:70px;margin-top:8px"></textarea>
-          <div class="row" style="margin-top:8px;gap:6px"><button class="btn ok" onclick="submitDailyAnswer('${it.id}')">提交并核对</button></div>`;
-      } else {
-        let tail = "";
-        if (openEnded && correct === null) {
-          tail = `<div class="row" style="margin-top:8px;gap:6px">
-            <button class="btn ok sm" onclick="markDaily('${it.id}',1)">我答对了</button>
-            <button class="btn danger sm" onclick="markDaily('${it.id}',0)">我答错了</button></div>`;
-        }
-        body = `<div class="q-ans-box open" style="margin-top:8px"><div class="ans-label">答案</div>${esc(b.answer || "（开放题，无标准答案）")}</div>
-          ${b.analysis ? `<div class="q-ans-box open" style="margin-top:6px;border-left-color:var(--primary)"><div class="ans-label" style="color:var(--primary)">解析</div>${esc(b.analysis)}</div>` : ""}
-          ${tail}`;
-      }
-      const badge = !done ? `<span class="badge-gray">未答</span>`
-        : correct === 1 ? `<span class="badge-success">已答对</span>`
-        : correct === 0 ? `<span class="badge-danger">答错</span>`
-        : `<span class="badge-gray">已提交</span>`;
-      return `<div class="card">
-        <div class="row" style="justify-content:space-between;align-items:center"><span class="badge-info">${esc(b.date || "")}</span>${badge}</div>
-        <div class="q-content" style="margin:8px 0">${renderRich(b.stem || "")}</div>
-        ${dailyDocLinks(b.docs)}
-        <div id="dqAns_${it.id}">${body}</div>
-      </div>`;
-    }).join("");
-  }
-  async function submitDailyAnswer(qid) {
-    const input = $("#dqInput_" + qid);
-    const answer = input ? input.value : "";
-    if (!answer.trim()) return toast("请先输入答案");
-    try {
-      const r = await api("POST", "/api/daily/answer", { qId: qid, answer });
-      toast(r.correct === 1 ? "答对啦 🎉" : r.correct === 0 ? "答错了，看下答案吧" : "已提交");
-      await loadPull(true); renderDailyPractice();
-    } catch (e) { toast("提交失败：" + e.message); }
-  }
-  async function markDaily(qid, correct) {
-    try {
-      await api("POST", "/api/daily/answer", { qId: qid, correct });
-      await loadPull(true); renderDailyPractice();
-    } catch (e) { toast("提交失败：" + e.message); }
-  }
-
-  // ---- 学生：我的错题本 ----
-  function renderDailyWrong() {
-    const wrong = _myDaily().filter(a => a.body && a.body.correct === 0);
-    const box = $("#sub-daily-wrong");
-    if (!wrong.length) {
-      box.innerHTML = `<div class="center">暂无错题 🎉<br><span style="font-size:12px">答对越多，错题越少</span></div>`;
-      return;
-    }
-    const qmap = {};
-    (DB.data.dailyQuestions || []).forEach(q => { qmap[q.id] = q.body || {}; });
-    box.innerHTML = wrong.map(a => {
-      const b = a.body || {}; const q = qmap[b.qId] || {};
-      return `<div class="card">
-        <div class="row" style="justify-content:space-between"><span class="badge-danger">错题</span><span class="muted">${esc(b.date || "")}</span></div>
-        <div class="q-content" style="margin:6px 0">${renderRich(q.stem || "（题目已删除）")}</div>
-        <div class="q-ans-box open" style="margin-top:6px"><div class="ans-label">你的答案</div>${esc(b.answer || "（未填写）")}</div>
-        <div class="q-ans-box open" style="margin-top:6px"><div class="ans-label">正确答案</div>${esc(q.answer || "（开放题）")}</div>
-        ${q.analysis ? `<div class="q-ans-box open" style="margin-top:6px;border-left-color:var(--primary)"><div class="ans-label" style="color:var(--primary)">解析</div>${esc(q.analysis)}</div>` : ""}
-      </div>`;
-    }).join("");
-  }
-
-  window.renderDaily = renderDaily; window.dailySub = dailySub;
-  window.renderDailyManage = renderDailyManage; window.openDailyEditor = openDailyEditor;
-  window.saveDailyQuestion = saveDailyQuestion; window.delDaily = delDaily;
-  window.renderDailyStats = renderDailyStats; window.renderDailyPractice = renderDailyPractice;
-  window.submitDailyAnswer = submitDailyAnswer; window.markDaily = markDaily;
-  window.renderDailyWrong = renderDailyWrong;
-  window.openAccountEditor = openAccountEditor; window.saveAccount = saveAccount;
-
-  // 老师给学生建「工作台登录账号」（学生用同一工作台答题，需各自账号）
-  function openAccountEditor() {
-    $("#modalBox").innerHTML = `
-      <div class="modal-header"><span class="modal-title">新建学生账号</span><button class="modal-close" onclick="closeModal()">✕</button></div>
-      <div class="modal-body">
-        <div class="muted" style="margin-bottom:8px">学生用此账号登录同一工作台，在「每日一题 → 今日一题」答题。账号仅用于本工作台，与 CRM 学生资料相互独立。</div>
-        <label class="kv">登录用户名</label><input id="accUser" placeholder="如 xiaoming">
-        <label class="kv">密码</label><input id="accPwd" type="password" placeholder="初始密码">
-        <label class="kv">确认密码</label><input id="accPwd2" type="password" placeholder="再次输入">
-      </div>
-      <div class="modal-footer"><button class="btn sec" style="flex:1" onclick="closeModal()">取消</button><button class="btn ok" style="flex:1" onclick="saveAccount()">创建</button></div>`;
-    openModal();
-  }
-  async function saveAccount() {
-    const username = $("#accUser").value.trim();
-    const pwd = $("#accPwd").value;
-    const pwd2 = $("#accPwd2").value;
-    if (!username) return toast("请填写用户名");
-    if (pwd.length < 4) return toast("密码至少 4 位");
-    if (pwd !== pwd2) return toast("两次密码不一致");
-    try {
-      await api("POST", "/api/auth/register", { username, password: pwd, role: "user" });
-      toast("账号已创建 ✓"); closeModal();
-    } catch (e) { toast("创建失败：" + e.message); }
-  }
 
   // 全局事件委托：题库卡片（详情/答案/组卷/错题/知识点/图片放大）
   document.getElementById("qList").addEventListener("click", qListClick);
