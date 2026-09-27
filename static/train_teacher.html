@@ -49,6 +49,7 @@
   .qb{border:1px dashed #c7cdf0;border-radius:10px;padding:10px;margin-top:10px;background:#fafbff}
   .qb-item{border:1px solid #e6e8ef;border-radius:10px;padding:10px;margin-top:8px;background:#fff}
   .qb-item img{max-width:100%;border-radius:6px;margin-top:4px}
+  .sec{margin:20px 0 10px;padding:9px 14px;background:#4361ee;color:#fff;border-radius:10px;font-size:15px;font-weight:bold}
 </style>
 </head>
 <body>
@@ -66,14 +67,8 @@
   </div>
 
   <div id="app" class="hidden">
-    <div class="tabs">
-      <div class="tab active" data-t="errors" onclick="switchTab('errors')">错题录入</div>
-      <div class="tab" data-t="tasks" onclick="switchTab('tasks')">每日任务</div>
-      <div class="tab" data-t="dash" onclick="switchTab('dash')">完成看板</div>
-      <div class="tab" data-t="students" onclick="switchTab('students')">学生管理</div>
-    </div>
-
-    <!-- 错题录入 -->
+    <!-- ① 错题录入 -->
+    <div class="sec" id="sec-errors">① 错题录入</div>
     <div id="t-errors">
       <div class="card">
         <h3>录入一道错题</h3>
@@ -89,7 +84,7 @@
         </div>
         <label>题面（文字或直接 Ctrl+V 粘贴题目图片）</label>
         <textarea id="e-stem" rows="3" placeholder="题目文字，可直接粘贴截图/照片"></textarea>
-        <div class="pastezone" data-zone="stem">📋 题目图片：在此处按 <b>Ctrl+V</b> 粘贴，或
+        <div class="pastezone" data-zone="stem" tabindex="0">📋 题目图片：在此处按 <b>Ctrl+V</b> 粘贴，或
           <button type="button" class="ghost sm" onclick="document.getElementById('e-imgs').click()">选择文件</button>
           <button type="button" class="ghost sm" onclick="pasteClip('stem')">从剪贴板粘贴</button>
         </div>
@@ -97,11 +92,11 @@
         <input id="e-imgs" type="file" accept="image/*" multiple class="hidden">
         <label>答案 / 解析（可粘贴图片，已取消客观题答案框）</label>
         <textarea id="e-analysis" rows="2" placeholder="解析文字，或 Ctrl+V 粘贴答案图片"></textarea>
-        <div class="pastezone" data-zone="analysis">📋 答案图片：在此处按 <b>Ctrl+V</b> 粘贴，或
+        <div class="pastezone" data-zone="answer" tabindex="0">📋 答案图片：在此处按 <b>Ctrl+V</b> 粘贴，或
           <button type="button" class="ghost sm" onclick="document.getElementById('e-ans-imgs').click()">选择文件</button>
           <button type="button" class="ghost sm" onclick="pasteClip('answer')">从剪贴板粘贴</button>
         </div>
-        <div class="thumbs" id="analysis-thumbs"></div>
+        <div class="thumbs" id="answer-thumbs"></div>
         <input id="e-ans-imgs" type="file" accept="image/*" multiple class="hidden">
         <label>附件（任意文件：PDF / Word / 试卷等，可多选）</label>
         <input id="e-files" type="file" multiple>
@@ -126,7 +121,8 @@
     </div>
 
     <!-- 每日任务 -->
-    <div id="t-tasks" class="hidden">
+    <div class="sec" id="sec-tasks">② 每日任务</div>
+    <div id="t-tasks">
       <div class="card">
         <h3>生成每日任务</h3>
         <p class="ok">为全体学生生成今天的练习包（到期错题 + 新课巩固，5~8 题）。</p>
@@ -134,29 +130,37 @@
         <div id="task-msg"></div>
       </div>
       <div class="card">
-        <h3>今日任务概况</h3>
-        <div id="task-list"></div>
+        <h3>任务详情 <span style="font-size:12px;color:#8a90a2">（下拉选择学生查看）</span></h3>
+        <select id="task-stu" onchange="renderTaskStu()"></select>
+        <div id="task-detail" style="margin-top:10px"></div>
       </div>
     </div>
 
     <!-- 看板 -->
-    <div id="t-dash" class="hidden">
+    <div class="sec" id="sec-dash">③ 完成看板</div>
+    <div id="t-dash">
       <div class="card">
-        <h3>今日概览</h3>
-        <div class="grid" id="dash-overview"></div>
+        <h3>每日概览 <span style="font-size:12px;color:#8a90a2">（可回看最近 7 天）</span></h3>
+        <label>查看日期</label>
+        <select id="dash-date" onchange="loadDash()"></select>
+        <div class="grid" id="dash-overview" style="margin-top:10px"></div>
       </div>
       <div class="card">
-        <h3>每生进度</h3>
-        <div id="dash-student"></div>
+        <h3>学生详情 <span style="font-size:12px;color:#8a90a2">（下拉选择学生）</span></h3>
+        <select id="dash-stu" onchange="renderDashStu()"></select>
+        <div id="dash-detail" style="margin-top:10px"></div>
       </div>
     </div>
 
     <!-- 学生管理 -->
-    <div id="t-students" class="hidden">
+    <div class="sec" id="sec-students">④ 学生管理</div>
+    <div id="t-students">
       <div class="card">
         <h3>学生账号管理</h3>
         <p class="ok">给每个学生设置账号和密码后，学生用账号登录 <b>/train_student</b> 只能看到自己的练习，无法看到他人。</p>
-        <div id="stu-mgmt"></div>
+        <label>选择学生</label>
+        <select id="mgmt-stu" onchange="renderMgmt()"></select>
+        <div id="mgmt-detail" style="margin-top:10px"></div>
       </div>
     </div>
   </div>
@@ -186,6 +190,7 @@ function start(){
   document.getElementById('app').classList.remove('hidden');
   document.getElementById('who').textContent = '老师端';
   loadStudents();
+  renderTasks(); loadDash(); loadStuMgmt();
 }
 async function autoLogin(){
   try{
@@ -195,13 +200,7 @@ async function autoLogin(){
   if(TOKEN){ start(); }
   else { document.getElementById('login').classList.remove('hidden'); }
 }
-function switchTab(t){
-  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.t===t));
-  ['errors','tasks','dash','students'].forEach(x=>document.getElementById('t-'+x).classList.toggle('hidden',x!==t));
-  if(t==='tasks') renderTasks();
-  if(t==='dash') loadDash();
-  if(t==='students') loadStuMgmt();
-}
+function switchTab(t){}
 async function loadStudents(){
   const {j} = await call('/api/train/students');
   const box = document.getElementById('e-student-box');
@@ -256,12 +255,25 @@ function addImgFile(zone, file){
   renderThumbs(zone);
 }
 // 监听全局粘贴（无论焦点在题面/解析/粘贴区，都能捕获图片）
-function detectZone(){
-  const ae = document.activeElement;
-  if(ae && ae.dataset && ae.dataset.zone) return ae.dataset.zone;
-  if(ae && ae.id==='e-analysis') return 'answer';
-  return 'stem';
+// zone 统一为 stem/answer（历史 data-zone="analysis" 也映射到 answer）
+function normZone(z){ return z==='analysis'?'answer':z; }
+function detectZone(e){
+  const pick = el=>{
+    if(!el) return null;
+    if(el.dataset && el.dataset.zone) return normZone(el.dataset.zone);
+    if(el.id==='e-analysis') return 'answer';
+    if(el.id==='e-stem') return 'stem';
+    const pz = el.closest && el.closest('.pastezone');
+    if(pz && pz.dataset.zone) return normZone(pz.dataset.zone);
+    return null;
+  };
+  return pick(e&&e.target) || pick(document.activeElement) || window._lastZone || 'stem';
 }
+// 记录最后点击的粘贴区（点击后按钮/区域失焦时仍能贴对位置）
+document.addEventListener('click', function(e){
+  const pz = e.target.closest && e.target.closest('.pastezone');
+  if(pz && pz.dataset.zone) window._lastZone = normZone(pz.dataset.zone);
+}, true);
 document.addEventListener('paste', function(e){
   const zone = detectZone();
   const cd = e.clipboardData || window.clipboardData;
@@ -538,55 +550,80 @@ async function loadStuMgmt(){
     if(e.studentId) errCount[e.studentId]=(errCount[e.studentId]||0)+1;
     (e.studentIds||[]).forEach(id=>{ errCount[id]=(errCount[id]||0)+1; });
   });
-  const box = document.getElementById('stu-mgmt'); box.innerHTML='';
-  (stus?stus.items:[]).forEach(s=>{
-    const name = s.name||s.username||s.id;
-    const has = accMap[s.id];
-    const cnt = errCount[s.id]||0;
-    box.insertAdjacentHTML('beforeend',`<div class="card" style="margin:8px 0">
-      <div class="row" style="align-items:center">
-        <div style="flex:2"><b>${name}</b><br><span style="font-size:12px;color:${has?'#2e9e5b':'#8a90a2'}">${has?('已设账号: '+has):'未设账号'}</span><br><span class="pill m">错题 ${cnt} 道</span></div>
-        <div style="flex:3">
-          <input id="su_${s.id}" placeholder="账号" value="${has||''}">
-          <input id="sp_${s.id}" type="password" placeholder="${has?'留空=不修改密码':'密码'}">
-        </div>
-        <div>
-          <button onclick="setStu('${s.id}','${name.replace(/'/g,"\\'")}')">保存</button>
-          <button type="button" class="ghost" onclick="viewStuErrors('${s.id}')">查看错题</button>
-        </div>
-      </div></div>`);
-  });
+  window._MGMT = {stus:(stus?stus.items:[]), accMap, errCount};
+  fillStuSelect('mgmt-stu');
+  renderMgmt();
 }
-// 在「错题录入」标签里按学生筛选并展示该生错题
+function renderMgmt(){
+  const sid = document.getElementById('mgmt-stu').value;
+  const box = document.getElementById('mgmt-detail');
+  if(!sid){ box.innerHTML=''; return; }
+  const s = (window._MGMT.stus).find(x=>x.id===sid);
+  if(!s){ box.innerHTML=''; return; }
+  const name = s.name||s.username||s.id;
+  const has = window._MGMT.accMap[s.id];
+  const cnt = window._MGMT.errCount[s.id]||0;
+  box.innerHTML=`<div style="border:1px solid #e6e8ef;border-radius:10px;padding:10px">
+    <div class="row" style="align-items:center">
+      <div style="flex:2"><b>${name}</b><br><span style="font-size:12px;color:${has?'#2e9e5b':'#8a90a2'}">${has?('已设账号: '+has):'未设账号'}</span><br><span class="pill m">错题 ${cnt} 道</span></div>
+      <div style="flex:3">
+        <input id="su_${s.id}" placeholder="账号" value="${has||''}">
+        <input id="sp_${s.id}" type="password" placeholder="${has?'留空=不修改密码':'密码'}">
+      </div>
+      <div>
+        <button onclick="setStu('${s.id}')">保存</button>
+        <button type="button" class="ghost" onclick="viewStuErrors('${s.id}')">查看错题</button>
+      </div>
+    </div></div>`;
+}
+// 在「错题录入」区按学生筛选并展示该生错题（单页滚动定位）
 async function viewStuErrors(sid){
-  switchTab('errors');
   const sel = document.getElementById('f-student');
   if(sel){ sel.value = sid; }
   await loadErrors();
+  const sec = document.getElementById('sec-errors');
+  if(sec) sec.scrollIntoView({behavior:'smooth'});
 }
-async function setStu(sid,name){
+async function setStu(sid){
   const username = document.getElementById('su_'+sid).value.trim();
   const password = document.getElementById('sp_'+sid).value;
   if(!username){ alert('请填写账号'); return; }
   if(!password){ alert('请填写密码（首次设置或修改都需填）'); return; }
   const {status,j} = await call('/api/train/student/account',{method:'POST',json:{studentId:sid,username,password}});
   if(status!==200){ alert((j&&j.error)||'保存失败'); return; }
-  alert('已保存「'+name+'」的账号 ✓'); loadStuMgmt();
+  alert('已保存账号 ✓');
+  await loadStuMgmt();
+  document.getElementById('mgmt-stu').value = sid;
+  renderMgmt();
 }
 async function genTasks(){
   const {j} = await call('/api/train/tasks/generate',{method:'POST'});
   document.getElementById('task-msg').textContent = (j&&j.students!=null)? ('已为 '+j.students+' 名学生生成 '+j.date+' 任务 ✓'):'生成失败';
   renderTasks();
 }
+const STMAP={pending:'待完成',partial:'部分完成',done:'已完成',none:'无任务'};
+function todayStr(d){ d=d||new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function fillStuSelect(selId){
+  const sel = document.getElementById(selId);
+  sel.innerHTML = '<option value="">请选择学生</option>';
+  const map = window._STU_MAP||{};
+  Object.keys(map).forEach(sid=>sel.insertAdjacentHTML('beforeend',`<option value="${sid}">${map[sid]}</option>`));
+}
 async function renderTasks(){
-  const {j} = await call('/api/train/tasks?date='+new Date().toISOString().slice(0,10));
-  const box = document.getElementById('task-list'); box.innerHTML='';
-  const STMAP={pending:'待完成',partial:'部分完成',done:'已完成'};
-  (j?j.items:[]).forEach(t=>{
-    box.insertAdjacentHTML('beforeend',`<div style="padding:6px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;gap:8px">
-      <div><b>${(t.studentName)||t.studentId}</b> · 共${t.errorIds.length}题 · ${STMAP[t.status]||t.status} ${t.score!=null?('· 正确率'+(t.score*100).toFixed(0)+'%'):''}</div>
-      <button class="ghost sm" onclick="viewTaskLogs('${t.id}')">查看作答</button></div>`);
-  });
+  const {j} = await call('/api/train/tasks?date='+todayStr());
+  window._TASKS = (j?j.items:[]);
+  fillStuSelect('task-stu');
+  renderTaskStu();
+}
+function renderTaskStu(){
+  const sid = document.getElementById('task-stu').value;
+  const box = document.getElementById('task-detail');
+  if(!sid){ box.innerHTML=''; return; }
+  const t = (window._TASKS||[]).find(x=>x.studentId===sid);
+  if(!t){ box.innerHTML='<p style="color:#8a90a2">该生今天没有任务（可点上方「生成今日任务」）。</p>'; return; }
+  box.innerHTML=`<div style="border:1px solid #e6e8ef;border-radius:10px;padding:10px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+    <div><b>${t.studentName||stuName(t.studentId)}</b> · 共${(t.errorIds||[]).length}题 · ${STMAP[t.status]||t.status} ${t.score!=null?('· 正确率'+(t.score*100).toFixed(0)+'%'):''}</div>
+    <button class="ghost sm" onclick="viewTaskLogs('${t.id}')">查看作答</button></div>`;
 }
 async function viewTaskLogs(tid){
   const {j} = await call('/api/train/tasks/'+tid+'/logs');
@@ -609,16 +646,39 @@ async function viewTaskLogs(tid){
   showModalHtml(h);
 }
 async function loadDash(){
-  const {j} = await call('/api/train/dashboard');
+  const dsel = document.getElementById('dash-date');
+  if(!dsel.options.length){
+    let h='';
+    for(let i=0;i<7;i++){
+      const ds = todayStr(new Date(Date.now()-i*86400000));
+      const label = i===0?('今天（'+ds+'）'):i===1?('昨天（'+ds+'）'):ds;
+      h += `<option value="${ds}">${label}</option>`;
+    }
+    dsel.innerHTML = h;
+  }
+  const d = dsel.value || todayStr();
+  const {j} = await call('/api/train/dashboard?date='+encodeURIComponent(d));
   if(!j){return;}
+  window._DASH = j.perStudent||[]; window._DASH_DATE = d;
+  const isToday = d===todayStr();
   document.getElementById('dash-overview').innerHTML =
-    stat(j.studentsTotal,'学生总数')+stat(j.tasksToday,'今日任务')+stat(j.doneToday,'今日完成')+stat(j.todayDate,'日期');
-  const box = document.getElementById('dash-student');
-  let h='<table><tr><th>学生</th><th>循环中</th><th>已毕业</th><th>新收录</th><th>今日</th><th>正确率</th></tr>';
-  (j.perStudent||[]).forEach(s=>{
-    h+=`<tr><td>${s.name||s.id}</td><td>${s.active}</td><td>${s.mastered}</td><td>${s.new}</td><td>${s.todayStatus}</td><td>${s.todayScore!=null?(s.todayScore*100).toFixed(0)+'%':'-'}</td></tr>`;
-  });
-  box.innerHTML=h+'</table>';
+    stat(j.studentsTotal,'学生总数')+stat(j.tasksToday,isToday?'今日任务':d+' 任务')+stat(j.doneToday,isToday?'今日完成':'当日完成')+stat(d,'日期');
+  fillStuSelect('dash-stu');
+  renderDashStu();
+}
+function renderDashStu(){
+  const sid = document.getElementById('dash-stu').value;
+  const box = document.getElementById('dash-detail');
+  if(!sid){ box.innerHTML=''; return; }
+  const s = (window._DASH||[]).find(x=>x.id===sid);
+  if(!s){ box.innerHTML='<p style="color:#8a90a2">该日期下没有此学生的数据。</p>'; return; }
+  const score = s.todayScore!=null?(s.todayScore*100).toFixed(0)+'%':'-';
+  const tid = 't_'+s.id+'_'+(window._DASH_DATE||todayStr());
+  box.innerHTML=`<div style="border:1px solid #e6e8ef;border-radius:10px;padding:10px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+    <div><b>${s.name||s.id}</b> · 循环中 ${s.active} · 已毕业 ${s.mastered} · 新收录 ${s.new}<br>
+    <span style="color:#5a6072">当日：${STMAP[s.todayStatus]||s.todayStatus||'无任务'} · 正确率 ${score}</span></div>
+    ${s.todayStatus&&s.todayStatus!=='none'?`<button class="ghost sm" onclick="viewTaskLogs('${tid}')">查看作答</button>`:''}
+  </div>`;
 }
 function stat(v,l){return `<div class="stat"><b>${v}</b>${l}</div>`;}
 

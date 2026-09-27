@@ -705,10 +705,10 @@ def train_submit(student_id, date_str, answers):
             "right": right_n, "results": results}
 
 
-def train_dashboard():
-    """老师看板数据：今日任务概况 + 每生掌握进度 + 每题作答历史概览。"""
+def train_dashboard(date_str=None):
+    """老师看板数据：指定日期(默认今天)任务概况 + 每生掌握进度。"""
     students = [s["body"] for s in store_list("students", limit=2000)]
-    today = _date_today()
+    today = date_str or _date_today()
     tasks_today = [t["body"] for t in store_list("trainTasks", limit=4000)
                    if t["body"].get("date") == today]
     done = sum(1 for t in tasks_today if t.get("status") in ("done", "partial"))
@@ -1170,7 +1170,7 @@ class H(BaseHTTPRequestHandler):
         if p == "/api/train/dashboard":
             if is_student:
                 return send_json(self, {"error": "无权限"}, 403)
-            return send_json(self, train_dashboard())
+            return send_json(self, train_dashboard(q.get("date", [None])[0]))
         if p == "/api/train/student/accounts":
             if u.get("role") not in ("admin", "teacher"):
                 return send_json(self, {"error": "无权限"}, 403)
