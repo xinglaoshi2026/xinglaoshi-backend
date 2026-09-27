@@ -1405,6 +1405,16 @@ class H(BaseHTTPRequestHandler):
             if not r.get("ok"):
                 return send_json(self, r, 400)
             return send_json(self, r)
+        if p == "/api/admin/clear_tombstones":
+            # 清空同步删除墓碑表：当一次错误同步把大量条目打成"已删除"墓碑后，
+            # 这些 id 会被同步脚本永久跳过、无法再推回云端。运维恢复用。
+            u = user_of(get_token(self))
+            if not u or u.get("role") != "admin":
+                return send_json(self, {"error": "仅管理员可执行"}, 403)
+            cx = db()
+            n = cx.execute("DELETE FROM tombstones").rowcount
+            cx.commit(); cx.close()
+            return send_json(self, {"ok": True, "cleared": n})
         if p == "/api/auth/register":
             body, err = read_body(self)
             if err: return send_json(self, {"error": err}, 400)
