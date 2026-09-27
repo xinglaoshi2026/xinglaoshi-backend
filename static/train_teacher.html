@@ -56,6 +56,10 @@
   .rules-table th,.rules-table td{border:1px solid #d6dbe8;padding:5px 8px;font-size:13px;text-align:center}
   .rules-table th{background:#f0f3ff}
   .rules-box li{margin:5px 0;line-height:1.55}
+  .qa-cols{display:flex;gap:14px;flex-wrap:wrap}
+  .qa-cols>div{flex:1;min-width:300px}
+  #stu-drop .chk{display:flex;align-items:center;gap:6px;padding:5px 4px;border-bottom:1px solid #f0f2f8;margin:0}
+  #stu-drop .chk:last-child{border-bottom:none}
 </style>
 </head>
 <body>
@@ -77,33 +81,41 @@
     <div class="sec" id="sec-errors"><span>① 错题录入</span><button type="button" class="rules-btn" onclick="showRules()">📖 训练规则</button></div>
     <div id="t-errors">
       <div class="card">
-        <h3>录入一道错题</h3>
-        <div class="row">
-          <div style="flex-basis:100%">
-            <label>学生（可多选，错题会发给每一位被选中的学生）</label>
-            <div id="e-student-box" style="margin-top:4px"></div>
-            <div style="margin-top:6px">
-              <button type="button" class="ghost sm" onclick="selAllStu(true)">全选</button>
-              <button type="button" class="ghost sm" onclick="selAllStu(false)">清空</button>
+        <div class="row" style="align-items:flex-end">
+          <div style="flex:1;min-width:260px;position:relative">
+            <label>学生（点击展开，勾选可多选）</label>
+            <button type="button" class="ghost" id="stu-drop-btn" style="width:100%;justify-content:flex-start" onclick="toggleStuDrop()">👥 选择学生（已选 0 人）</button>
+            <div id="stu-drop" class="hidden" style="position:absolute;top:100%;left:0;right:0;z-index:30;background:#fff;border:1px solid #d6dbe8;border-radius:10px;margin-top:4px;padding:10px;box-shadow:0 6px 18px rgba(0,0,0,.12);max-height:240px;overflow:auto">
+              <div style="margin-bottom:6px">
+                <button type="button" class="ghost sm" onclick="selAllStu(true)">全选</button>
+                <button type="button" class="ghost sm" onclick="selAllStu(false)">清空</button>
+              </div>
+              <div id="e-student-box"></div>
             </div>
           </div>
         </div>
-        <label>题面（文字或直接 Ctrl+V 粘贴题目图片）</label>
-        <textarea id="e-stem" rows="3" placeholder="题目文字，可直接粘贴截图/照片"></textarea>
-        <div class="pastezone" data-zone="stem" tabindex="0">📋 题目图片：在此处按 <b>Ctrl+V</b> 粘贴，或
-          <button type="button" class="ghost sm" onclick="document.getElementById('e-imgs').click()">选择文件</button>
-          <button type="button" class="ghost sm" onclick="pasteClip('stem')">从剪贴板粘贴</button>
+        <div class="qa-cols" style="margin-top:10px">
+          <div>
+            <label>题面（文字或直接 Ctrl+V 粘贴题目图片）</label>
+            <textarea id="e-stem" rows="4" placeholder="题目文字，可直接粘贴截图/照片"></textarea>
+            <div class="pastezone" data-zone="stem" tabindex="0">📋 题目图片：按 <b>Ctrl+V</b> 粘贴，或
+              <button type="button" class="ghost sm" onclick="document.getElementById('e-imgs').click()">选择文件</button>
+              <button type="button" class="ghost sm" onclick="pasteClip('stem')">从剪贴板粘贴</button>
+            </div>
+            <div class="thumbs" id="stem-thumbs"></div>
+            <input id="e-imgs" type="file" accept="image/*" multiple class="hidden">
+          </div>
+          <div>
+            <label>答案 / 解析（可粘贴图片，已取消客观题答案框）</label>
+            <textarea id="e-analysis" rows="4" placeholder="解析文字，或 Ctrl+V 粘贴答案图片"></textarea>
+            <div class="pastezone" data-zone="answer" tabindex="0">📋 答案图片：按 <b>Ctrl+V</b> 粘贴，或
+              <button type="button" class="ghost sm" onclick="document.getElementById('e-ans-imgs').click()">选择文件</button>
+              <button type="button" class="ghost sm" onclick="pasteClip('answer')">从剪贴板粘贴</button>
+            </div>
+            <div class="thumbs" id="answer-thumbs"></div>
+            <input id="e-ans-imgs" type="file" accept="image/*" multiple class="hidden">
+          </div>
         </div>
-        <div class="thumbs" id="stem-thumbs"></div>
-        <input id="e-imgs" type="file" accept="image/*" multiple class="hidden">
-        <label>答案 / 解析（可粘贴图片，已取消客观题答案框）</label>
-        <textarea id="e-analysis" rows="2" placeholder="解析文字，或 Ctrl+V 粘贴答案图片"></textarea>
-        <div class="pastezone" data-zone="answer" tabindex="0">📋 答案图片：在此处按 <b>Ctrl+V</b> 粘贴，或
-          <button type="button" class="ghost sm" onclick="document.getElementById('e-ans-imgs').click()">选择文件</button>
-          <button type="button" class="ghost sm" onclick="pasteClip('answer')">从剪贴板粘贴</button>
-        </div>
-        <div class="thumbs" id="answer-thumbs"></div>
-        <input id="e-ans-imgs" type="file" accept="image/*" multiple class="hidden">
         <label>附件（任意文件：PDF / Word / 试卷等，可多选）</label>
         <input id="e-files" type="file" multiple>
         <button type="button" class="ghost" onclick="toggleQb()">📚 从题库选题目</button>
@@ -222,7 +234,26 @@ async function loadStudents(){
 }
 function selAllStu(on){
   document.querySelectorAll('#e-student-box input').forEach(c=>c.checked=on);
+  updateStuDropText();
 }
+// 学生下拉多选：展开/收起 + 按钮计数
+function toggleStuDrop(){
+  const d = document.getElementById('stu-drop');
+  d.classList.toggle('hidden');
+}
+function updateStuDropText(){
+  const n = document.querySelectorAll('#e-student-box input:checked').length;
+  document.getElementById('stu-drop-btn').textContent = n ? `👥 已选 ${n} 名学生` : '👥 选择学生（已选 0 人）';
+}
+document.addEventListener('change', e=>{
+  if(e.target.closest && e.target.closest('#e-student-box')) updateStuDropText();
+});
+document.addEventListener('click', e=>{
+  const d = document.getElementById('stu-drop');
+  if(!d || d.classList.contains('hidden')) return;
+  if(e.target.closest && (e.target.closest('#stu-drop') || e.target.closest('#stu-drop-btn'))) return;
+  d.classList.add('hidden');
+});
 
 // 题库选题意：缓存与状态
 let qbCache = {};        // id -> question body
@@ -438,6 +469,7 @@ async function saveError(){
   pendingImgs={stem:[], answer:[]}; renderThumbs('stem'); renderThumbs('answer');
   pickedImgs=[]; pickedAnsImgs=[]; updatePickedHint();
   document.querySelectorAll('#e-student-box input:checked').forEach(c=>c.checked=false);
+  updateStuDropText();
   loadErrors();
 }
 async function loadErrors(){
