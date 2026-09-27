@@ -52,6 +52,7 @@
       <div class="tab active" data-t="errors" onclick="switchTab('errors')">错题录入</div>
       <div class="tab" data-t="tasks" onclick="switchTab('tasks')">每日任务</div>
       <div class="tab" data-t="dash" onclick="switchTab('dash')">完成看板</div>
+      <div class="tab" data-t="students" onclick="switchTab('students')">学生管理</div>
     </div>
 
     <!-- 错题录入 -->
@@ -121,6 +122,15 @@
         <div id="dash-student"></div>
       </div>
     </div>
+
+    <!-- 学生管理 -->
+    <div id="t-students" class="hidden">
+      <div class="card">
+        <h3>学生账号管理</h3>
+        <p class="ok">给每个学生设置账号和密码后，学生用账号登录 <b>/train_student</b> 只能看到自己的练习，无法看到他人。</p>
+        <div id="stu-mgmt"></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -151,9 +161,10 @@ function start(){
 }
 function switchTab(t){
   document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.t===t));
-  ['errors','tasks','dash'].forEach(x=>document.getElementById('t-'+x).classList.toggle('hidden',x!==t));
+  ['errors','tasks','dash','students'].forEach(x=>document.getElementById('t-'+x).classList.toggle('hidden',x!==t));
   if(t==='tasks') renderTasks();
   if(t==='dash') loadDash();
+  if(t==='students') loadStuMgmt();
 }
 async function loadStudents(){
   const {j} = await call('/api/train/students');
@@ -209,6 +220,37 @@ async function loadErrors(){
 }
 async function delErr(id){
   await call('/api/train/errors/'+id,{method:'DELETE'}); loadErrors();
+}
+async function loadStuMgmt(){
+  const [{j:stus},{j:acc}] = await Promise.all([
+    call('/api/train/students'),
+    call('/api/train/student/accounts')
+  ]);
+  const accMap = {};
+  (acc?acc.items:[]).forEach(a=>accMap[a.studentId]=a.username);
+  const box = document.getElementById('stu-mgmt'); box.innerHTML='';
+  (stus?stus.items:[]).forEach(s=>{
+    const name = s.name||s.username||s.id;
+    const has = accMap[s.id];
+    box.insertAdjacentHTML('beforeend',`<div class="card" style="margin:8px 0">
+      <div class="row" style="align-items:center">
+        <div style="flex:2"><b>${name}</b><br><span style="font-size:12px;color:${has?'#2e9e5b':'#8a90a2'}">${has?('已设账号: '+has):'未设账号'}</span></div>
+        <div style="flex:3">
+          <input id="su_${s.id}" placeholder="账号" value="${has||''}">
+          <input id="sp_${s.id}" type="password" placeholder="${has?'留空=不修改密码':'密码'}">
+        </div>
+        <div><button onclick="setStu('${s.id}','${name.replace(/'/g,"\\'")}')">保存</button></div>
+      </div></div>`);
+  });
+}
+async function setStu(sid,name){
+  const username = document.getElementById('su_'+sid).value.trim();
+  const password = document.getElementById('sp_'+sid).value;
+  if(!username){ alert('请填写账号'); return; }
+  if(!password){ alert('请填写密码（首次设置或修改都需填）'); return; }
+  const {status,j} = await call('/api/train/student/account',{method:'POST',json:{studentId:sid,username,password}});
+  if(status!==200){ alert((j&&j.error)||'保存失败'); return; }
+  alert('已保存「'+name+'」的账号 ✓'); loadStuMgmt();
 }
 async function genTasks(){
   const {j} = await call('/api/train/tasks/generate',{method:'POST'});

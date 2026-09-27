@@ -46,7 +46,8 @@ def init_db():
     cx = db()
     cx.executescript("""
     CREATE TABLE IF NOT EXISTS users(
-        id TEXT PRIMARY KEY, username TEXT UNIQUE, pw_hash TEXT, role TEXT, created_at INTEGER);
+        id TEXT PRIMARY KEY, username TEXT UNIQUE, pw_hash TEXT, role TEXT, created_at INTEGER,
+        student_id TEXT);
     CREATE TABLE IF NOT EXISTS sessions(
         token TEXT PRIMARY KEY, user_id TEXT, expires INTEGER);
     CREATE TABLE IF NOT EXISTS store(
@@ -58,6 +59,12 @@ def init_db():
     CREATE TABLE IF NOT EXISTS meta(
         k TEXT PRIMARY KEY, v TEXT);
     """)
+    cx.commit()
+    # 迁移：users 增加 student_id 列(学生账号用), 旧库已存在则忽略
+    try:
+        cx.execute("ALTER TABLE users ADD COLUMN student_id TEXT")
+    except Exception:
+        pass
     cx.commit()
     # 初始化：若没有任何用户，创建默认管理员（用户名 admin / 密码 admin123），仅首次
     cur = cx.execute("SELECT COUNT(*) c FROM users")
@@ -72,10 +79,10 @@ def pw_hash(pw):
     return hashlib.sha256(pw.encode("utf-8")).hexdigest()
 
 
-def add_user(cx, username, pw, role="user"):
+def add_user(cx, username, pw, role="user", student_id=None):
     uid = "u_" + uuid.uuid4().hex[:12]
-    cx.execute("INSERT INTO users(id,username,pw_hash,role,created_at) VALUES(?,?,?,?,?)",
-               (uid, username, pw_hash(pw), role, int(time.time())))
+    cx.execute("INSERT INTO users(id,username,pw_hash,role,created_at,student_id) VALUES(?,?,?,?,?,?)",
+               (uid, username, pw_hash(pw), role, int(time.time()), student_id))
     return uid
 
 
@@ -903,7 +910,7 @@ def user_of(token):
     if not token:
         return None
     cx = db()
-    r = cx.execute("SELECT s.user_id,u.role,u.username FROM sessions s JOIN users u ON u.id=s.user_id "
+    r = cx.execute("SELECT s.user_id,u.role,u.username,u.student_id FROM sessions s JOIN users u ON u.id=s.user_id "
                    "WHERE s.token=? AND s.expires>?", (token, now_ts())).fetchone()
     cx.close()
     return dict(r) if r else None
@@ -1058,52 +1065,81 @@ class H(BaseHTTPRequestHandler):
             return send_file(self, os.path.join(BASE, "static", "train_teacher.html"))
         if p in ("/train_student", "/train_student.html"):
             return send_file(self, os.path.join(BASE, "static", "train_student.html"))
+        if not p.startswith("/api/train/"):
+            return None  # 非训练接口, 交给主路由
+        # 训练类 GET 接口均需登录
+        u = user_of(get_token(self))
+        if not u:
+            return send_json(self, {"error": "未登录"}, 401)
+        # 学生角色: 强制只看自己, 且禁用看板
+        is_student = (u.get("role") == "student")
+        sid_param = q.get("studentId", [None])[0]
+        eff_sid = (u.get("student_id") if is_student else sid_param)
         if p == "/api/train/students":
-            return send_json(self, {"items": [s["body"] for s in store_list("students", limit=1000)]})
+            items = [s["body"] for s in store_list("students", limit=1000)]
+            if is_student:
+                items = [s for s in items if s.get("id") == eff_sid]
+            return send_json(self, {"items": items})
         if p == "/api/train/errors":
-            sid = q.get("studentId", [None])[0]
             items = [e["body"] for e in store_list("trainErrors", limit=5000)]
-            if sid:
-                items = [e for e in items if e.get("studentId") == sid]
+            if eff_sid:
+                items = [e for e in items if e.get("studentId") == eff_sid]
             return send_json(self, {"items": items, "count": len(items)})
         if p == "/api/train/cards":
-            sid = q.get("studentId", [None])[0]
             items = [c["body"] for c in store_list("trainCards", limit=8000)]
-            if sid:
-                items = [c for c in items if c.get("studentId") == sid]
+            if eff_sid:
+                items = [c for c in items if c.get("studentId") == eff_sid]
             return send_json(self, {"items": items, "count": len(items)})
         if p == "/api/train/tasks":
             d = q.get("date", [None])[0]
             items = [t["body"] for t in store_list("trainTasks", limit=8000)]
+            if eff_sid:
+                items = [t for t in items if t.get("studentId") == eff_sid]
             if d:
                 items = [t for t in items if t.get("date") == d]
             return send_json(self, {"items": items, "count": len(items)})
         if p == "/api/train/today":
-            sid = q.get("studentId", [None])[0]
             d = q.get("date", [None])[0]
-            if not sid:
+            if not eff_sid:
                 return send_json(self, {"error": "缺少 studentId"}, 400)
-            return send_json(self, train_student_today(sid, d))
+            return send_json(self, train_student_today(eff_sid, d))
         if p == "/api/train/dashboard":
-            u = user_of(get_token(self))
-            if not u:
-                return send_json(self, {"error": "未登录"}, 401)
+            if is_student:
+                return send_json(self, {"error": "无权限"}, 403)
             return send_json(self, train_dashboard())
+        if p == "/api/train/student/accounts":
+            if u.get("role") not in ("admin", "teacher"):
+                return send_json(self, {"error": "无权限"}, 403)
+            cx = db()
+            rows = cx.execute("SELECT student_id, username FROM users WHERE role='student' AND student_id IS NOT NULL").fetchall()
+            cx.close()
+            return send_json(self, {"items": [{"studentId": r["student_id"], "username": r["username"]} for r in rows]})
         return None
 
     def _train_route_post(self, p, q):
-        # 学生提交作答(免登录, 通过 studentId 识别)
+        # 学生作答提交 + 草稿/错题图片上传: 需登录, 学生角色强制用本人 studentId
+        if not p.startswith("/api/train/"):
+            return None  # 非训练接口交给主路由(避免拦截 /api/auth/login 等)
+        u = user_of(get_token(self))
+        if not u:
+            return send_json(self, {"error": "未登录"}, 401)
+        is_student = (u.get("role") == "student")
+
+        def _eff_sid(param_sid):
+            # 学生角色: 只能操作自己(token 中的 student_id), 前端无法伪造
+            return (u.get("student_id") if is_student else param_sid)
+
         if p == "/api/train/submit":
             body, err = read_body(self)
             if err:
                 return send_json(self, {"error": err}, 400)
-            sid = body.get("studentId")
+            sid = _eff_sid(body.get("studentId"))
             if not sid:
                 return send_json(self, {"error": "缺少 studentId"}, 400)
             return send_json(self, train_submit(sid, body.get("date"), body.get("answers") or []))
-        # 学生上传草稿/错题图片(免登录, 通过 studentId 识别; 仅允许图片, 防任意文件上传滥用)
+        # 学生上传草稿/错题图片(需登录; 仅允许图片, 防任意文件上传滥用)
         if p == "/api/train/media":
-            sid = (q.get("studentId", [None])[0] or "").strip()
+            sid = _eff_sid((q.get("studentId", [None])[0] or "").strip())
             if not sid:
                 return send_json(self, {"error": "缺少 studentId"}, 400)
             # studentId 限制为安全单段, 防止目录穿越
@@ -1126,9 +1162,33 @@ class H(BaseHTTPRequestHandler):
             if not ok:
                 return send_json(self, {"error": url}, code)
             return send_json(self, {"ok": True, "url": url})
-        u = user_of(get_token(self))
-        if not u and p.startswith("/api/train/"):
-            return send_json(self, {"error": "未登录"}, 401)
+        if p == "/api/train/student/account":
+            # 老师(管理员)给学生设置/修改账号密码
+            if u.get("role") not in ("admin", "teacher"):
+                return send_json(self, {"error": "无权限"}, 403)
+            body, err = read_body(self)
+            if err:
+                return send_json(self, {"error": err}, 400)
+            sid = body.get("studentId")
+            username = (body.get("username") or "").strip()
+            pw = body.get("password") or ""
+            if not sid or not username or not pw:
+                return send_json(self, {"error": "缺少 studentId / username / password"}, 400)
+            cx = db()
+            # 该学生是否已存在账号
+            exist = cx.execute("SELECT * FROM users WHERE student_id=?", (sid,)).fetchone()
+            uname_exist = cx.execute("SELECT id FROM users WHERE username=? AND student_id IS NOT ?",
+                                     (username, sid)).fetchone()
+            if uname_exist:
+                cx.close()
+                return send_json(self, {"error": "用户名已被其他账号占用"}, 409)
+            if exist:
+                cx.execute("UPDATE users SET username=?, pw_hash=?, role='student' WHERE id=?",
+                           (username, pw_hash(pw), exist["id"]))
+            else:
+                add_user(cx, username, pw, role="student", student_id=sid)
+            cx.commit(); cx.close()
+            return send_json(self, {"ok": True})
         if p == "/api/train/errors":
             body, err = read_body(self)
             if err:
@@ -1153,6 +1213,8 @@ class H(BaseHTTPRequestHandler):
                     store_delete("trainCards", cid)
             return send_json(self, {"ok": True})
         if p == "/api/train/tasks/generate":
+            d = q.get("date", [None])[0]
+            return send_json(self, train_generate_tasks(d))
             d = q.get("date", [None])[0]
             return send_json(self, train_generate_tasks(d))
         if p == "/api/train/logs":
@@ -1344,7 +1406,7 @@ class H(BaseHTTPRequestHandler):
             r = auth_user(body.get("username", ""), body.get("password", ""))
             if not r: return send_json(self, {"error": "用户名或密码错误"}, 401)
             tok = new_session(r["id"])
-            return send_json(self, {"token": tok, "user": {"username": r["username"], "role": r["role"]}})
+            return send_json(self, {"token": tok, "user": {"username": r["username"], "role": r["role"], "studentId": r["student_id"]}})
         # 以下需登录
         u = user_of(get_token(self))
         if not u: return send_json(self, {"error": "未登录"}, 401)
