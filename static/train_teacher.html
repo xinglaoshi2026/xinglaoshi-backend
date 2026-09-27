@@ -220,18 +220,38 @@ function toggleQb(){
   if(!box.classList.contains('hidden') && !document.getElementById('qb-kp').options.length){ loadQbKp(); }
 }
 async function loadQbKp(){
-  // knowledgePoints 主数据(可能有名称)
-  const {j:kp} = await call('/api/knowledgePoints');
-  (kp?kp.items:[]).forEach(x=>{ const b=x.body||{}; if(b.name) qbKpName[x.id]=b.name; });
-  // 从题目里收集不同的 kpId 构建下拉
-  const {j} = await call('/api/questions?limit=200');
-  const set = {};
-  (j?j.items:[]).forEach(x=>{ const id=(x.body&&x.body.kpId); if(id) set[id]=1; });
-  const sel = document.getElementById('qb-kp');
-  Object.keys(set).forEach(id=>{
-    const name = qbKpName[id]||id;
-    sel.insertAdjacentHTML('beforeend', `<option value="${id}">${name}</option>`);
+  // 知识点树来自云端 knowledgePoints（桌面端已整树同步：含 id/name/parentId 层级）
+  // 接口直接返回数组：[{id, body:{name,parentId}, updated_at}, ...]
+  const {j:kp} = await call('/api/knowledgePoints?limit=3000');
+  const items = Array.isArray(kp) ? kp : (kp && kp.items) ? kp.items : [];
+  const byId = {};
+  items.forEach(x=>{ const b=x.body||{}; byId[x.id]=b.name||x.id; });
+  // 如果云端 knowledgePoints 为空，退化方案：从题目里收集不同的 kpId
+  let usedFromQ = false;
+  if(!items.length){
+    const {j} = await call('/api/questions?limit=2000');
+    const qs = Array.isArray(j) ? j : (j&&j.items)||[];
+    qs.forEach(x=>{ const id=(x.body&&x.body.kpId); if(id){ byId[id]=id; usedFromQ=true; } });
+  }
+  // 构建层级树（parentId 嵌套）
+  const children = {};
+  const roots = [];
+  Object.keys(byId).forEach(id=>{
+    const b = items.find(x=>x.id===id); const pid = b? (b.body&&b.body.parentId)||'' : '';
+    (children[pid] = children[pid] || []).push(id);
+    if(!pid) roots.push(id);
   });
+  const sel = document.getElementById('qb-kp');
+  sel.length = 1; // 保留「全部知识点」
+  const walk = (id, depth)=>{
+    const name = byId[id] || id;
+    const pad = depth? '　'.repeat(depth)+'└ ' : '';
+    sel.insertAdjacentHTML('beforeend', `<option value="${id}">${pad}${name}</option>`);
+    (children[id]||[]).forEach(c=>walk(c, depth+1));
+  };
+  // 有层级树时按树渲染；否则按 kpId 列表
+  if(roots.length || usedFromQ){ roots.forEach(r=>walk(r,0)); }
+  else { Object.keys(byId).forEach(id=>sel.insertAdjacentHTML('beforeend',`<option value="${id}">${byId[id]}</option>`)); }
 }
 async function searchQb(){
   const kp = document.getElementById('qb-kp').value;
