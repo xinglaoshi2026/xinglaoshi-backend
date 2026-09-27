@@ -36,6 +36,15 @@
   .sm{width:auto;padding:8px 12px;font-size:13px;margin:4px 4px 0 0}
   .thumbs{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
   .thumbs img{max-width:90px;max-height:90px;border-radius:6px;border:1px solid #eee}
+  .thumb-wrap{position:relative;display:inline-block}
+  .thumb-wrap .x{position:absolute;top:-7px;right:-7px;background:#e5484d;color:#fff;border-radius:50%;width:18px;height:18px;line-height:18px;text-align:center;font-size:12px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+  .pastezone{border:1px dashed #c7cdf0;border-radius:8px;padding:10px;color:#8a90a2;font-size:13px;cursor:pointer;background:#fafbff;margin-top:6px}
+  .pastezone:focus{outline:none;border-color:#4361ee}
+  .pastezone.drag{border-color:#4361ee;background:#eef4ff}
+  .pract{border:1px solid #d7dae6;background:#fff;border-radius:8px;padding:5px 9px;font-size:12px;cursor:pointer;margin-left:6px}
+  .pract b{color:#4361ee}
+  .modal-mask{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:60}
+  .modal-box{background:#fff;border-radius:12px;padding:16px;max-width:92%;max-height:82%;overflow:auto;min-width:280px}
   .filetag{display:inline-block;background:#eef4ff;color:#3a56d4;border-radius:8px;padding:4px 8px;font-size:12px;margin:3px}
   .qb{border:1px dashed #c7cdf0;border-radius:10px;padding:10px;margin-top:10px;background:#fafbff}
   .qb-item{border:1px solid #e6e8ef;border-radius:10px;padding:10px;margin-top:8px;background:#fff}
@@ -96,13 +105,16 @@
             <option value="解答">解答(主观)</option>
           </select></div>
         </div>
-        <label>题面</label><textarea id="e-stem" rows="3" placeholder="题目文字或图片说明"></textarea>
-        <div class="row">
-          <div><label>标准答案（客观题填，用于自动判分）</label><input id="e-answer" placeholder="客观题答案"></div>
-          <div><label>解析</label><input id="e-analysis" placeholder="标准解析"></div>
-        </div>
-        <label>错题图片（可多选，拍照/截图）</label>
-        <input id="e-imgs" type="file" accept="image/*" multiple>
+        <label>题面（文字或直接 Ctrl+V 粘贴题目图片）</label>
+        <textarea id="e-stem" rows="3" placeholder="题目文字，可直接粘贴截图/照片"></textarea>
+        <div class="pastezone" tabindex="0" data-zone="stem" onclick="document.getElementById('e-imgs').click()">📋 把题目图片粘贴到这里（或点此选文件），可多张</div>
+        <div class="thumbs" id="stem-thumbs"></div>
+        <input id="e-imgs" type="file" accept="image/*" multiple class="hidden">
+        <label>答案 / 解析（可粘贴图片，已取消客观题答案框）</label>
+        <textarea id="e-analysis" rows="2" placeholder="解析文字，或 Ctrl+V 粘贴答案图片"></textarea>
+        <div class="pastezone" tabindex="0" data-zone="analysis" onclick="document.getElementById('e-ans-imgs').click()">📋 把答案图片粘贴到这里</div>
+        <div class="thumbs" id="analysis-thumbs"></div>
+        <input id="e-ans-imgs" type="file" accept="image/*" multiple class="hidden">
         <label>附件（任意文件：PDF / Word / 试卷等，可多选）</label>
         <input id="e-files" type="file" multiple>
         <button type="button" class="ghost" onclick="toggleQb()">📚 从题库选题目</button>
@@ -213,6 +225,56 @@ function selAllStu(on){
 let qbCache = {};        // id -> question body
 let qbKpName = {};       // kpId -> 名称(来自 knowledgePoints，若无则为空)
 let pickedImgs = [];     // 从题库选入的题目图片(相对 /api/media/... 路径)
+// 待上传图片（粘贴/选文件），按区域(stem/answer)分别维护
+let pendingImgs = {stem:[], answer:[]};
+
+async function uploadMedia(file, sub){
+  const fr = await fetch(API+'/api/media?sub='+encodeURIComponent(sub)+'&name='+encodeURIComponent(file.name),{
+    method:'POST', headers:{'Authorization':'Bearer '+TOKEN}, body:file
+  });
+  return await fr.json();
+}
+// 渲染缩略图（含删除 ×）
+function renderThumbs(zone){
+  const box = document.getElementById(zone+'-thumbs');
+  box.innerHTML='';
+  pendingImgs[zone].forEach((it,idx)=>{
+    const w = document.createElement('div'); w.className='thumb-wrap';
+    w.innerHTML = `<img src="${it.url}"><span class="x" onclick="removeImg('${zone}',${idx})">×</span>`;
+    box.appendChild(w);
+  });
+}
+function removeImg(zone, idx){
+  const it = pendingImgs[zone][idx];
+  if(it && it.url && it.url.startsWith('blob:')) URL.revokeObjectURL(it.url);
+  pendingImgs[zone].splice(idx,1);
+  renderThumbs(zone);
+}
+// 把 File 加入待上传列表并预览
+function addImgFile(zone, file){
+  pendingImgs[zone].push({file, url: URL.createObjectURL(file)});
+  renderThumbs(zone);
+}
+// 监听粘贴（题面/答案区域）
+['stem','answer'].forEach(zone=>{
+  const ta = document.getElementById(zone==='stem'?'e-stem':'e-analysis');
+  const zone_ = document.querySelector('.pastezone[data-zone="'+zone+'"]');
+  const onPaste = (e)=>{
+    const files = [];
+    (e.clipboardData||window.clipboardData).items.forEach(it=>{
+      if(it.kind==='file' && it.type.startsWith('image/')){ const f=it.getAsFile(); if(f) files.push(f); }
+    });
+    if(files.length){
+      e.preventDefault();
+      files.forEach(f=>addImgFile(zone, f));
+    }
+  };
+  if(ta) ta.addEventListener('paste', onPaste);
+  if(zone_) zone_.addEventListener('paste', onPaste);
+  // 选文件输入
+  const inp = document.getElementById(zone==='stem'?'e-imgs':'e-ans-imgs');
+  if(inp) inp.addEventListener('change', ()=>{ [...inp.files].forEach(f=>addImgFile(zone,f)); inp.value=''; });
+});
 
 function toggleQb(){
   const box = document.getElementById('qb');
@@ -285,7 +347,7 @@ function extractMediaRel(h){
 function pickQb(id){
   const q = qbCache[id]; if(!q) return;
   document.getElementById('e-stem').value = stripHtml(q.content||'');
-  document.getElementById('e-answer').value = stripHtml(q.answer||'');
+  document.getElementById('e-analysis').value = stripHtml(q.answer||'');
   const name = qbKpName[q.kpId]||q.kpId||'';
   if(name) document.getElementById('e-kp').value = name;
   let qt='解答'; const t=(q.type||'');
@@ -304,25 +366,26 @@ function updatePickedHint(){
   if(pickedImgs.length){ el.classList.remove('hidden'); el.textContent='题库带入图片：'+pickedImgs.length+' 张（保存时一并存入错题）'; }
   else el.classList.add('hidden');
 }
-async function uploadMedia(file, sub){
-  const fr = await fetch(API+'/api/media?sub='+encodeURIComponent(sub)+'&name='+encodeURIComponent(file.name),{
-    method:'POST', headers:{'Authorization':'Bearer '+TOKEN}, body:file
-  });
-  return await fr.json();
-}
 async function saveError(){
   const msg = document.getElementById('e-msg'); msg.textContent='';
   const ids = [...document.querySelectorAll('#e-student-box input:checked')].map(c=>c.value);
   if(!ids.length){ msg.textContent='请至少选择一个学生'; msg.className='err'; return; }
-  const images = pickedImgs.slice();   // 相对 /api/media/... 路径
-  const files = [];
-  // 上传多张图片
-  for(const f of document.getElementById('e-imgs').files){
-    const fj = await uploadMedia(f, 'trainErrors');
-    if(!fj.ok){ msg.textContent='图片上传失败：'+(fj.error||''); msg.className='err'; return; }
+  // 题面图：题库带入 + 粘贴/选文件
+  const images = pickedImgs.slice();
+  for(const it of pendingImgs.stem){
+    const fj = await uploadMedia(it.file, 'trainErrors');
+    if(!fj.ok){ msg.textContent='题面图片上传失败：'+(fj.error||''); msg.className='err'; return; }
     images.push(fj.url.replace(API,''));
   }
-  // 上传任意附件
+  // 答案图：粘贴/选文件
+  const answerImages = [];
+  for(const it of pendingImgs.answer){
+    const fj = await uploadMedia(it.file, 'trainErrors');
+    if(!fj.ok){ msg.textContent='答案图片上传失败：'+(fj.error||''); msg.className='err'; return; }
+    answerImages.push(fj.url.replace(API,''));
+  }
+  // 任意附件
+  const files = [];
   for(const f of document.getElementById('e-files').files){
     const fj = await uploadMedia(f, 'trainErrors');
     if(!fj.ok){ msg.textContent='附件上传失败：'+(fj.error||''); msg.className='err'; return; }
@@ -331,39 +394,75 @@ async function saveError(){
   const body = {
     studentIds: ids, subject: qs('#e-subject'), knowledgePoint: qs('#e-kp'),
     errorReason: qs('#e-reason'), source: qs('#e-source'), qtype: qs('#e-qtype'),
-    stem: qs('#e-stem'), answer: qs('#e-answer'), analysis: qs('#e-analysis'),
-    images: images, files: files, image: images[0]||''
+    stem: qs('#e-stem'), analysis: qs('#e-analysis'),
+    images: images, answerImages: answerImages, files: files, image: images[0]||''
   };
   const {status,j} = await call('/api/train/errors',{method:'POST',json:body});
   if(status!==200){ msg.textContent=(j&&j.error)||'保存失败'; msg.className='err'; return; }
   msg.textContent='已保存 '+ (j.count||ids.length) +' 条错题 ✓'; msg.className='ok';
-  document.getElementById('e-stem').value=''; document.getElementById('e-answer').value=''; document.getElementById('e-analysis').value='';
-  document.getElementById('e-imgs').value=''; document.getElementById('e-files').value='';
+  document.getElementById('e-stem').value=''; document.getElementById('e-analysis').value='';
+  document.getElementById('e-files').value='';
+  pendingImgs={stem:[], answer:[]}; renderThumbs('stem'); renderThumbs('answer');
   pickedImgs=[]; updatePickedHint();
   document.querySelectorAll('#e-student-box input:checked').forEach(c=>c.checked=false);
   loadErrors();
 }
 async function loadErrors(){
   const sid = document.getElementById('f-student').value;
-  const {j} = await call('/api/train/errors'+(sid?'?studentId='+encodeURIComponent(sid):''));
+  const [{j},{j:pj}] = await Promise.all([
+    call('/api/train/errors'+(sid?'?studentId='+encodeURIComponent(sid):'')),
+    call('/api/train/errors/practices'+(sid?'?studentId='+encodeURIComponent(sid):''))
+  ]);
+  const counts = (pj&&pj.counts)||{};
   const box = document.getElementById('err-list'); box.innerHTML='';
   (j?j.items:[]).forEach(e=>{
     const imgs = (e.images&&e.images.length)?e.images:(e.image?[e.image]:[]);
     const img = imgs.length? `<img class="thumb" src="${API+imgs[0]}">`+(imgs.length>1?` <span class="pill">+${imgs.length-1}图</span>`:''):'';
     const files = (e.files&&e.files.length)?(' <span class="pill m">'+e.files.length+'附件</span>'):'';
+    const ans = (e.answerImages&&e.answerImages.length)?' <span class="pill">'+e.answerImages.length+'答案图</span>':'';
+    const n = counts[e.id]||0;
     box.insertAdjacentHTML('beforeend',`<div class="card" style="margin:8px 0">
       <div class="row" style="align-items:center">
         <div>${img}</div>
         <div style="flex:3">
-          <div><b>${e.knowledgePoint||'(无知识点)'}</b> <span class="pill">${e.errorReason||''}</span> <span class="pill m">${e.source||''}</span>${files}</div>
+          <div><b>${e.knowledgePoint||'(无知识点)'}</b> <span class="pill">${e.errorReason||''}</span> <span class="pill m">${e.source||''}</span>${files}${ans}</div>
           <div style="color:#8a90a2;font-size:12px">${e.studentName||e.studentId} · ${e.qtype||''} · ${e.wrongDate||''}</div>
           <div style="font-size:13px">${(e.stem||'').slice(0,80)}</div>
         </div>
-        <div><button class="danger" onclick="delErr('${e.id}')">删</button></div>
+        <div>
+          <button class="pract" onclick="showPractices('${e.id}')">练习 <b>${n}</b> 次</button>
+          <button class="danger" onclick="delErr('${e.id}')">删</button>
+        </div>
       </div></div>`);
   });
 }
+async function showPractices(eid){
+  const {j} = await call('/api/train/errors/'+eid+'/practices');
+  const logs = (j&&j.logs)||[];
+  const stuname = {};
+  (j&&j.logs); // 已在 logs 内
+  let h = '<div class="modal-box"><div style="display:flex;justify-content:space-between;align-items:center"><b>练习记录（共 '+logs.length+' 次）</b><button class="ghost sm" onclick="closeModal()">关闭</button></div>';
+  if(!logs.length) h += '<p style="color:#8a90a2">还没有学生练习过这道题。</p>';
+  else {
+    h += '<table><tr><th>日期</th><th>结果</th></tr>';
+    logs.slice().reverse().forEach(l=>{
+      const r = l.result==='right'||l.result==='self_right'?'✓ 做对':l.result==='half'?'半对':'✗ 做错';
+      h += '<tr><td>'+(l.date||'')+'</td><td>'+r+'</td></tr>';
+    });
+    h += '</table>';
+  }
+  h += '</div>';
+  showModalHtml(h);
+}
+function showModalHtml(html){
+  let mask = document.getElementById('modal-mask');
+  if(!mask){ mask=document.createElement('div'); mask.id='modal-mask'; mask.className='modal-mask'; document.body.appendChild(mask); }
+  mask.innerHTML = html + '<div style="position:fixed;inset:0;z-index:-1" onclick="closeModal()"></div>';
+  mask.style.display='flex';
+}
+function closeModal(){ const m=document.getElementById('modal-mask'); if(m) m.style.display='none'; }
 async function delErr(id){
+  if(!confirm('确认删除这道错题？（同时清除对应训练卡）')) return;
   await call('/api/train/errors/'+id,{method:'DELETE'}); loadErrors();
 }
 async function loadStuMgmt(){

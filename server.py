@@ -689,6 +689,7 @@ def train_submit(student_id, date_str, answers):
         store_put("trainLogs", lid, log)
         results.append({"errorId": eid, "result": result,
                         "answer": qans, "analysis": e.get("analysis") or "",
+                        "answerImages": e.get("answerImages") or [],
                         "stem": e.get("stem") or ""})
     if total:
         task["score"] = round(right_n / total, 2)
@@ -1085,6 +1086,27 @@ class H(BaseHTTPRequestHandler):
             if eff_sid:
                 items = [e for e in items if e.get("studentId") == eff_sid]
             return send_json(self, {"items": items, "count": len(items)})
+        if p == "/api/train/errors/practices":
+            # 每个错题的练习次数（可选按学生过滤）
+            sid = q.get("studentId", [None])[0] or eff_sid
+            counts, per = {}, {}
+            for l in store_list("trainLogs", limit=20000):
+                b = l.get("body") or {}
+                eid = b.get("errorId")
+                if not eid:
+                    continue
+                if sid and b.get("studentId") != sid:
+                    continue
+                counts[eid] = counts.get(eid, 0) + 1
+                per.setdefault(eid, {})[b.get("studentId")] = per[eid].get(b.get("studentId"), 0) + 1
+            return send_json(self, {"counts": counts, "perStudent": per})
+        if p.startswith("/api/train/errors/") and p.endswith("/practices"):
+            eid = p[len("/api/train/errors/"):-len("/practices")]
+            logs = [l.get("body") for l in store_list("trainLogs", limit=20000)
+                    if (l.get("body") or {}).get("errorId") == eid]
+            return send_json(self, {"errorId": eid, "total": len(logs),
+                                   "logs": [{"ts": lg.get("updatedAt"), "date": lg.get("date"),
+                                             "result": lg.get("result")} for lg in logs]})
         if p == "/api/train/cards":
             items = [c["body"] for c in store_list("trainCards", limit=8000)]
             if eff_sid:

@@ -168,8 +168,9 @@ async function submit(){
   let h='<div class="score">本次正确率 '+(j.total?((j.right/j.total)*100).toFixed(0):0)+'% （'+j.right+'/'+j.total+'）</div>';
   (j.results||[]).forEach((r,i)=>{
     const ok=r.result==='right'||r.result==='self_right';
+    const ansImgs=(r.answerImages&&r.answerImages.length)?r.answerImages.map(u=>`<img class="qi" src="${API+u}">`).join(''):'';
     h+=`<div class="card"><div class="qi">第${i+1}题 · <b>${ok?'✓ 对':'✗ 错'}</b></div>
-      <div style="color:#5a6072">解析：${r.analysis||'(无)'}</div></div>`;
+      <div style="color:#5a6072">解析：${r.analysis||'(无)'}</div>${ansImgs?('<div style="margin-top:4px">'+ansImgs+'</div>'):''}</div>`;
   });
   h+='<p style="color:#8a90a2;font-size:13px">做错的题过几天会再来找你，加油！</p>';
   document.getElementById('result').innerHTML=h;
