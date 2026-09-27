@@ -124,6 +124,11 @@ async function loadToday(){
   document.getElementById('submitBtn').classList.remove('hidden');
   head.innerHTML='<b>'+task.date+' 练习</b> · 共'+j.items.length+'题'+(task.status==='done'||task.status==='partial'?' · 已完成 ✓':' · 待完成');
   TASK_DONE = !task || task.status==='done';   // 无作业 或 已提交完成 → 解锁近期错题
+  if(!j.items.length){
+    head.innerHTML='<b>'+task.date+'</b> · 今天没有需要练的错题，休息一下';
+    document.getElementById('submitBtn').classList.add('hidden');
+    TASK_DONE=true; updateWeekLock(); return;
+  }
   const box=document.getElementById('items'); box.innerHTML=''; ST={};
   j.items.forEach((e,idx)=>{
     const imgs = (e.images&&e.images.length)?e.images:(e.image?[e.image]:[]);
@@ -172,7 +177,9 @@ async function reveal(idx){
   btn.disabled=true; btn.textContent='上传中…';
   try{
     for(const f of st.photos){
-      const fr=await fetch(API+'/api/train/media?sub=drafts&name='+encodeURIComponent(f.name),
+      // 文件名加唯一前缀，避免多学生/多次上传同名文件互相覆盖
+      const uniq = Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+      const fr=await fetch(API+'/api/train/media?sub=drafts&name='+encodeURIComponent(uniq+'_'+(f.name||'photo.jpg')),
         {method:'POST',headers:{'Authorization':'Bearer '+TOKEN},body:f});
       const fj=await fr.json();
       if(fj.ok) st.urls.push(fj.url.replace(API,''));

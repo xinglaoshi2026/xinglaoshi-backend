@@ -620,7 +620,21 @@ def train_generate_tasks(date_str=None):
         if not sid:
             continue
         cards = train_build_daily(sid, date_str)
-        err_ids = [c.get("errorId") for c in cards]
+        # 去重：同一题被重复收录多条(相同题面+相同图片)时只出一次；
+        # 已被删除的错题卡片也在此处自动剔除。
+        err_ids = []
+        seen_keys = set()
+        for c in cards:
+            eid = c.get("errorId")
+            e, _ = store_get("trainErrors", eid)
+            if not e:
+                continue
+            key = ((e.get("stem") or ""), tuple(e.get("images") or []),
+                   tuple(e.get("answerImages") or []))
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            err_ids.append(eid)
         tid = "t_%s_%s" % (sid, date_str)
         task = {"id": tid, "studentId": sid, "date": date_str,
                 "errorIds": err_ids, "status": "pending",

@@ -260,7 +260,10 @@ let pendingImgs = {stem:[], answer:[]};
 let qbKpLoaded = false;  // 知识点树是否已加载（避免每次展开题库都重拉）
 
 async function uploadMedia(file, sub){
-  const fr = await fetch(API+'/api/media?sub='+encodeURIComponent(sub)+'&name='+encodeURIComponent(file.name),{
+  // 粘贴/拍照的文件名常为固定 image.png，会互相覆盖 → 强制加唯一前缀
+  const uniq = Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+  const name = uniq + '_' + (file.name || 'img.png');
+  const fr = await fetch(API+'/api/media?sub='+encodeURIComponent(sub)+'&name='+encodeURIComponent(name),{
     method:'POST', headers:{'Authorization':'Bearer '+TOKEN}, body:file
   });
   return await fr.json();
