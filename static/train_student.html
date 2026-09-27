@@ -53,6 +53,13 @@
     <div id="items"></div>
     <button id="submitBtn" onclick="submit()">提交今日练习</button>
     <div id="result"></div>
+    <div class="card" id="weekCard" style="margin-top:14px">
+      <div class="topbar">
+        <b>最近一周错题</b>
+        <button onclick="toggleWeek()" id="weekBtn">展开</button>
+      </div>
+      <div id="weekList" class="hidden"></div>
+    </div>
   </div>
 </div>
 
@@ -86,12 +93,17 @@ async function doLogin(){
   show(true);
   document.getElementById('me').textContent='你好，'+ME;
   await loadToday();
+  loadWeek();
 }
 
 function logout(){
   TOKEN=''; localStorage.removeItem('tt_token');
   document.getElementById('items').innerHTML='';
   document.getElementById('result').innerHTML='';
+  document.getElementById('weekList').innerHTML='';
+  document.getElementById('weekList').classList.add('hidden');
+  document.getElementById('weekBtn').textContent='展开';
+  WEEK_LOADED=false;
   show(false);
 }
 
@@ -177,6 +189,45 @@ async function submit(){
   document.getElementById('submitBtn').classList.add('hidden');
 }
 
+// ---------- 最近一周错题 ----------
+let WEEK_LOADED = false;
+function toggleWeek(){
+  const box = document.getElementById('weekList');
+  const btn = document.getElementById('weekBtn');
+  const hidden = box.classList.toggle('hidden');
+  btn.textContent = hidden ? '展开' : '收起';
+  if(!hidden && !WEEK_LOADED) loadWeek();
+}
+async function loadWeek(){
+  const {status,j} = await call('/api/train/errors');
+  if(status===401){ logout(); return; }
+  WEEK_LOADED = true;
+  const items = (j&&j.items)||[];
+  const cutoff = Date.now() - 7*24*3600*1000;
+  const recent = items.filter(e=>{
+    if(e.createdAt) return e.createdAt >= cutoff;
+    if(e.wrongDate) return new Date(e.wrongDate.replace(/-/g,'/')).getTime() >= cutoff;
+    return false;
+  }).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  const box = document.getElementById('weekList');
+  if(!recent.length){ box.innerHTML = '<div style="color:#8a90a2;font-size:14px;padding:6px 0">最近一周还没有错题记录</div>'; return; }
+  box.innerHTML = recent.map((e,i)=>{
+    const imgs = ((e.images&&e.images.length)?e.images:(e.image?[e.image]:[])).map(u=>`<img class="qi" src="${API+u}">`).join('');
+    const ansImgs = (e.answerImages&&e.answerImages.length)?e.answerImages.map(u=>`<img class="qi" src="${API+u}">`).join(''):'';
+    const files = (e.files&&e.files.length)? e.files.map(f=>{
+      const fu=(typeof f==='string')?f:(f.url||''); const fn=(typeof f==='string')?'附件':(f.name||'附件');
+      return `<a class="filetag" href="${API+fu}" target="_blank" rel="noopener">📎 ${fn}</a>`;
+    }).join(' ') : '';
+    return `<div class="q">
+      <div class="qi">${i+1} · ${e.wrongDate||''} ${e.knowledgePoint?('<span style="color:#8a90a2">'+e.knowledgePoint+'</span>'):''}</div>
+      <div>${(e.stem||'')}${(!e.stem&&!imgs.length)?'（看图）':''}</div>${imgs}
+      ${files?('<div style="margin-top:6px">'+files+'</div>'):''}
+      <button class="sm ghost" onclick="const d=document.getElementById('wans_${i}'); d.classList.toggle('hidden'); this.textContent=d.classList.contains('hidden')?'看解析':'收起解析'">看解析</button>
+      <div id="wans_${i}" class="hidden"><div style="color:#5a6072;margin-top:4px">${e.analysis||'(无文字解析)'}</div>${ansImgs?('<div>'+ansImgs+'</div>'):''}</div>
+    </div>`;
+  }).join('');
+}
+
 // 启动时若有 token 尝试直接进入(后端会校验有效性)
 if(TOKEN){
   show(true);
@@ -185,6 +236,7 @@ if(TOKEN){
     const me = (j && j.items && j.items[0]) || null;
     document.getElementById('me').textContent = me ? ('你好，'+(me.name||me.username||'')) : '已登录';
     loadToday();
+    loadWeek();
   });
 }
 </script>

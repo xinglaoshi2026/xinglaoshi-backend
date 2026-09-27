@@ -86,24 +86,6 @@
               <button type="button" class="ghost sm" onclick="selAllStu(false)">清空</button>
             </div>
           </div>
-          <div><label>科目</label><input id="e-subject" value="物理"></div>
-        </div>
-        <div class="row">
-          <div><label>知识点</label><input id="e-kp" placeholder="如：牛顿第二定律"></div>
-          <div><label>错误原因</label><select id="e-reason">
-            <option value="概念不清">概念不清</option><option value="公式误用">公式误用</option>
-            <option value="计算失误">计算失误</option><option value="审题偏差">审题偏差</option>
-          </select></div>
-        </div>
-        <div class="row">
-          <div><label>来源</label><select id="e-source">
-            <option value="作业">作业</option><option value="测验">测验</option>
-            <option value="课堂">课堂</option><option value="新课">新课巩固</option>
-          </select></div>
-          <div><label>题型</label><select id="e-qtype">
-            <option value="选择">选择</option><option value="填空">填空</option>
-            <option value="解答">解答(主观)</option>
-          </select></div>
         </div>
         <label>题面（文字或直接 Ctrl+V 粘贴题目图片）</label>
         <textarea id="e-stem" rows="3" placeholder="题目文字，可直接粘贴截图/照片"></textarea>
@@ -348,11 +330,6 @@ function pickQb(id){
   const q = qbCache[id]; if(!q) return;
   document.getElementById('e-stem').value = stripHtml(q.content||'');
   document.getElementById('e-analysis').value = stripHtml(q.answer||'');
-  const name = qbKpName[q.kpId]||q.kpId||'';
-  if(name) document.getElementById('e-kp').value = name;
-  let qt='解答'; const t=(q.type||'');
-  if(t.includes('选择')) qt='选择'; else if(t.includes('填空')) qt='填空';
-  document.getElementById('e-qtype').value = qt;
   // 题目图(题面+答案)并入待保存图片
   const urls = [...new Set(extractMediaRel(q.content||'').concat(extractMediaRel(q.answer||'')))];
   urls.forEach(u=>{ if(!pickedImgs.includes(u)) pickedImgs.push(u); });
@@ -392,8 +369,7 @@ async function saveError(){
     files.push({name:f.name, url:fj.url.replace(API,'')});
   }
   const body = {
-    studentIds: ids, subject: qs('#e-subject'), knowledgePoint: qs('#e-kp'),
-    errorReason: qs('#e-reason'), source: qs('#e-source'), qtype: qs('#e-qtype'),
+    studentIds: ids,
     stem: qs('#e-stem'), analysis: qs('#e-analysis'),
     images: images, answerImages: answerImages, files: files, image: images[0]||''
   };
@@ -425,8 +401,8 @@ async function loadErrors(){
       <div class="row" style="align-items:center">
         <div>${img}</div>
         <div style="flex:3">
-          <div><b>${e.knowledgePoint||'(无知识点)'}</b> <span class="pill">${e.errorReason||''}</span> <span class="pill m">${e.source||''}</span>${files}${ans}</div>
-          <div style="color:#8a90a2;font-size:12px">${e.studentName||e.studentId} · ${e.qtype||''} · ${e.wrongDate||''}</div>
+          <div>${e.knowledgePoint?('<b>'+e.knowledgePoint+'</b> '):'<b>错题</b> '}${e.errorReason?('<span class="pill">'+e.errorReason+'</span> '):''}${e.source?('<span class="pill m">'+e.source+'</span>'):''}${files}${ans}</div>
+          <div style="color:#8a90a2;font-size:12px">${e.studentName||e.studentId} · ${e.wrongDate||''}</div>
           <div style="font-size:13px">${(e.stem||'').slice(0,80)}</div>
         </div>
         <div>
