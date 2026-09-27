@@ -33,6 +33,13 @@
   .hidden{display:none!important}
   .chk{display:inline-block;margin:4px 6px 4px 0;background:#f3f5fb;border:1px solid #e2e6f0;border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer}
   .chk input{width:auto;margin-right:6px}
+  .sm{width:auto;padding:8px 12px;font-size:13px;margin:4px 4px 0 0}
+  .thumbs{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+  .thumbs img{max-width:90px;max-height:90px;border-radius:6px;border:1px solid #eee}
+  .filetag{display:inline-block;background:#eef4ff;color:#3a56d4;border-radius:8px;padding:4px 8px;font-size:12px;margin:3px}
+  .qb{border:1px dashed #c7cdf0;border-radius:10px;padding:10px;margin-top:10px;background:#fafbff}
+  .qb-item{border:1px solid #e6e8ef;border-radius:10px;padding:10px;margin-top:8px;background:#fff}
+  .qb-item img{max-width:100%;border-radius:6px;margin-top:4px}
 </style>
 </head>
 <body>
@@ -94,8 +101,20 @@
           <div><label>标准答案（客观题填，用于自动判分）</label><input id="e-answer" placeholder="客观题答案"></div>
           <div><label>解析</label><input id="e-analysis" placeholder="标准解析"></div>
         </div>
-        <label>错题图片（拍照/截图）</label>
-        <input id="e-img" type="file" accept="image/*">
+        <label>错题图片（可多选，拍照/截图）</label>
+        <input id="e-imgs" type="file" accept="image/*" multiple>
+        <label>附件（任意文件：PDF / Word / 试卷等，可多选）</label>
+        <input id="e-files" type="file" multiple>
+        <button type="button" class="ghost" onclick="toggleQb()">📚 从题库选题目</button>
+        <div id="qb" class="qb hidden">
+          <div class="row">
+            <div><label>知识点</label><select id="qb-kp"><option value="">全部知识点</option></select></div>
+            <div><label>关键字（题面/标签/来源）</label><input id="qb-q" placeholder="如：牛二、动量"></div>
+          </div>
+          <button type="button" class="sm" onclick="searchQb()">搜索题库</button>
+          <div id="qb-list"></div>
+        </div>
+        <div id="picked-hint" class="ok hidden"></div>
         <button onclick="saveError()">保存错题</button>
         <div id="e-msg"></div>
       </div>
@@ -189,27 +208,118 @@ async function loadStudents(){
 function selAllStu(on){
   document.querySelectorAll('#e-student-box input').forEach(c=>c.checked=on);
 }
+
+// 题库选题意：缓存与状态
+let qbCache = {};        // id -> question body
+let qbKpName = {};       // kpId -> 名称(来自 knowledgePoints，若无则为空)
+let pickedImgs = [];     // 从题库选入的题目图片(相对 /api/media/... 路径)
+
+function toggleQb(){
+  const box = document.getElementById('qb');
+  box.classList.toggle('hidden');
+  if(!box.classList.contains('hidden') && !document.getElementById('qb-kp').options.length){ loadQbKp(); }
+}
+async function loadQbKp(){
+  // knowledgePoints 主数据(可能有名称)
+  const {j:kp} = await call('/api/knowledgePoints');
+  (kp?kp.items:[]).forEach(x=>{ const b=x.body||{}; if(b.name) qbKpName[x.id]=b.name; });
+  // 从题目里收集不同的 kpId 构建下拉
+  const {j} = await call('/api/questions?limit=200');
+  const set = {};
+  (j?j.items:[]).forEach(x=>{ const id=(x.body&&x.body.kpId); if(id) set[id]=1; });
+  const sel = document.getElementById('qb-kp');
+  Object.keys(set).forEach(id=>{
+    const name = qbKpName[id]||id;
+    sel.insertAdjacentHTML('beforeend', `<option value="${id}">${name}</option>`);
+  });
+}
+async function searchQb(){
+  const kp = document.getElementById('qb-kp').value;
+  const kw = document.getElementById('qb-q').value.trim();
+  let url = '/api/questions?limit=200';
+  if(kp) url += '&kpId='+encodeURIComponent(kp);
+  if(kw) url += '&q='+encodeURIComponent(kw);
+  const {j} = await call(url);
+  const box = document.getElementById('qb-list'); box.innerHTML='';
+  const items = (j?j.items:[]) || [];
+  if(!items.length){ box.innerHTML='<p class="err">题库里没有匹配的题目</p>'; return; }
+  items.forEach(x=>{
+    const b = x.body||{}; qbCache[x.id]=b;
+    const preview = (b.content||'').replace(/media:\/\//g, API+'/api/media/');
+    const name = qbKpName[b.kpId]||b.kpId||'';
+    box.insertAdjacentHTML('beforeend', `<div class="qb-item">
+      ${preview}
+      <div style="font-size:12px;color:#8a90a2;margin-top:4px">${b.grade||''} · ${b.type||''} · ${b.difficulty||''} · ${b.tags||''} · 知识点:${name}</div>
+      <button type="button" class="sm" onclick="pickQb('${x.id}')">选入此题</button>
+    </div>`);
+  });
+}
+function stripHtml(h){ const d=document.createElement('div'); d.innerHTML=h||''; return (d.textContent||'').trim(); }
+function extractMediaRel(h){
+  // 把题目的 media:// 图片提取成相对 /api/media/... 路径(供学生端 API+ 拼接)
+  const out=[];
+  const re=/media:\/\/([^"'\s>]+)/g; let m;
+  while((m=re.exec(h||''))){ out.push('/api/media/'+m[1]); }
+  return out;
+}
+function pickQb(id){
+  const q = qbCache[id]; if(!q) return;
+  document.getElementById('e-stem').value = stripHtml(q.content||'');
+  document.getElementById('e-answer').value = stripHtml(q.answer||'');
+  const name = qbKpName[q.kpId]||q.kpId||'';
+  if(name) document.getElementById('e-kp').value = name;
+  let qt='解答'; const t=(q.type||'');
+  if(t.includes('选择')) qt='选择'; else if(t.includes('填空')) qt='填空';
+  document.getElementById('e-qtype').value = qt;
+  // 题目图(题面+答案)并入待保存图片
+  const urls = [...new Set(extractMediaRel(q.content||'').concat(extractMediaRel(q.answer||'')))];
+  urls.forEach(u=>{ if(!pickedImgs.includes(u)) pickedImgs.push(u); });
+  updatePickedHint();
+  document.getElementById('qb').classList.add('hidden');
+  const msg = document.getElementById('e-msg');
+  msg.textContent = '已从题库选入（'+ (q.type||'题') +'，含'+urls.length+'张图）'; msg.className='ok';
+}
+function updatePickedHint(){
+  const el = document.getElementById('picked-hint');
+  if(pickedImgs.length){ el.classList.remove('hidden'); el.textContent='题库带入图片：'+pickedImgs.length+' 张（保存时一并存入错题）'; }
+  else el.classList.add('hidden');
+}
+async function uploadMedia(file, sub){
+  const fr = await fetch(API+'/api/media?sub='+encodeURIComponent(sub)+'&name='+encodeURIComponent(file.name),{
+    method:'POST', headers:{'Authorization':'Bearer '+TOKEN}, body:file
+  });
+  return await fr.json();
+}
 async function saveError(){
   const msg = document.getElementById('e-msg'); msg.textContent='';
   const ids = [...document.querySelectorAll('#e-student-box input:checked')].map(c=>c.value);
   if(!ids.length){ msg.textContent='请至少选择一个学生'; msg.className='err'; return; }
+  const images = pickedImgs.slice();   // 相对 /api/media/... 路径
+  const files = [];
+  // 上传多张图片
+  for(const f of document.getElementById('e-imgs').files){
+    const fj = await uploadMedia(f, 'trainErrors');
+    if(!fj.ok){ msg.textContent='图片上传失败：'+(fj.error||''); msg.className='err'; return; }
+    images.push(fj.url.replace(API,''));
+  }
+  // 上传任意附件
+  for(const f of document.getElementById('e-files').files){
+    const fj = await uploadMedia(f, 'trainErrors');
+    if(!fj.ok){ msg.textContent='附件上传失败：'+(fj.error||''); msg.className='err'; return; }
+    files.push({name:f.name, url:fj.url.replace(API,'')});
+  }
   const body = {
     studentIds: ids, subject: qs('#e-subject'), knowledgePoint: qs('#e-kp'),
     errorReason: qs('#e-reason'), source: qs('#e-source'), qtype: qs('#e-qtype'),
-    stem: qs('#e-stem'), answer: qs('#e-answer'), analysis: qs('#e-analysis')
+    stem: qs('#e-stem'), answer: qs('#e-answer'), analysis: qs('#e-analysis'),
+    images: images, files: files, image: images[0]||''
   };
-  // 先上传图片(若有)，一次即可复用到所有被选中的学生
-  const f = document.getElementById('e-img').files[0];
-  if(f){
-    const fr = await fetch(API+'/api/media?sub='+encodeURIComponent('trainErrors')+'&name='+encodeURIComponent(f.name),{method:'POST',body:f});
-    const fj = await fr.json();
-    if(!fj.ok){ msg.textContent='图片上传失败：'+(fj.error||''); msg.className='err'; return; }
-    body.image = fj.url.replace(API,'');
-  }
   const {status,j} = await call('/api/train/errors',{method:'POST',json:body});
   if(status!==200){ msg.textContent=(j&&j.error)||'保存失败'; msg.className='err'; return; }
   msg.textContent='已保存 '+ (j.count||ids.length) +' 条错题 ✓'; msg.className='ok';
-  document.getElementById('e-stem').value=''; document.getElementById('e-answer').value=''; document.getElementById('e-analysis').value=''; document.getElementById('e-img').value='';
+  document.getElementById('e-stem').value=''; document.getElementById('e-answer').value=''; document.getElementById('e-analysis').value='';
+  document.getElementById('e-imgs').value=''; document.getElementById('e-files').value='';
+  pickedImgs=[]; updatePickedHint();
   document.querySelectorAll('#e-student-box input:checked').forEach(c=>c.checked=false);
   loadErrors();
 }
@@ -218,12 +328,14 @@ async function loadErrors(){
   const {j} = await call('/api/train/errors'+(sid?'?studentId='+encodeURIComponent(sid):''));
   const box = document.getElementById('err-list'); box.innerHTML='';
   (j?j.items:[]).forEach(e=>{
-    const img = e.image? `<img class="thumb" src="${API+e.image}">`:'';
+    const imgs = (e.images&&e.images.length)?e.images:(e.image?[e.image]:[]);
+    const img = imgs.length? `<img class="thumb" src="${API+imgs[0]}">`+(imgs.length>1?` <span class="pill">+${imgs.length-1}图</span>`:''):'';
+    const files = (e.files&&e.files.length)?(' <span class="pill m">'+e.files.length+'附件</span>'):'';
     box.insertAdjacentHTML('beforeend',`<div class="card" style="margin:8px 0">
       <div class="row" style="align-items:center">
         <div>${img}</div>
         <div style="flex:3">
-          <div><b>${e.knowledgePoint||'(无知识点)'}</b> <span class="pill">${e.errorReason||''}</span> <span class="pill m">${e.source||''}</span></div>
+          <div><b>${e.knowledgePoint||'(无知识点)'}</b> <span class="pill">${e.errorReason||''}</span> <span class="pill m">${e.source||''}</span>${files}</div>
           <div style="color:#8a90a2;font-size:12px">${e.studentName||e.studentId} · ${e.qtype||''} · ${e.wrongDate||''}</div>
           <div style="font-size:13px">${(e.stem||'').slice(0,80)}</div>
         </div>

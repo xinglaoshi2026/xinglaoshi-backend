@@ -105,7 +105,12 @@ async function loadToday(){
   head.innerHTML='<b>'+task.date+' 练习</b> · 共'+j.items.length+'题'+(task.status==='done'||task.status==='partial'?' · 已完成 ✓':' · 待完成');
   const box=document.getElementById('items'); box.innerHTML='';
   j.items.forEach((e,idx)=>{
-    const img=e.image?`<img class="qi" src="${API+e.image}">`:'';
+    const imgs = (e.images&&e.images.length)?e.images:(e.image?[e.image]:[]);
+    const imgHtml = imgs.map(u=>`<img class="qi" src="${API+u}">`).join('');
+    const files = (e.files&&e.files.length)? e.files.map(f=>{
+      const fu = (typeof f==='string')?f:(f.url||''); const fn=(typeof f==='string')?'附件':(f.name||'附件');
+      return `<a class="filetag" href="${API+fu}" target="_blank" rel="noopener">📎 ${fn}</a>`;
+    }).join(' ') : '';
     let answerUI='';
     const qans=(e.answer||'').trim();
     const subj = e.qtype==='解答' || !qans;
@@ -123,7 +128,8 @@ async function loadToday(){
     }
     box.insertAdjacentHTML('beforeend',`<div class="q" data-idx="${idx}" data-eid="${e.id}" data-subj="${subj?1:0}">
       <div class="qi">第${idx+1}题 · ${e.knowledgePoint||''} <span style="color:#8a90a2">${e.errorReason||''}</span></div>
-      <div>${(e.stem||'(看图)')}</div>${img}
+      <div>${(e.stem||(imgs.length?'':'（看图）'))}</div>${imgHtml}
+      ${files?('<div style="margin-top:6px">'+files+'</div>'):''}
       ${answerUI}
       <div id="fb_${idx}"></div>
     </div>`);
