@@ -469,26 +469,43 @@ async function delErr(id){
   await call('/api/train/errors/'+id,{method:'DELETE'}); loadErrors();
 }
 async function loadStuMgmt(){
-  const [{j:stus},{j:acc}] = await Promise.all([
+  const [{j:stus},{j:acc},{j:errs}] = await Promise.all([
     call('/api/train/students'),
-    call('/api/train/student/accounts')
+    call('/api/train/student/accounts'),
+    call('/api/train/errors')
   ]);
   const accMap = {};
   (acc?acc.items:[]).forEach(a=>accMap[a.studentId]=a.username);
+  // 统计每位学生的错题数（一道错题可能发给多名学生，逐一累加）
+  const errCount = {};
+  (errs?errs.items:[]).forEach(e=>{
+    (e.studentIds||[]).forEach(id=>{ errCount[id]=(errCount[id]||0)+1; });
+  });
   const box = document.getElementById('stu-mgmt'); box.innerHTML='';
   (stus?stus.items:[]).forEach(s=>{
     const name = s.name||s.username||s.id;
     const has = accMap[s.id];
+    const cnt = errCount[s.id]||0;
     box.insertAdjacentHTML('beforeend',`<div class="card" style="margin:8px 0">
       <div class="row" style="align-items:center">
-        <div style="flex:2"><b>${name}</b><br><span style="font-size:12px;color:${has?'#2e9e5b':'#8a90a2'}">${has?('已设账号: '+has):'未设账号'}</span></div>
+        <div style="flex:2"><b>${name}</b><br><span style="font-size:12px;color:${has?'#2e9e5b':'#8a90a2'}">${has?('已设账号: '+has):'未设账号'}</span><br><span class="pill m">错题 ${cnt} 道</span></div>
         <div style="flex:3">
           <input id="su_${s.id}" placeholder="账号" value="${has||''}">
           <input id="sp_${s.id}" type="password" placeholder="${has?'留空=不修改密码':'密码'}">
         </div>
-        <div><button onclick="setStu('${s.id}','${name.replace(/'/g,"\\'")}')">保存</button></div>
+        <div>
+          <button onclick="setStu('${s.id}','${name.replace(/'/g,"\\'")}')">保存</button>
+          <button type="button" class="ghost" onclick="viewStuErrors('${s.id}')">查看错题</button>
+        </div>
       </div></div>`);
   });
+}
+// 在「错题录入」标签里按学生筛选并展示该生错题
+async function viewStuErrors(sid){
+  switchTab('errors');
+  const sel = document.getElementById('f-student');
+  if(sel){ sel.value = sid; }
+  await loadErrors();
 }
 async function setStu(sid,name){
   const username = document.getElementById('su_'+sid).value.trim();
