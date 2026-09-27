@@ -31,6 +31,8 @@
   .stat b{font-size:22px;display:block}
   img.thumb{max-width:80px;max-height:80px;border-radius:6px;border:1px solid #eee}
   .hidden{display:none!important}
+  .chk{display:inline-block;margin:4px 6px 4px 0;background:#f3f5fb;border:1px solid #e2e6f0;border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer}
+  .chk input{width:auto;margin-right:6px}
 </style>
 </head>
 <body>
@@ -60,7 +62,14 @@
       <div class="card">
         <h3>录入一道错题</h3>
         <div class="row">
-          <div><label>学生</label><select id="e-student"></select></div>
+          <div style="flex-basis:100%">
+            <label>学生（可多选，错题会发给每一位被选中的学生）</label>
+            <div id="e-student-box" style="margin-top:4px"></div>
+            <div style="margin-top:6px">
+              <button type="button" class="ghost sm" onclick="selAllStu(true)">全选</button>
+              <button type="button" class="ghost sm" onclick="selAllStu(false)">清空</button>
+            </div>
+          </div>
           <div><label>科目</label><input id="e-subject" value="物理"></div>
         </div>
         <div class="row">
@@ -168,36 +177,40 @@ function switchTab(t){
 }
 async function loadStudents(){
   const {j} = await call('/api/train/students');
-  const sel = document.getElementById('e-student');
+  const box = document.getElementById('e-student-box');
   const fsel = document.getElementById('f-student');
   (j?j.items:[]).forEach(s=>{
     const name = s.name||s.username||s.id;
-    sel.insertAdjacentHTML('beforeend',`<option value="${s.id}">${name}</option>`);
+    box.insertAdjacentHTML('beforeend',`<label class="chk"><input type="checkbox" value="${s.id}"> ${name}</label>`);
     fsel.insertAdjacentHTML('beforeend',`<option value="${s.id}">${name}</option>`);
   });
   loadErrors();
 }
+function selAllStu(on){
+  document.querySelectorAll('#e-student-box input').forEach(c=>c.checked=on);
+}
 async function saveError(){
   const msg = document.getElementById('e-msg'); msg.textContent='';
+  const ids = [...document.querySelectorAll('#e-student-box input:checked')].map(c=>c.value);
+  if(!ids.length){ msg.textContent='请至少选择一个学生'; msg.className='err'; return; }
   const body = {
-    studentId: qs('#e-student'), subject: qs('#e-subject'), knowledgePoint: qs('#e-kp'),
+    studentIds: ids, subject: qs('#e-subject'), knowledgePoint: qs('#e-kp'),
     errorReason: qs('#e-reason'), source: qs('#e-source'), qtype: qs('#e-qtype'),
-    stem: qs('#e-stem'), answer: qs('#e-answer'), analysis: qs('#e-analysis'),
-    studentName: document.querySelector('#e-student option:checked').textContent
+    stem: qs('#e-stem'), answer: qs('#e-answer'), analysis: qs('#e-analysis')
   };
-  if(!body.studentId){ msg.textContent='请先选择学生'; msg.className='err'; return; }
-  const {status,j} = await call('/api/train/errors',{method:'POST',json:body});
-  if(status!==200){ msg.textContent=(j&&j.error)||'保存失败'; msg.className='err'; return; }
-  // 上传图片（若有）
+  // 先上传图片(若有)，一次即可复用到所有被选中的学生
   const f = document.getElementById('e-img').files[0];
   if(f){
-    const sub = 'trainErrors/'+j.id;
-    const fr = await fetch(API+'/api/media?sub='+encodeURIComponent(sub)+'&name='+encodeURIComponent(f.name),{method:'POST',body:f});
+    const fr = await fetch(API+'/api/media?sub='+encodeURIComponent('trainErrors')+'&name='+encodeURIComponent(f.name),{method:'POST',body:f});
     const fj = await fr.json();
-    if(fj.ok){ await call('/api/train/errors',{method:'POST',json:{id:j.id, image: fj.url.replace(API,'')}}); }
+    if(!fj.ok){ msg.textContent='图片上传失败：'+(fj.error||''); msg.className='err'; return; }
+    body.image = fj.url.replace(API,'');
   }
-  msg.textContent='已保存错题 ✓'; msg.className='ok';
+  const {status,j} = await call('/api/train/errors',{method:'POST',json:body});
+  if(status!==200){ msg.textContent=(j&&j.error)||'保存失败'; msg.className='err'; return; }
+  msg.textContent='已保存 '+ (j.count||ids.length) +' 条错题 ✓'; msg.className='ok';
   document.getElementById('e-stem').value=''; document.getElementById('e-answer').value=''; document.getElementById('e-analysis').value=''; document.getElementById('e-img').value='';
+  document.querySelectorAll('#e-student-box input:checked').forEach(c=>c.checked=false);
   loadErrors();
 }
 async function loadErrors(){

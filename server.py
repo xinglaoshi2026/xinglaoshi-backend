@@ -1193,15 +1193,32 @@ class H(BaseHTTPRequestHandler):
             body, err = read_body(self)
             if err:
                 return send_json(self, {"error": err}, 400)
-            eid = body.get("id") or ("te_" + uuid.uuid4().hex[:12])
-            body["id"] = eid
-            body["createdAt"] = now_ms()
-            if not body.get("wrongDate"):
-                body["wrongDate"] = _date_today()
-            store_put("trainErrors", eid, body)
-            # 自动建卡
-            train_ensure_card(body.get("studentId"), eid, first_seen=body["wrongDate"])
-            return send_json(self, {"ok": True, "id": eid})
+            # 支持批量：studentIds 列表 -> 给每个学生各建一条错题+一张卡
+            sids = body.get("studentIds")
+            if not sids:
+                sid = body.get("studentId")
+                sids = [sid] if sid else []
+            if not sids:
+                return send_json(self, {"error": "请至少选择一个学生"}, 400)
+            shared = {k: v for k, v in body.items()
+                      if k not in ("studentId", "studentIds", "id", "createdAt")}
+            if not shared.get("wrongDate"):
+                shared["wrongDate"] = _date_today()
+            ids = []
+            for sid in sids:
+                eid = body.get("id") or ("te_" + uuid.uuid4().hex[:12])
+                rec = dict(shared)
+                rec["id"] = eid
+                rec["studentId"] = sid
+                if not rec.get("studentName"):
+                    s, _ = store_get("students", sid)
+                    rec["studentName"] = (s.get("name") if s else sid)
+                rec["createdAt"] = now_ms()
+                store_put("trainErrors", eid, rec)
+                train_ensure_card(sid, eid, first_seen=rec["wrongDate"])  # 自动建卡
+                ids.append(eid)
+            return send_json(self, {"ok": True, "ids": ids,
+                                    "count": len(ids)})
         if p.startswith("/api/train/errors/"):
             eid = p[len("/api/train/errors/"):]
             store_delete("trainErrors", eid)
