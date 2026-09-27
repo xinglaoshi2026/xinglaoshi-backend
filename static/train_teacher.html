@@ -198,8 +198,10 @@ async function loadStudents(){
   const {j} = await call('/api/train/students');
   const box = document.getElementById('e-student-box');
   const fsel = document.getElementById('f-student');
+  window._STU_MAP = window._STU_MAP||{};
   (j?j.items:[]).forEach(s=>{
     const name = s.name||s.username||s.id;
+    window._STU_MAP[s.id]=name;
     box.insertAdjacentHTML('beforeend',`<label class="chk"><input type="checkbox" value="${s.id}"> ${name}</label>`);
     fsel.insertAdjacentHTML('beforeend',`<option value="${s.id}">${name}</option>`);
   });
@@ -452,15 +454,34 @@ async function showPractices(eid){
   let h = '<div class="modal-box"><div style="display:flex;justify-content:space-between;align-items:center"><b>练习记录（共 '+logs.length+' 次）</b><button class="ghost sm" onclick="closeModal()">关闭</button></div>';
   if(!logs.length) h += '<p style="color:#8a90a2">还没有学生练习过这道题。</p>';
   else {
-    h += '<table><tr><th>日期</th><th>结果</th></tr>';
+    h += '<table><tr><th>日期</th><th>学生</th><th>结果</th><th>错误原因</th><th>过程</th></tr>';
     logs.slice().reverse().forEach(l=>{
       const r = l.result==='right'||l.result==='self_right'?'✓ 做对':l.result==='half'?'半对':'✗ 做错';
-      h += '<tr><td>'+(l.date||'')+'</td><td>'+r+'</td></tr>';
+      const nm = stuName(l.studentId);
+      const imgs = (l.draftImages&&l.draftImages.length)?l.draftImages:[];
+      const ph = imgs.length?('<button class="ghost sm" onclick="zoomDrafts('+JSON.stringify(JSON.stringify(imgs))+')">看过程</button>'):'';
+      h += '<tr><td>'+(l.date||'')+'</td><td>'+nm+'</td><td>'+r+'</td><td>'+(l.errorNote||'')+'</td><td>'+ph+'</td></tr>';
     });
     h += '</table>';
   }
   h += '</div>';
   showModalHtml(h);
+}
+function stuName(sid){ return (window._STU_MAP&&window._STU_MAP[sid])||sid||''; }
+function zoomDrafts(urlsJson){
+  const urls = JSON.parse(urlsJson);
+  let i = 0;
+  let box = document.getElementById('modal-box2');
+  if(!box){ box=document.createElement('div'); box.id='modal-box2';
+    box.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;z-index:120;cursor:zoom-out';
+    box.onclick=function(){ box.style.display='none'; };
+    document.body.appendChild(box); }
+  const draw=()=>{ box.innerHTML='<div style="text-align:center"><img src="'+API+urls[i]+'" style="max-width:92%;max-height:80%;border-radius:10px">'+
+    '<div style="color:#fff;margin-top:8px">'+(i+1)+'/'+urls.length+' <button class="ghost sm" onclick="event.stopPropagation();zprev()">上一张</button> '+
+    '<button class="ghost sm" onclick="event.stopPropagation();znext()">下一张</button></div></div>'; };
+  window.zprev=()=>{ i=(i-1+urls.length)%urls.length; draw(); };
+  window.znext=()=>{ i=(i+1)%urls.length; draw(); };
+  draw(); box.style.display='flex';
 }
 function showModalHtml(html){
   let mask = document.getElementById('modal-mask');

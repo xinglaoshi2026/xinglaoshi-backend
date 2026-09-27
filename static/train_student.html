@@ -15,7 +15,14 @@
   button{background:#4361ee;color:#fff;border:0;padding:12px 16px;border-radius:10px;font-size:16px;width:100%;margin-top:10px;cursor:pointer}
   button.ghost{background:#eef4ff;color:#3a56d4}
   button.sm{width:auto;padding:8px 12px;font-size:14px;margin:4px 4px 0 0}
-  .q{margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid #eee}
+  .q,.wq{margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid #eee}
+  .filetag{display:inline-block;background:#eef4ff;color:#3a56d4;border-radius:6px;padding:4px 8px;font-size:13px;margin:4px 6px 0 0;text-decoration:none}
+  .rv{background:#f8f9ff;border:1px solid #dfe3f5;border-radius:10px;padding:10px;margin-top:8px}
+  .pv,.tbs{display:flex;flex-wrap:wrap;gap:2px;margin-top:4px}
+  .tw{position:relative;display:inline-block;margin:4px 4px 0 0}
+  .tw img{width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid #e3e6f0;display:block}
+  .tw .x{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:#e5484d;color:#fff;border:0;font-size:12px;line-height:20px;padding:0;margin:0;cursor:pointer}
+  .done-tag{color:#2e9e5b;font-size:14px;margin-top:6px}
   .qi{color:#8a90a2;font-size:12px;margin-bottom:4px}
   img.qi{width:100%;border-radius:8px;margin-top:6px}
   .ans{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
@@ -115,7 +122,7 @@ async function loadToday(){
   if(!task){ head.innerHTML='<b>今天还没有给你的练习包</b><br><span style="color:#8a90a2">让老师先点"生成今日任务"哦</span>'; document.getElementById('submitBtn').classList.add('hidden'); return; }
   document.getElementById('submitBtn').classList.remove('hidden');
   head.innerHTML='<b>'+task.date+' 练习</b> · 共'+j.items.length+'题'+(task.status==='done'||task.status==='partial'?' · 已完成 ✓':' · 待完成');
-  const box=document.getElementById('items'); box.innerHTML='';
+  const box=document.getElementById('items'); box.innerHTML=''; ST={};
   j.items.forEach((e,idx)=>{
     const imgs = (e.images&&e.images.length)?e.images:(e.image?[e.image]:[]);
     const imgHtml = imgs.map(u=>`<img class="qi" style="cursor:zoom-in" src="${API+u}" onclick="zoomImg('${API+u}')">`).join('');
@@ -123,32 +130,87 @@ async function loadToday(){
       const fu = (typeof f==='string')?f:(f.url||''); const fn=(typeof f==='string')?'附件':(f.name||'附件');
       return `<a class="filetag" href="${API+fu}" target="_blank" rel="noopener">📎 ${fn}</a>`;
     }).join(' ') : '';
-    let answerUI='';
-    const qans=(e.answer||'').trim();
-    const subj = e.qtype==='解答' || !qans;
-    if(!subj){
-      answerUI=`<label>你的答案</label><input id="ans_${idx}" placeholder="填写答案">`;
-    }else{
-      answerUI=`<label>做完后点「对答案」自评</label>
-        <div class="ans">
-          <button class="sm right" onclick="setSelf(${idx},'self_right')">做对了</button>
-          <button class="sm self" onclick="setSelf(${idx},'half')">半对</button>
-          <button class="sm wrong" onclick="setSelf(${idx},'self_wrong')">做错了</button>
-        </div>
-        <label>草稿拍照（建议上传，老师可抽查）</label>
-        <input id="draft_${idx}" type="file" accept="image/*">`;
-    }
-    box.insertAdjacentHTML('beforeend',`<div class="q" data-idx="${idx}" data-eid="${e.id}" data-subj="${subj?1:0}">
+    box.insertAdjacentHTML('beforeend',`<div class="q" id="q_${idx}" data-idx="${idx}" data-eid="${e.id}">
       <div class="qi">第${idx+1}题 · ${e.knowledgePoint||''} <span style="color:#8a90a2">${e.errorReason||''}</span></div>
       <div>${(e.stem||(imgs.length?'':'（看图）'))}</div>${imgHtml}
       ${files?('<div style="margin-top:6px">'+files+'</div>'):''}
-      ${answerUI}
+      <label>第1步 · 拍照上传我的计算过程（必传）</label>
+      <div class="pv" id="pv_${idx}"></div>
+      <input id="ph_${idx}" type="file" accept="image/*" multiple onchange="addPhotos(${idx},this)">
+      <button class="sm ghost" id="rvbtn_${idx}" onclick="reveal(${idx})">第2步 · 提交并看答案</button>
+      <div id="rv_${idx}" class="rv hidden"></div>
       <div id="fb_${idx}"></div>
     </div>`);
   });
 }
-const SELF={};
-function setSelf(idx,val){ SELF[idx]=val; document.getElementById('fb_'+idx).innerHTML='已记录：'+(val==='self_right'?'做对了 ✓':val==='half'?'半对':'做错了 ✗'); }
+// 每题状态: photos[File] urls[已上传] result note
+let ST={};
+function addPhotos(idx,inp){
+  ST[idx]=ST[idx]||{photos:[],urls:[],result:'',note:''};
+  [...inp.files].forEach(f=>ST[idx].photos.push(f));
+  inp.value='';
+  renderPhotos(idx);
+}
+function renderPhotos(idx){
+  const st=ST[idx]||{photos:[]};
+  document.getElementById('pv_'+idx).innerHTML = st.photos.map((f,i)=>
+    `<span class="tw"><img src="${URL.createObjectURL(f)}"><button class="x" onclick="delPhoto(${idx},${i})">×</button></span>`).join('');
+}
+function delPhoto(idx,i){
+  if(ST[idx].urls.length){ alert('已提交过程照片，不能删除'); return; }
+  ST[idx].photos.splice(i,1); renderPhotos(idx);
+}
+
+// 第2步: 上传过程照片 → 拉取答案/解析 → 显示自评+错误原因
+async function reveal(idx){
+  const st=ST[idx]=ST[idx]||{photos:[],urls:[],result:'',note:''};
+  if(!st.photos.length && !st.urls.length){ alert('请先拍照上传计算过程，再提交看答案'); return; }
+  const eid=document.getElementById('q_'+idx).dataset.eid;
+  const btn=document.getElementById('rvbtn_'+idx);
+  btn.disabled=true; btn.textContent='上传中…';
+  try{
+    for(const f of st.photos){
+      const fr=await fetch(API+'/api/train/media?sub=drafts&name='+encodeURIComponent(f.name),
+        {method:'POST',headers:{'Authorization':'Bearer '+TOKEN},body:f});
+      const fj=await fr.json();
+      if(fj.ok) st.urls.push(fj.url.replace(API,''));
+    }
+  }catch(err){ btn.disabled=false; btn.textContent='第2步 · 提交并看答案'; alert('上传失败，请重试'); return; }
+  const {status,j}=await call('/api/train/errors/'+eid+'/reveal');
+  if(status===401){ logout(); return; }
+  if(!j||j.error){ btn.disabled=false; btn.textContent='第2步 · 提交并看答案'; alert((j&&j.error)||'获取答案失败'); return; }
+  btn.textContent='已提交 ✓ 答案见下';
+  const ansImgs=(j.answerImages&&j.answerImages.length)?j.answerImages.map(u=>`<img class="qi" style="cursor:zoom-in" src="${API+u}" onclick="zoomImg('${API+u}')">`).join(''):'';
+  document.getElementById('rv_'+idx).innerHTML=`
+    ${j.answer?('<div><b>答案：</b>'+j.answer+'</div>'):''}
+    <div style="color:#5a6072;margin-top:4px"><b>解析：</b>${j.analysis||'(无文字解析)'}</div>
+    ${ansImgs?('<div class="tbs" style="display:block">'+ansImgs+'</div>'):''}
+    <label style="margin-top:8px">第3步 · 自评</label>
+    <div class="ans">
+      <button class="sm right" onclick="setSelf(${idx},'self_right')">做对了</button>
+      <button class="sm self" onclick="setSelf(${idx},'half')">半对</button>
+      <button class="sm wrong" onclick="setSelf(${idx},'self_wrong')">做错了</button>
+    </div>
+    <label>第4步 · 错误原因（必填，不填无法提交）</label>
+    <textarea class="note" id="note_${idx}" placeholder="如：公式记错了 / 计算粗心 / 题目没读懂…" oninput="setNote(${idx},this.value)"></textarea>`;
+  document.getElementById('rv_'+idx).classList.remove('hidden');
+}
+function setSelf(idx,val){
+  ST[idx].result=val;
+  setFb(idx);
+}
+function setNote(idx,v){ ST[idx].note=v; setFb(idx); }
+function setFb(idx){
+  const st=ST[idx]; const el=document.getElementById('fb_'+idx);
+  if(!el) return;
+  if(st.result && (st.note||'').trim()){
+    el.innerHTML='<div class="done-tag">✓ 本题已记录（'+(st.result==='self_right'?'做对了':st.result==='half'?'半对':'做错了')+'）</div>';
+  }else if(st.result){
+    el.innerHTML='<div style="color:#c77700;font-size:13px;margin-top:4px">已选自评，还需填写错误原因</div>';
+  }else{
+    el.innerHTML='';
+  }
+}
 
 // 点击放大图片
 function zoomImg(url){
@@ -162,36 +224,29 @@ function zoomImg(url){
 }
 
 async function submit(){
+  const qs=[...document.querySelectorAll('#items .q')];
+  if(!qs.length) return;
   const answers=[];
-  document.querySelectorAll('.q').forEach(q=>{
-    const idx=q.dataset.idx, eid=q.dataset.eid, subj=q.dataset.subj==='1';
-    let obj={errorId:eid};
-    if(subj){
-      obj.result=SELF[idx]||'self_right';
-    }else{
-      obj.submittedAnswer=document.getElementById('ans_'+idx).value;
-    }
-    answers.push(obj);
-  });
-  // 草稿上传(若有)并回填 draftImage
-  for(let i=0;i<answers.length;i++){
-    const q=document.querySelector('.q[data-idx="'+i+'"]');
-    const draft=q.querySelector('input[type=file]');
-    if(draft && draft.files[0]){
-      const fd=new FormData();
-      fd.append('file', draft.files[0]);
-      const fr=await fetch(API+'/api/train/media?sub=drafts&name='+encodeURIComponent(draft.files[0].name),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN},body:draft.files[0]});
-      const fj=await fr.json();
-      if(fj.ok) answers[i].draftImage=fj.url.replace(API,'');
-    }
+  for(const q of qs){
+    const idx=q.dataset.idx, eid=q.dataset.eid;
+    const st=ST[idx]||{photos:[],urls:[],result:'',note:''};
+    if(!st.urls.length){ alert('第'+(idx+1)+'题还没上传计算过程，请先完成第1、2步'); return; }
+    if(!st.result){ alert('第'+(idx+1)+'题还没自评对错，请完成第3步'); return; }
+    if(!(st.note||'').trim()){ alert('第'+(idx+1)+'题还没写错误原因，请完成第4步'); return; }
+    answers.push({errorId:eid, result:st.result,
+                  draftImage:st.urls[0]||'', draftImages:st.urls,
+                  errorNote:st.note.trim()});
   }
+  const btn=document.getElementById('submitBtn');
+  btn.disabled=true; btn.textContent='提交中…';
   const {status,j}=await call('/api/train/submit',{method:'POST',body:JSON.stringify({answers})});
+  btn.disabled=false; btn.textContent='提交今日练习';
   if(status===401){ logout(); return; }
   if(!j||!j.ok){ document.getElementById('result').textContent=(j&&j.error)||'提交失败'; return; }
-  let h='<div class="score">本次正确率 '+(j.total?((j.right/j.total)*100).toFixed(0):0)+'% （'+j.right+'/'+j.total+'）</div>';
+  let h='<div class="score">本次自评：'+j.right+'/'+j.total+' 题做对</div>';
   (j.results||[]).forEach((r,i)=>{
     const ok=r.result==='right'||r.result==='self_right';
-    const ansImgs=(r.answerImages&&r.answerImages.length)?r.answerImages.map(u=>`<img class="qi" src="${API+u}">`).join(''):'';
+    const ansImgs=(r.answerImages&&r.answerImages.length)?r.answerImages.map(u=>`<img class="qi" style="cursor:zoom-in" src="${API+u}" onclick="zoomImg('${API+u}')">`).join(''):'';
     h+=`<div class="card"><div class="qi">第${i+1}题 · <b>${ok?'✓ 对':'✗ 错'}</b></div>
       <div style="color:#5a6072">解析：${r.analysis||'(无)'}</div>${ansImgs?('<div style="margin-top:4px">'+ansImgs+'</div>'):''}</div>`;
   });
@@ -229,7 +284,7 @@ async function loadWeek(){
       const fu=(typeof f==='string')?f:(f.url||''); const fn=(typeof f==='string')?'附件':(f.name||'附件');
       return `<a class="filetag" href="${API+fu}" target="_blank" rel="noopener">📎 ${fn}</a>`;
     }).join(' ') : '';
-    return `<div class="q">
+    return `<div class="wq">
       <div class="qi">${i+1} · ${e.wrongDate||''} ${e.knowledgePoint?('<span style="color:#8a90a2">'+e.knowledgePoint+'</span>'):''}</div>
       <div>${(e.stem||'')}${(!e.stem&&!imgs.length)?'（看图）':''}</div>${imgs}
       ${files?('<div style="margin-top:6px">'+files+'</div>'):''}

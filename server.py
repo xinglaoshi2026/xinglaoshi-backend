@@ -647,7 +647,9 @@ def train_student_today(student_id, date_str=None):
         e, _ = store_get("trainErrors", eid)
         if not e:
             continue
-        items.append(e)
+        # 学生端不下发答案/解析/答案图(答案在上传计算过程后通过 /reveal 获取)
+        pub = {k: v for k, v in e.items() if k not in ("answer", "analysis", "answerImages")}
+        items.append(pub)
     return {"task": task, "items": items}
 
 
@@ -685,6 +687,8 @@ def train_submit(student_id, date_str, answers):
                "answerDate": date_str, "result": result,
                "submittedAnswer": a.get("submittedAnswer") or "",
                "draftImage": (a.get("draftImage") or "").strip(),
+               "draftImages": a.get("draftImages") or [],
+               "errorNote": (a.get("errorNote") or "").strip(),
                "durationSec": a.get("durationSec") or 0, "updatedAt": now_ms()}
         store_put("trainLogs", lid, log)
         results.append({"errorId": eid, "result": result,
@@ -1106,7 +1110,21 @@ class H(BaseHTTPRequestHandler):
                     if (l.get("body") or {}).get("errorId") == eid]
             return send_json(self, {"errorId": eid, "total": len(logs),
                                    "logs": [{"ts": lg.get("updatedAt"), "date": lg.get("date"),
-                                             "result": lg.get("result")} for lg in logs]})
+                                             "result": lg.get("result"),
+                                             "studentId": lg.get("studentId"),
+                                             "errorNote": lg.get("errorNote") or "",
+                                             "draftImages": lg.get("draftImages") or ([] if not lg.get("draftImage") else [lg.get("draftImage")])}
+                                            for lg in logs]})
+        if p.startswith("/api/train/errors/") and p.endswith("/reveal"):
+            # 学生上传计算过程后查看答案/解析(需登录)
+            eid = p[len("/api/train/errors/"):-len("/reveal")]
+            e, _ = store_get("trainErrors", eid)
+            if not e:
+                return send_json(self, {"error": "错题不存在"}, 404)
+            return send_json(self, {"errorId": eid,
+                                    "answer": e.get("answer") or "",
+                                    "analysis": e.get("analysis") or "",
+                                    "answerImages": e.get("answerImages") or []})
         if p == "/api/train/cards":
             items = [c["body"] for c in store_list("trainCards", limit=8000)]
             if eff_sid:
