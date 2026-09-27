@@ -8,7 +8,6 @@
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#f5f6fa;color:#1f2430;font-size:15px}
   .wrap{max-width:900px;margin:0 auto;padding:14px}
-  .topbar{background:#4361ee;color:#fff;padding:14px;border-radius:12px;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
   .tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
   .tab{padding:8px 14px;background:#fff;border:1px solid #e6e8ef;border-radius:20px;cursor:pointer}
   .tab.active{background:#4361ee;color:#fff;border-color:#4361ee}
@@ -60,12 +59,12 @@
   .qa-cols>div{flex:1;min-width:300px}
   #stu-drop .chk{display:flex;align-items:center;gap:6px;padding:5px 4px;border-bottom:1px solid #f0f2f8;margin:0}
   #stu-drop .chk:last-child{border-bottom:none}
+  .btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .batch-item{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 10px;border:1px solid #e3e7f2;border-radius:8px;margin-top:6px;background:#f8f9ff;font-size:13px}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar"><div><b>错题循环训练</b> · 老师端</div><div id="who"></div></div>
-
   <div id="login" class="card hidden">
     <h3>登录</h3>
     <div class="row">
@@ -98,27 +97,25 @@
           <div>
             <label>题面（文字或直接 Ctrl+V 粘贴题目图片）</label>
             <textarea id="e-stem" rows="4" placeholder="题目文字，可直接粘贴截图/照片"></textarea>
-            <div class="pastezone" data-zone="stem" tabindex="0">📋 题目图片：按 <b>Ctrl+V</b> 粘贴，或
-              <button type="button" class="ghost sm" onclick="document.getElementById('e-imgs').click()">选择文件</button>
-              <button type="button" class="ghost sm" onclick="pasteClip('stem')">从剪贴板粘贴</button>
-            </div>
             <div class="thumbs" id="stem-thumbs"></div>
             <input id="e-imgs" type="file" accept="image/*" multiple class="hidden">
           </div>
           <div>
             <label>答案 / 解析（可粘贴图片，已取消客观题答案框）</label>
             <textarea id="e-analysis" rows="4" placeholder="解析文字，或 Ctrl+V 粘贴答案图片"></textarea>
-            <div class="pastezone" data-zone="answer" tabindex="0">📋 答案图片：按 <b>Ctrl+V</b> 粘贴，或
-              <button type="button" class="ghost sm" onclick="document.getElementById('e-ans-imgs').click()">选择文件</button>
-              <button type="button" class="ghost sm" onclick="pasteClip('answer')">从剪贴板粘贴</button>
-            </div>
             <div class="thumbs" id="answer-thumbs"></div>
             <input id="e-ans-imgs" type="file" accept="image/*" multiple class="hidden">
           </div>
         </div>
-        <label>附件（任意文件：PDF / Word / 试卷等，可多选）</label>
-        <input id="e-files" type="file" multiple>
-        <button type="button" class="ghost" onclick="toggleQb()">📚 从题库选题目</button>
+        <input id="e-files" type="file" multiple class="hidden">
+        <div class="btn-row">
+          <button type="button" class="ghost" onclick="document.getElementById('e-imgs').click()">📎 题目图片</button>
+          <button type="button" class="ghost" onclick="document.getElementById('e-ans-imgs').click()">📎 答案图片</button>
+          <button type="button" class="ghost" onclick="toggleQb()">📚 从题库选题目</button>
+          <button type="button" onclick="addBatch()">➕ 加入待发列表</button>
+          <button onclick="saveBatch()">📤 保存全部错题（<span id="batch-n">0</span>）</button>
+        </div>
+        <div id="picked-hint" class="ok hidden"></div>
         <div id="qb" class="qb hidden">
           <div class="row">
             <div><label>知识点</label><select id="qb-kp"><option value="">全部知识点</option></select></div>
@@ -127,8 +124,7 @@
           <button type="button" class="sm" onclick="searchQb()">搜索题库</button>
           <div id="qb-list"></div>
         </div>
-        <div id="picked-hint" class="ok hidden"></div>
-        <button onclick="saveError()">保存错题</button>
+        <div id="batch-box"></div>
         <div id="e-msg"></div>
       </div>
       <div class="card">
@@ -206,7 +202,6 @@ async function login(){
 function start(){
   document.getElementById('login').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
-  document.getElementById('who').textContent = '老师端';
   loadStudents();
   renderTasks(); loadDash(); loadStuMgmt();
 }
@@ -431,45 +426,79 @@ function updatePickedHint(){
   if(n){ el.classList.remove('hidden'); el.textContent='题库带入图片：题图 '+pickedImgs.length+' 张、答案图 '+pickedAnsImgs.length+' 张（答案图学生提交后才可见）'; }
   else el.classList.add('hidden');
 }
-async function saveError(){
-  const msg = document.getElementById('e-msg'); msg.textContent='';
-  const ids = [...document.querySelectorAll('#e-student-box input:checked')].map(c=>c.value);
-  if(!ids.length){ msg.textContent='请至少选择一个学生'; msg.className='err'; return; }
-  // 题面图：题库带入 + 粘贴/选文件
-  const images = pickedImgs.slice();
-  for(const it of pendingImgs.stem){
-    const fj = await uploadMedia(it.file, 'trainErrors');
-    if(!fj.ok){ msg.textContent='题面图片上传失败：'+(fj.error||''); msg.className='err'; return; }
-    images.push(fj.url.replace(API,''));
-  }
-  // 答案图：题库带入 + 粘贴/选文件（学生提交后才可见）
-  const answerImages = pickedAnsImgs.slice();
-  for(const it of pendingImgs.answer){
-    const fj = await uploadMedia(it.file, 'trainErrors');
-    if(!fj.ok){ msg.textContent='答案图片上传失败：'+(fj.error||''); msg.className='err'; return; }
-    answerImages.push(fj.url.replace(API,''));
-  }
-  // 任意附件
-  const files = [];
-  for(const f of document.getElementById('e-files').files){
-    const fj = await uploadMedia(f, 'trainErrors');
-    if(!fj.ok){ msg.textContent='附件上传失败：'+(fj.error||''); msg.className='err'; return; }
-    files.push({name:f.name, url:fj.url.replace(API,'')});
-  }
-  const body = {
-    studentIds: ids,
-    stem: qs('#e-stem'), analysis: qs('#e-analysis'),
-    images: images, answerImages: answerImages, files: files, image: images[0]||''
-  };
-  const {status,j} = await call('/api/train/errors',{method:'POST',json:body});
-  if(status!==200){ msg.textContent=(j&&j.error)||'保存失败'; msg.className='err'; return; }
-  msg.textContent='已保存 '+ (j.count||ids.length) +' 条错题 ✓'; msg.className='ok';
-  document.getElementById('e-stem').value=''; document.getElementById('e-analysis').value='';
+// ===== 批量录入：先攒多道错题，再统一选学生发送 =====
+let batchErrs = [];
+function clearForm(){
+  document.getElementById('e-stem').value='';
+  document.getElementById('e-analysis').value='';
   document.getElementById('e-files').value='';
   pendingImgs={stem:[], answer:[]}; renderThumbs('stem'); renderThumbs('answer');
   pickedImgs=[]; pickedAnsImgs=[]; updatePickedHint();
-  document.querySelectorAll('#e-student-box input:checked').forEach(c=>c.checked=false);
-  updateStuDropText();
+}
+function addBatch(){
+  const msg = document.getElementById('e-msg'); msg.textContent='';
+  const stem = qs('#e-stem'), analysis = qs('#e-analysis');
+  const files = [...document.getElementById('e-files').files];
+  if(!stem && !pickedImgs.length && !pendingImgs.stem.length){
+    msg.textContent='请先填写题面文字或添加题目图片'; msg.className='err'; return;
+  }
+  batchErrs.push({
+    stem, analysis,
+    pickedI: pickedImgs.slice(), pickedA: pickedAnsImgs.slice(),
+    pendS: pendingImgs.stem, pendA: pendingImgs.answer, files
+  });
+  clearForm();
+  renderBatch();
+  msg.textContent='已加入待发列表（第 '+batchErrs.length+' 题），可继续录入下一题'; msg.className='ok';
+}
+function renderBatch(){
+  const box = document.getElementById('batch-box'); box.innerHTML='';
+  batchErrs.forEach((b,i)=>{
+    const nImgs = b.pickedI.length + b.pendS.length;
+    const nAns = b.pickedA.length + b.pendA.length;
+    box.insertAdjacentHTML('beforeend',`<div class="batch-item">
+      <div><b>第${i+1}题</b> ${(b.stem||'(图片题)').slice(0,40)}
+        ${nImgs?`<span class="pill m">题图${nImgs}</span>`:''}${nAns?`<span class="pill m">答案图${nAns}</span>`:''}${b.files.length?`<span class="pill m">附件${b.files.length}</span>`:''}</div>
+      <button type="button" class="danger sm" onclick="delBatch(${i})">删</button>
+    </div>`);
+  });
+  updateSaveBtn();
+}
+function delBatch(i){ batchErrs.splice(i,1); renderBatch(); }
+function updateSaveBtn(){ document.getElementById('batch-n').textContent = batchErrs.length; }
+async function saveBatch(){
+  const msg = document.getElementById('e-msg'); msg.textContent='';
+  if(!batchErrs.length){ msg.textContent='请先录入错题并点「➕ 加入待发列表」'; msg.className='err'; return; }
+  const ids = [...document.querySelectorAll('#e-student-box input:checked')].map(c=>c.value);
+  if(!ids.length){ msg.textContent='请先在上方选择要发送的学生'; msg.className='err'; return; }
+  let ok = 0;
+  for(const b of batchErrs){
+    const images = b.pickedI.slice();
+    for(const it of b.pendS){
+      const fj = await uploadMedia(it.file, 'trainErrors');
+      if(!fj.ok){ msg.textContent='题面图片上传失败：'+(fj.error||''); msg.className='err'; return; }
+      images.push(fj.url.replace(API,''));
+    }
+    const answerImages = b.pickedA.slice();
+    for(const it of b.pendA){
+      const fj = await uploadMedia(it.file, 'trainErrors');
+      if(!fj.ok){ msg.textContent='答案图片上传失败：'+(fj.error||''); msg.className='err'; return; }
+      answerImages.push(fj.url.replace(API,''));
+    }
+    const files = [];
+    for(const f of b.files){
+      const fj = await uploadMedia(f, 'trainErrors');
+      if(!fj.ok){ msg.textContent='附件上传失败：'+(fj.error||''); msg.className='err'; return; }
+      files.push({name:f.name, url:fj.url.replace(API,'')});
+    }
+    const body = { studentIds: ids, stem: b.stem, analysis: b.analysis,
+      images, answerImages, files, image: images[0]||'' };
+    const {status,j} = await call('/api/train/errors',{method:'POST',json:body});
+    if(status!==200){ msg.textContent=(j&&j.error)||'保存失败'; msg.className='err'; return; }
+    ok++;
+  }
+  batchErrs=[]; renderBatch();
+  msg.textContent='已保存 '+ok+' 道错题，发给 '+ids.length+' 名学生 ✓'; msg.className='ok';
   loadErrors();
 }
 async function loadErrors(){
