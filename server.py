@@ -1635,6 +1635,16 @@ class H(BaseHTTPRequestHandler):
                 id = p[len(prefix):]
                 store_delete(mod, id)
                 return send_json(self, {"ok": True, "id": id})
+        # 错题删除（同步清对应训练卡）
+        if p.startswith("/api/train/errors/"):
+            eid = p[len("/api/train/errors/"):]
+            store_delete("trainErrors", eid)
+            for s in store_list("students", limit=2000):
+                cid = train_card_id(s.get("id"), eid)
+                c, _ = store_get("trainCards", cid)
+                if c:
+                    store_delete("trainCards", cid)
+            return send_json(self, {"ok": True})
         send_json(self, {"error": "未知接口 " + p}, 404)
 
 
