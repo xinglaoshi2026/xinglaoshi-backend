@@ -89,12 +89,18 @@
         </div>
         <label>题面（文字或直接 Ctrl+V 粘贴题目图片）</label>
         <textarea id="e-stem" rows="3" placeholder="题目文字，可直接粘贴截图/照片"></textarea>
-        <div class="pastezone" tabindex="0" data-zone="stem" onclick="document.getElementById('e-imgs').click()">📋 把题目图片粘贴到这里（或点此选文件），可多张</div>
+        <div class="pastezone" data-zone="stem">📋 题目图片：在此处按 <b>Ctrl+V</b> 粘贴，或
+          <button type="button" class="ghost sm" onclick="document.getElementById('e-imgs').click()">选择文件</button>
+          <button type="button" class="ghost sm" onclick="pasteClip('stem')">从剪贴板粘贴</button>
+        </div>
         <div class="thumbs" id="stem-thumbs"></div>
         <input id="e-imgs" type="file" accept="image/*" multiple class="hidden">
         <label>答案 / 解析（可粘贴图片，已取消客观题答案框）</label>
         <textarea id="e-analysis" rows="2" placeholder="解析文字，或 Ctrl+V 粘贴答案图片"></textarea>
-        <div class="pastezone" tabindex="0" data-zone="analysis" onclick="document.getElementById('e-ans-imgs').click()">📋 把答案图片粘贴到这里</div>
+        <div class="pastezone" data-zone="analysis">📋 答案图片：在此处按 <b>Ctrl+V</b> 粘贴，或
+          <button type="button" class="ghost sm" onclick="document.getElementById('e-ans-imgs').click()">选择文件</button>
+          <button type="button" class="ghost sm" onclick="pasteClip('answer')">从剪贴板粘贴</button>
+        </div>
         <div class="thumbs" id="analysis-thumbs"></div>
         <input id="e-ans-imgs" type="file" accept="image/*" multiple class="hidden">
         <label>附件（任意文件：PDF / Word / 试卷等，可多选）</label>
@@ -209,6 +215,7 @@ let qbKpName = {};       // kpId -> 名称(来自 knowledgePoints，若无则为
 let pickedImgs = [];     // 从题库选入的题目图片(相对 /api/media/... 路径)
 // 待上传图片（粘贴/选文件），按区域(stem/answer)分别维护
 let pendingImgs = {stem:[], answer:[]};
+let qbKpLoaded = false;  // 知识点树是否已加载（避免每次展开题库都重拉）
 
 async function uploadMedia(file, sub){
   const fr = await fetch(API+'/api/media?sub='+encodeURIComponent(sub)+'&name='+encodeURIComponent(file.name),{
@@ -237,23 +244,42 @@ function addImgFile(zone, file){
   pendingImgs[zone].push({file, url: URL.createObjectURL(file)});
   renderThumbs(zone);
 }
-// 监听粘贴（题面/答案区域）
-['stem','answer'].forEach(zone=>{
-  const ta = document.getElementById(zone==='stem'?'e-stem':'e-analysis');
-  const zone_ = document.querySelector('.pastezone[data-zone="'+zone+'"]');
-  const onPaste = (e)=>{
-    const files = [];
-    (e.clipboardData||window.clipboardData).items.forEach(it=>{
-      if(it.kind==='file' && it.type.startsWith('image/')){ const f=it.getAsFile(); if(f) files.push(f); }
-    });
-    if(files.length){
-      e.preventDefault();
-      files.forEach(f=>addImgFile(zone, f));
+// 监听全局粘贴（无论焦点在题面/解析/粘贴区，都能捕获图片）
+function detectZone(){
+  const ae = document.activeElement;
+  if(ae && ae.dataset && ae.dataset.zone) return ae.dataset.zone;
+  if(ae && ae.id==='e-analysis') return 'answer';
+  return 'stem';
+}
+document.addEventListener('paste', function(e){
+  const zone = detectZone();
+  const cd = e.clipboardData || window.clipboardData;
+  const files = [];
+  if(cd && cd.items){ for(const it of cd.items){ if(it.kind==='file' && it.type && it.type.startsWith('image/')){ const f=it.getAsFile(); if(f) files.push(f); } } }
+  if(!files.length && cd && cd.files){ for(const f of cd.files){ if(f.type && f.type.startsWith('image/')) files.push(f); } }
+  if(files.length){ e.preventDefault(); files.forEach(f=>addImgFile(zone, f)); }
+}, true);
+// 显式“从剪贴板粘贴”按钮：用 Clipboard API 读取（Webview/浏览器均可，需用户点击触发授权）
+async function pasteClip(zone){
+  try{
+    if(!navigator.clipboard || !navigator.clipboard.read){ alert('当前环境不支持剪贴板读取，请直接 Ctrl+V 或选择文件'); return; }
+    const items = await navigator.clipboard.read();
+    let added=0;
+    for(const item of items){
+      for(const type of item.types){
+        if(type.startsWith('image/')){
+          const blob = await item.getType(type);
+          const ext = (type.split('/')[1]||'png').replace(/[^a-z0-9]/g,'');
+          const file = new File([blob], 'clip_'+Date.now()+'.'+ext, {type});
+          addImgFile(zone, file); added++;
+        }
+      }
     }
-  };
-  if(ta) ta.addEventListener('paste', onPaste);
-  if(zone_) zone_.addEventListener('paste', onPaste);
-  // 选文件输入
+    if(!added) alert('剪贴板里没有图片，请先截图或复制图片后再点此按钮');
+  }catch(err){ alert('读取剪贴板失败：'+((err&&err.message)||err)+'\n可改用 Ctrl+V 或“选择文件”'); }
+}
+// 选文件输入
+['stem','answer'].forEach(zone=>{
   const inp = document.getElementById(zone==='stem'?'e-imgs':'e-ans-imgs');
   if(inp) inp.addEventListener('change', ()=>{ [...inp.files].forEach(f=>addImgFile(zone,f)); inp.value=''; });
 });
@@ -261,7 +287,7 @@ function addImgFile(zone, file){
 function toggleQb(){
   const box = document.getElementById('qb');
   box.classList.toggle('hidden');
-  if(!box.classList.contains('hidden') && !document.getElementById('qb-kp').options.length){ loadQbKp(); }
+  if(!box.classList.contains('hidden') && !qbKpLoaded){ loadQbKp(); }
 }
 async function loadQbKp(){
   // 知识点树来自云端 knowledgePoints（桌面端已整树同步：含 id/name/parentId 层级）
@@ -296,6 +322,7 @@ async function loadQbKp(){
   // 有层级树时按树渲染；否则按 kpId 列表
   if(roots.length || usedFromQ){ roots.forEach(r=>walk(r,0)); }
   else { Object.keys(byId).forEach(id=>sel.insertAdjacentHTML('beforeend',`<option value="${id}">${byId[id]}</option>`)); }
+  qbKpLoaded = document.getElementById('qb-kp').options.length > 1;
 }
 async function searchQb(){
   const kp = document.getElementById('qb-kp').value;
