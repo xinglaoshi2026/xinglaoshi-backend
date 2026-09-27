@@ -49,7 +49,13 @@
   .qb{border:1px dashed #c7cdf0;border-radius:10px;padding:10px;margin-top:10px;background:#fafbff}
   .qb-item{border:1px solid #e6e8ef;border-radius:10px;padding:10px;margin-top:8px;background:#fff}
   .qb-item img{max-width:100%;border-radius:6px;margin-top:4px}
-  .sec{margin:20px 0 10px;padding:9px 14px;background:#4361ee;color:#fff;border-radius:10px;font-size:15px;font-weight:bold}
+  .sec{margin:20px 0 10px;padding:9px 14px;background:#4361ee;color:#fff;border-radius:10px;font-size:15px;font-weight:bold;display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .sec .rules-btn{background:rgba(255,255,255,.22);color:#fff;border:1px solid rgba(255,255,255,.55);border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer;white-space:nowrap}
+  .sec .rules-btn:active{background:rgba(255,255,255,.4)}
+  .rules-table{border-collapse:collapse;margin:6px 0;width:100%}
+  .rules-table th,.rules-table td{border:1px solid #d6dbe8;padding:5px 8px;font-size:13px;text-align:center}
+  .rules-table th{background:#f0f3ff}
+  .rules-box li{margin:5px 0;line-height:1.55}
 </style>
 </head>
 <body>
@@ -68,7 +74,7 @@
 
   <div id="app" class="hidden">
     <!-- ① 错题录入 -->
-    <div class="sec" id="sec-errors">① 错题录入</div>
+    <div class="sec" id="sec-errors"><span>① 错题录入</span><button type="button" class="rules-btn" onclick="showRules()">📖 训练规则</button></div>
     <div id="t-errors">
       <div class="card">
         <h3>录入一道错题</h3>
@@ -510,6 +516,46 @@ function showModalHtml(html){
   mask.style.display='flex';
 }
 function closeModal(){ const m=document.getElementById('modal-mask'); if(m) m.style.display='none'; }
+
+// 训练规则说明（与 server.py 中算法一一对应，便于后期对照调整）
+function showRules(){
+  showModalHtml(`<div class="modal-box rules-box" style="max-width:560px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <b>错题循环训练规则</b><button class="ghost sm" onclick="closeModal()">关闭</button>
+    </div>
+    <p style="margin:4px 0"><b>一、核心模型</b>：每个学生 × 每道错题 = 一张"卡片"，记录：</p>
+    <ul style="margin:2px 0 8px 18px;padding:0">
+      <li><b>掌握等级 level</b>（0~5，越高越熟）</li>
+      <li><b>连续做对次数</b>（consecutiveRight）</li>
+      <li><b>下次应练日期</b>（nextDueDate）</li>
+      <li><b>状态</b>：循环中(active) / 已毕业(month_pool)</li>
+    </ul>
+    <p style="margin:4px 0"><b>二、每日出题（目标 4~8 题）</b>：</p>
+    <ul style="margin:2px 0 8px 18px;padding:0">
+      <li>到期错题优先（最不会的先练），最多 6 道</li>
+      <li>不足 8 道时补近 7 天新收录错题，最多 2 道</li>
+      <li>仍不足 4 道时提前拉明后天到期的题补足</li>
+    </ul>
+    <p style="margin:4px 0"><b>三、做对/做错后的变化</b>：</p>
+    <ul style="margin:2px 0 8px 18px;padding:0">
+      <li><b>做错/半对</b>：连续做对清零，等级 −1（最低 0），<b>明天必再见</b></li>
+      <li><b>做对</b>：连续做对 +1，等级 +1（最高 5），间隔拉长：</li>
+    </ul>
+    <table class="rules-table">
+      <tr><th>等级</th><td>0</td><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td></tr>
+      <tr><th>间隔天数</th><td>1</td><td>2</td><td>4</td><td>7</td><td>15</td><td>30</td></tr>
+    </table>
+    <p style="margin:4px 0"><b>四、毕业规则</b>（同时满足才退出每日循环）：</p>
+    <ul style="margin:2px 0 8px 18px;padding:0">
+      <li>连续做对 ≥ 3 次</li>
+      <li>等级到顶（level ≥ 4）</li>
+      <li>首次收录 ≥ 14 天</li>
+    </ul>
+    <p style="margin:4px 0"><b>五、月度抽检</b>：每月 1 号从已毕业池随机抽 ≤3 道（约 20%）重新加入当天任务，防遗忘。</p>
+    <p style="margin:4px 0"><b>六、学生做题流程</b>：上传计算过程 → 提交 → 看答案 → 自评（做对/半对/做错）→ 必填错误原因后才能提交。</p>
+    <p style="margin:8px 0 2px;font-size:12px;color:#8a90a2">※ 规则代码在云端 server.py（TRAIN_INTERVALS / train_on_answer / train_build_daily / train_monthly_sample），如需调整间隔天数、毕业门槛或每日题量，告诉 AI 即可对照修改。</p>
+  </div>`);
+}
 // ---------- 图片放大查看 ----------
 let zoomReg = [];  // 注册表：zoomReg[i] = 图片URL数组
 function zoomList(ri, start){
