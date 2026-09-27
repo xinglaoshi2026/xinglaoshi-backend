@@ -66,6 +66,7 @@
         <button onclick="toggleWeek()" id="weekBtn">展开</button>
       </div>
       <div id="weekList" class="hidden"></div>
+      <div id="weekLock" class="hidden" style="color:#c77700;font-size:13px;padding:8px 2px;line-height:1.5">🔒 完成今日作业后，这里才能查看（防止提前看到答案、重复做题时作弊）。</div>
     </div>
   </div>
 </div>
@@ -100,7 +101,7 @@ async function doLogin(){
   show(true);
   document.getElementById('me').textContent='你好，'+ME;
   await loadToday();
-  loadWeek();
+  updateWeekLock();
 }
 
 function logout(){
@@ -122,6 +123,7 @@ async function loadToday(){
   if(!task){ head.innerHTML='<b>今天还没有给你的练习包</b><br><span style="color:#8a90a2">让老师先点"生成今日任务"哦</span>'; document.getElementById('submitBtn').classList.add('hidden'); return; }
   document.getElementById('submitBtn').classList.remove('hidden');
   head.innerHTML='<b>'+task.date+' 练习</b> · 共'+j.items.length+'题'+(task.status==='done'||task.status==='partial'?' · 已完成 ✓':' · 待完成');
+  TASK_DONE = !task || task.status==='done';   // 无作业 或 已提交完成 → 解锁近期错题
   const box=document.getElementById('items'); box.innerHTML=''; ST={};
   j.items.forEach((e,idx)=>{
     const imgs = (e.images&&e.images.length)?e.images:(e.image?[e.image]:[]);
@@ -253,11 +255,31 @@ async function submit(){
   h+='<p style="color:#8a90a2;font-size:13px">做错的题过几天会再来找你，加油！</p>';
   document.getElementById('result').innerHTML=h;
   document.getElementById('submitBtn').classList.add('hidden');
+  // 当日作业已提交完成 → 解锁近期错题，并自动展开供复习
+  TASK_DONE = true;
+  updateWeekLock();
+  document.getElementById('weekList').classList.remove('hidden');
+  document.getElementById('weekBtn').textContent='收起';
+  if(!WEEK_LOADED) loadWeek();
 }
 
 // ---------- 最近一周错题 ----------
 let WEEK_LOADED = false;
+let TASK_DONE = false;   // 当日作业是否已提交完成（提交后才解锁近期错题）
+function updateWeekLock(){
+  const lock = document.getElementById('weekLock');
+  const btn = document.getElementById('weekBtn');
+  if(TASK_DONE){
+    lock.classList.add('hidden');
+    btn.classList.remove('hidden'); btn.disabled = false;
+  }else{
+    document.getElementById('weekList').classList.add('hidden');
+    btn.classList.add('hidden');
+    lock.classList.remove('hidden');
+  }
+}
 function toggleWeek(){
+  if(!TASK_DONE){ return; }   // 当日作业未提交完成，锁定
   const box = document.getElementById('weekList');
   const btn = document.getElementById('weekBtn');
   const hidden = box.classList.toggle('hidden');
@@ -301,8 +323,7 @@ if(TOKEN){
     if(status===401){ logout(); return; }
     const me = (j && j.items && j.items[0]) || null;
     document.getElementById('me').textContent = me ? ('你好，'+(me.name||me.username||'')) : '已登录';
-    loadToday();
-    loadWeek();
+    loadToday().then(updateWeekLock);
   });
 }
 </script>
