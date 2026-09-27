@@ -517,6 +517,47 @@ def train_card_id(student_id, error_id):
     return "c_%s_%s" % (student_id, error_id)
 
 
+def train_error_to_bank(rec):
+    """把一道错题的题目内容同步进题库，按内容哈希去重（同一道题不同学生只存一条题库记录）。
+    返回 (题库题目id, 是否新建)。无内容时返回 (None, 0)。"""
+    stem = rec.get("stem") or ""
+    images = rec.get("images") or []
+    answer = rec.get("analysis") or ""
+    answer_images = rec.get("answerImages") or []
+    if not (stem or images or answer or answer_images):
+        return None, 0
+    h = hashlib.md5(("|".join([stem] + sorted(images) + sorted(answer_images)))
+                   .encode("utf-8")).hexdigest()
+    # 已存在同题(由错题转入)则直接复用，建立链接
+    for q in store_list("questions", limit=5000):
+        b = q.get("body") or {}
+        if b.get("_eHash") == h:
+            return b.get("id"), 0
+    # 构建媒体 HTML：用 media:// 相对路径，供教师端 pickQb 的 extractMediaRel 提取
+    def media_html(urls):
+        return "".join('<img src="media://%s">' % u.replace("/api/media/", "")
+                       for u in urls)
+    content = (("<p>%s</p>" % stem) if stem else "") + media_html(images)
+    ans_html = (("<p>%s</p>" % answer) if answer else "") + media_html(answer_images)
+    qid = "q_" + uuid.uuid4().hex[:12]
+    body = {
+        "id": qid,
+        "content": content,
+        "answer": ans_html,
+        "knowledgePoint": rec.get("knowledgePoint") or "",
+        "type": "错题",
+        "source": "错题转入",
+        "grade": rec.get("grade") or "",
+        "tags": rec.get("tags") or "",
+        "_eHash": h,
+        "createdAt": now_ms(),
+        "updatedAt": now_ts(),
+    }
+    store_put("questions", qid, body)
+    return qid, 1
+
+
+
 def train_ensure_card(student_id, error_id, first_seen=None):
     cid = train_card_id(student_id, error_id)
     c, _ = store_get("trainCards", cid)
@@ -1284,6 +1325,10 @@ class H(BaseHTTPRequestHandler):
                       if k not in ("studentId", "studentIds", "id", "createdAt")}
             if not shared.get("wrongDate"):
                 shared["wrongDate"] = _date_today()
+            # 错题自动同步进题库（按内容去重，同题多学生共用一条题库记录）
+            kbId, bank_new = train_error_to_bank(shared)
+            if kbId:
+                shared["kbId"] = kbId
             ids = []
             for sid in sids:
                 eid = body.get("id") or ("te_" + uuid.uuid4().hex[:12])
@@ -1298,7 +1343,7 @@ class H(BaseHTTPRequestHandler):
                 train_ensure_card(sid, eid, first_seen=rec["wrongDate"])  # 自动建卡
                 ids.append(eid)
             return send_json(self, {"ok": True, "ids": ids,
-                                    "count": len(ids)})
+                                    "count": len(ids), "bankNew": bank_new})
         if p.startswith("/api/train/errors/"):
             eid = p[len("/api/train/errors/"):]
             store_delete("trainErrors", eid)

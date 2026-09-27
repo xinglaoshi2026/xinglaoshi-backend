@@ -116,6 +116,7 @@
           <button onclick="saveBatch()">📤 保存全部错题（<span id="batch-n">0</span>）</button>
         </div>
         <div id="picked-hint" class="ok hidden"></div>
+        <p style="font-size:12px;color:#8a90a2;margin:6px 0 0">💡 保存的每道错题会自动进入下方「从题库选题目」，按题目内容去重（同一道题只存一份），以后可一键复用给做过同题的其他学生。</p>
         <div id="qb" class="qb hidden">
           <div class="row">
             <div><label>知识点</label><select id="qb-kp"><option value="">全部知识点</option></select></div>
@@ -506,7 +507,7 @@ async function saveBatch(){
     ok++;
   }
   batchErrs=[]; renderBatch();
-  msg.textContent='已保存 '+ok+' 道错题，发给 '+ids.length+' 名学生 ✓'; msg.className='ok';
+  msg.textContent='已保存 '+ok+' 道错题，发给 '+ids.length+' 名学生 ✓（已自动同步进题库，可经「从题库选题目」复用到其他学生）'; msg.className='ok';
   loadErrors();
 }
 async function loadErrors(){
