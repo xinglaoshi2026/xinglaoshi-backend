@@ -138,8 +138,16 @@ def store_list(module, since=None, limit=200, offset=0, q=None, **filters):
     args += [limit, offset]
     rows = cx.execute(sql, args).fetchall()
     cx.close()
-    return [{"id": r["id"], "updated_at": r["updated_at"],
-             "body": json.loads(r["body"])} for r in rows]
+    out = []
+    for r in rows:
+        try:
+            b = json.loads(r["body"])
+        except Exception:
+            continue  # 损坏记录(body 非法 JSON)跳过, 避免下游崩
+        if b is None:
+            continue  # body 为 JSON null 的脏数据跳过
+        out.append({"id": r["id"], "updated_at": r["updated_at"], "body": b})
+    return out
 
 
 # ---------------- 试卷导出 DOCX（零依赖，手工构建 OOXML） ----------------
@@ -704,7 +712,7 @@ def train_dashboard():
         per_student.append({"id": sid, "name": s.get("name") or s.get("username") or "",
                             "active": active, "mastered": mastered, "new": new0,
                             "todayStatus": t.get("status") if t else "none",
-                            "todayScore": t.get("score")})
+                            "todayScore": t.get("score") if t else None})
     return {"todayDate": today, "studentsTotal": len(students),
             "tasksToday": len(tasks_today), "doneToday": done,
             "perStudent": per_student}
