@@ -494,8 +494,10 @@ TRAIN_INTERVALS = [1, 2, 4, 7, 15, 30]  # 各掌握等级对应的间隔天数
 
 
 def _date_today():
-    from datetime import date
-    return date.today().isoformat()
+    # 统一用北京时间(UTC+8)：Railway 服务器是 UTC, 直接 date.today() 在北京时间
+    # 0点~8点之间会返回"昨天", 导致任务日期/错题日期/到期判断全部偏移一天。
+    from datetime import datetime, timezone, timedelta
+    return datetime.now(timezone(timedelta(hours=8))).date().isoformat()
 
 
 def _date_after(d, n):
@@ -1294,8 +1296,6 @@ class H(BaseHTTPRequestHandler):
                     store_delete("trainCards", cid)
             return send_json(self, {"ok": True})
         if p == "/api/train/tasks/generate":
-            d = q.get("date", [None])[0]
-            return send_json(self, train_generate_tasks(d))
             d = q.get("date", [None])[0]
             return send_json(self, train_generate_tasks(d))
         if p == "/api/train/logs":
