@@ -573,10 +573,32 @@ async function genTasks(){
 async function renderTasks(){
   const {j} = await call('/api/train/tasks?date='+new Date().toISOString().slice(0,10));
   const box = document.getElementById('task-list'); box.innerHTML='';
+  const STMAP={pending:'待完成',partial:'部分完成',done:'已完成'};
   (j?j.items:[]).forEach(t=>{
-    box.insertAdjacentHTML('beforeend',`<div style="padding:6px;border-bottom:1px solid #eee">
-      <b>${(t.studentName)||t.studentId}</b> · ${t.date} · 共${t.errorIds.length}题 · 状态:${t.status} ${t.score!=null?('· 正确率'+(t.score*100).toFixed(0)+'%'):''}</div>`);
+    box.insertAdjacentHTML('beforeend',`<div style="padding:6px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <div><b>${(t.studentName)||t.studentId}</b> · 共${t.errorIds.length}题 · ${STMAP[t.status]||t.status} ${t.score!=null?('· 正确率'+(t.score*100).toFixed(0)+'%'):''}</div>
+      <button class="ghost sm" onclick="viewTaskLogs('${t.id}')">查看作答</button></div>`);
   });
+}
+async function viewTaskLogs(tid){
+  const {j} = await call('/api/train/tasks/'+tid+'/logs');
+  const items = (j&&j.items)||[];
+  let h = '<div class="modal-box"><div style="display:flex;justify-content:space-between;align-items:center"><b>学生作答详情（'+items.length+' 题）</b><button class="ghost sm" onclick="closeModal()">关闭</button></div>';
+  if(!items.length) h += '<p style="color:#8a90a2">该生还没有提交作答记录。</p>';
+  else {
+    items.forEach((l,i)=>{
+      const r = l.result==='right'||l.result==='self_right'?'✓ 做对':l.result==='half'?'半对':'✗ 做错';
+      const imgs = l.draftImages||[];
+      const stem = (l.stem||'(看图题)').slice(0,40);
+      h += `<div style="border-bottom:1px solid #eee;padding:8px 0">
+        <div><b>第${i+1}题</b> ${stem}${stem.length>=40?'…':''} · <b>${r}</b></div>
+        <div style="color:#5a6072;margin-top:2px">错误原因：${l.errorNote||'（未填）'}</div>
+        ${imgs.length?('<button class="ghost sm" style="margin-top:4px" onclick=\'zoomDrafts('+JSON.stringify(JSON.stringify(imgs))+')\'>📷 看计算过程（'+imgs.length+'张）</button>'):''}
+      </div>`;
+    });
+  }
+  h += '</div>';
+  showModalHtml(h);
 }
 async function loadDash(){
   const {j} = await call('/api/train/dashboard');

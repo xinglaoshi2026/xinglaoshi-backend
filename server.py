@@ -1132,12 +1132,36 @@ class H(BaseHTTPRequestHandler):
             return send_json(self, {"items": items, "count": len(items)})
         if p == "/api/train/tasks":
             d = q.get("date", [None])[0]
-            items = [t["body"] for t in store_list("trainTasks", limit=8000)]
+            stu_names = {s.get("id"): (s.get("name") or s.get("username") or s.get("id"))
+                         for s in (b["body"] for b in store_list("students", limit=2000))}
+            items = []
+            for t in store_list("trainTasks", limit=8000):
+                b = dict(t["body"])
+                b["studentName"] = stu_names.get(b.get("studentId"), b.get("studentId"))
+                items.append(b)
             if eff_sid:
                 items = [t for t in items if t.get("studentId") == eff_sid]
             if d:
                 items = [t for t in items if t.get("date") == d]
             return send_json(self, {"items": items, "count": len(items)})
+        if p.startswith("/api/train/tasks/") and p.endswith("/logs"):
+            # 老师查看某学生某天任务的逐题作答(自评/错误原因/过程照片)
+            if u.get("role") == "student":
+                return send_json(self, {"error": "无权限"}, 403)
+            tid = p[len("/api/train/tasks/"):-len("/logs")]
+            out = []
+            for lg in store_list("trainLogs", limit=20000):
+                b = lg.get("body") or {}
+                if b.get("taskId") != tid:
+                    continue
+                e, _ = store_get("trainErrors", b.get("errorId"))
+                out.append({"errorId": b.get("errorId"),
+                            "stem": (e or {}).get("stem", "") if e else "",
+                            "result": b.get("result"),
+                            "errorNote": b.get("errorNote") or "",
+                            "draftImages": b.get("draftImages") or ([] if not b.get("draftImage") else [b.get("draftImage")]),
+                            "date": b.get("answerDate")})
+            return send_json(self, {"taskId": tid, "items": out, "count": len(out)})
         if p == "/api/train/today":
             d = q.get("date", [None])[0]
             if not eff_sid:
