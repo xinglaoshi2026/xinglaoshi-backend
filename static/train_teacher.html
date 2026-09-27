@@ -55,7 +55,7 @@
 <div class="wrap">
   <div class="topbar"><div><b>错题循环训练</b> · 老师端</div><div id="who"></div></div>
 
-  <div id="login" class="card">
+  <div id="login" class="card hidden">
     <h3>登录</h3>
     <div class="row">
       <div><label>用户名</label><input id="u" value="admin"></div>
@@ -184,8 +184,16 @@ async function login(){
 function start(){
   document.getElementById('login').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
-  document.getElementById('who').textContent = TOKEN? '已登录':'';
+  document.getElementById('who').textContent = '老师端';
   loadStudents();
+}
+async function autoLogin(){
+  try{
+    const {status,j} = await call('/api/auth/login',{method:'POST',json:{username:'admin',password:'admin123'}});
+    if(status===200 && j.token){ TOKEN=j.token; localStorage.setItem('tt_token',TOKEN); }
+  }catch(e){}
+  if(TOKEN){ start(); }
+  else { document.getElementById('login').classList.remove('hidden'); }
 }
 function switchTab(t){
   document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.t===t));
@@ -614,7 +622,7 @@ async function loadDash(){
 }
 function stat(v,l){return `<div class="stat"><b>${v}</b>${l}</div>`;}
 
-if(TOKEN){ start(); }
+autoLogin();
 </script>
 </body>
 </html>
