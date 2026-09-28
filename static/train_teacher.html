@@ -185,8 +185,13 @@
     display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 12px;
     border:1px solid var(--line2);border-radius:12px;margin-top:8px;background:#fff;font-size:13.5px;box-shadow:var(--sh1)
   }
-  .pract{border:1px solid var(--line2);background:#fff;border-radius:8px;padding:4px 9px;font-size:12px;cursor:pointer;margin-left:6px;box-shadow:var(--sh1)}
-  .pract b{color:var(--brand3)}
+  .pract{
+    border:1px solid var(--line2);background:#fff;color:var(--ink2);border-radius:999px;padding:5px 11px;
+    font-size:12px;font-weight:500;cursor:pointer;margin-left:6px;box-shadow:var(--sh1);letter-spacing:0;
+    transition:background .16s, border-color .16s, transform .16s
+  }
+  .pract:hover{background:var(--brand-soft);border-color:#E5D2BC;transform:translateY(-1px)}
+  .pract b{color:var(--brand3);font-weight:700;font-variant-numeric:tabular-nums}
 
   /* ---------- 错题列表：行式布局 ---------- */
   .err-row{
@@ -204,6 +209,7 @@
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden
   }
   .er-actions{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding-top:2px}
+  .er-actions .danger{color:var(--err)}
   .er-noimg{
     color:var(--ink3);font-size:12px;border:1px dashed var(--line2);border-radius:10px;
     padding:20px 16px;background:#FFFDFA
