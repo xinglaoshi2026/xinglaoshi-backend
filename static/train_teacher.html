@@ -177,6 +177,12 @@
         <select id="mgmt-stu" onchange="renderMgmt()"></select>
         <div id="mgmt-detail" style="margin-top:10px"></div>
       </div>
+      <div class="card">
+        <h3>存储维护</h3>
+        <p class="ok">删除题库题目、试卷、错题时，云端已自动删除对应的图片文件；若历史遗留了无用图片，可点此手动清理一次。</p>
+        <button id="clean-btn" type="button" class="ghost" onclick="cleanupCloud()">🧹 清理云端无用图片</button>
+        <div id="clean-msg" style="margin-top:6px"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -719,6 +725,18 @@ async function genTasks(){
 }
 const STMAP={pending:'待完成',partial:'部分完成',done:'已完成',none:'无任务'};
 function todayStr(d){ d=d||new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+async function cleanupCloud(){
+  const btn = document.getElementById('clean-btn');
+  const msg = document.getElementById('clean-msg');
+  btn.disabled = true; btn.textContent = '清理中…'; msg.textContent = ''; msg.className = '';
+  const {status,j} = await call('/api/admin/cleanup_orphans');
+  btn.disabled = false; btn.textContent = '🧹 清理云端无用图片';
+  if(status !== 200){ msg.className='err'; msg.textContent = (j&&j.error)||'清理失败'; return; }
+  const mb = ((j.freed_bytes||0)/1048576).toFixed(1);
+  msg.className = 'ok';
+  msg.textContent = '已删除 '+(j.removed||0)+' 个无用文件，释放 '+mb+' MB；当前被引用图片 '+(j.referenced||0)+' 个'
+    + (j.object_removed ? ('；对象存储清理 '+j.object_removed+' 个') : '');
+}
 function fillStuSelect(selId){
   const sel = document.getElementById(selId);
   sel.innerHTML = '<option value="">请选择学生</option>';

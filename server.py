@@ -224,11 +224,30 @@ def _file_rels(body):
     return out
 
 
+# /api/media/xxx 写法（训练错题 images/answerImages/files[].url 等用的就是这种）
+MEDIA_PATH_RE = re.compile(r'/api/media/([^\s"\'<>\\]+)')
+_REL_FIELD_RE = re.compile(r'"rel"\s*:\s*"([^"]+)"')
+
+
+def _collect_refs(body):
+    """收集一条记录引用的所有媒体 rel。
+    同时兼容两种写法：media://sub/name（题库/试卷正文）与 /api/media/sub/name（训练错题数组），
+    以及 files[].rel。用于判断删除后哪些文件不再被任何记录引用。"""
+    refs = set()
+    if not isinstance(body, dict):
+        return refs
+    txt = json.dumps(body, ensure_ascii=False)
+    refs.update(MEDIA_RE.findall(txt))
+    refs.update(MEDIA_PATH_RE.findall(txt))
+    refs.update(_REL_FIELD_RE.findall(txt))
+    refs.update(_file_rels(body))
+    return {r for r in refs if r}
+
+
 def _referenced_media():
-    """扫描所有模块, 收集仍被引用的媒体 rel（题目图 media://、试卷附件 files[].rel 等）。
+    """扫描所有模块, 收集仍被引用的媒体 rel（题目图 media://、/api/media/ 数组图、试卷附件等）。
     用于清理孤儿文件时判断“哪些文件可以删”。"""
     refs = set()
-    rel_re = re.compile(r'"rel"\s*:\s*"([^"]+)"')
     for m in MODULES:
         try:
             items = store_list(m, limit=100000)
@@ -236,16 +255,69 @@ def _referenced_media():
             continue
         for it in items:
             body = it.get("body") if isinstance(it, dict) else None
-            if not isinstance(body, dict):
-                continue
-            txt = json.dumps(body, ensure_ascii=False)
-            for mm in MEDIA_RE.findall(txt):
-                refs.add(mm)
-            for fr in _file_rels(body):
-                refs.add(fr)
-            for rm in rel_re.findall(txt):
-                refs.add(rm)
+            refs |= _collect_refs(body)
     return refs
+
+
+def _remove_media_file(rel):
+    """删除一个媒体文件（对象存储 + 本地云端磁盘），返回释放字节数。"""
+    freed = 0
+    cl = _r2_client()
+    if cl:
+        try:
+            cl.delete_object(Bucket=_r2_conf()["bucket"], Key=rel)
+        except Exception:
+            pass
+    for fp in {_media_disk(rel), os.path.normpath(os.path.join(MEDIA_DIR, rel))}:
+        try:
+            if os.path.isfile(fp):
+                freed += os.path.getsize(fp)
+                os.remove(fp)
+        except Exception:
+            pass
+    return freed
+
+
+def purge_replaced_media(old_body, new_body):
+    """记录被更新后，清掉“旧版引用过、新版不再引用”的图片/附件（新版已入库，故旧图安全删）。"""
+    gone = _collect_refs(old_body) - _collect_refs(new_body)
+    if gone:
+        purge_media_refs(gone)
+
+
+def _rmdirs_empty(base):
+    """删除 base 下的空目录。"""
+    for root, dirs, files in os.walk(base, topdown=False):
+        for d in dirs:
+            dp = os.path.join(root, d)
+            try:
+                if not os.listdir(dp):
+                    os.rmdir(dp)
+            except Exception:
+                pass
+
+
+def purge_media_refs(rels):
+    """删除这些媒体文件，但跳过仍被其它记录引用的（防止误删错题与题库共用的图）。
+    应在记录已从库里删除之后调用。返回 {removed, kept, freed}。"""
+    rels = {r for r in (rels or set()) if r}
+    if not rels:
+        return {"removed": 0, "kept": 0, "freed": 0}
+    still = _referenced_media()
+    removed = kept = freed = 0
+    for rel in rels:
+        if rel in still:
+            kept += 1
+            continue
+        before = freed
+        freed += _remove_media_file(rel)
+        if freed > before:
+            removed += 1
+        else:
+            kept += 1
+    if removed:
+        _rmdirs_empty(MEDIA_DIR)
+    return {"removed": removed, "kept": kept, "freed": freed}
 
 
 def _safe_media_path(rel):
@@ -416,7 +488,7 @@ def _media_url(rel):
 
 
 def _run_orphan_cleanup():
-    """删除未被任何模块引用的上传文件(孤儿), 释放本地磁盘。返回统计字典。"""
+    """删除未被任何模块引用的上传文件(孤儿), 释放本地磁盘与对象存储。返回统计字典。"""
     refs = _referenced_media()
     keep_disk = {_disk_rel(r) for r in refs}
     freed = 0
@@ -434,15 +506,35 @@ def _run_orphan_cleanup():
                 removed += 1
             except Exception:
                 pass
-    for root, dirs, files in os.walk(MEDIA_DIR, topdown=False):
-        for d in dirs:
-            dp = os.path.join(root, d)
-            try:
-                if not os.listdir(dp):
-                    os.rmdir(dp)
-            except Exception:
-                pass
-    return {"freed": freed, "removed": removed}
+    _rmdirs_empty(MEDIA_DIR)
+    # 对象存储（启用时）：同步删除无人引用的对象，避免云端存储越积越多
+    r2_removed = 0
+    cl = _r2_client()
+    if cl:
+        try:
+            bucket = _r2_conf()["bucket"]
+            token = None
+            while True:
+                kw = {"Bucket": bucket, "MaxKeys": 1000}
+                if token:
+                    kw["ContinuationToken"] = token
+                page = cl.list_objects_v2(**kw)
+                for ob in (page.get("Contents") or []):
+                    key = ob.get("Key")
+                    if not key or key in refs:
+                        continue
+                    try:
+                        cl.delete_object(Bucket=bucket, Key=key)
+                        r2_removed += 1
+                    except Exception:
+                        pass
+                if page.get("IsTruncated"):
+                    token = page.get("NextContinuationToken")
+                else:
+                    break
+        except Exception:
+            pass
+    return {"freed": freed, "removed": removed, "object_removed": r2_removed}
 
 
 def _disk_watchdog():
@@ -1624,12 +1716,14 @@ class H(BaseHTTPRequestHandler):
                         if old_ts and old_ts > ts:
                             continue
                         store_delete(m, it["id"])
+                        purge_media_refs(_collect_refs(existing))  # 同步清掉独占的图片/附件
                         applied += 1
                         continue
                     existing, old_ts = store_get(m, it["id"])
                     if existing and old_ts and old_ts > ts:
                         continue  # 服务端更新更新 -> last write wins
                     store_put(m, it["id"], it["body"], ts=ts)
+                    purge_replaced_media(existing, it.get("body"))  # 清掉新版不再引用的旧图
                     applied += 1
             return send_json(self, {"ok": True, "applied": applied})
         if p == "/api/media":
@@ -1675,6 +1769,7 @@ class H(BaseHTTPRequestHandler):
             free_after = None
         return send_json(self, {"ok": True, "referenced": len(_referenced_media()),
                                 "removed": r["removed"], "freed_bytes": r["freed"],
+                                "object_removed": r.get("object_removed", 0),
                                 "disk_free_after": free_after})
 
     # ---- PUT ----
@@ -1687,14 +1782,18 @@ class H(BaseHTTPRequestHandler):
             body, err = read_body(self)
             if err: return send_json(self, {"error": err}, 400)
             body["id"] = id; body["updatedAt"] = now_ts()
+            old, _ = store_get("questions", id)
             store_put("questions", id, body)
+            purge_replaced_media(old, body)
             return send_json(self, {"ok": True, "id": id})
         if p.startswith("/api/papers/"):
             id = p[len("/api/papers/"):]
             body, err = read_body(self)
             if err: return send_json(self, {"error": err}, 400)
             body["id"] = id; body["updatedAt"] = now_ts()
+            old, _ = store_get("papers", id)
             store_put("papers", id, body)
+            purge_replaced_media(old, body)
             return send_json(self, {"ok": True, "id": id})
         if p.startswith("/api/students/"):
             id = p[len("/api/students/"):]
@@ -1711,7 +1810,9 @@ class H(BaseHTTPRequestHandler):
                 body, err = read_body(self)
                 if err: return send_json(self, {"error": err}, 400)
                 body["id"] = id; body["updatedAt"] = now_ts()
+                old, _ = store_get(m, id)
                 store_put(m, id, body)
+                purge_replaced_media(old, body)
                 return send_json(self, {"ok": True, "id": id})
         send_json(self, {"error": "未知接口 " + p}, 404)
 
@@ -1729,18 +1830,23 @@ class H(BaseHTTPRequestHandler):
                             ("/api/dailyAnswers/", "dailyAnswers")):
             if p.startswith(prefix):
                 id = p[len(prefix):]
+                # 先取原记录，便于删除后清掉它独占的图片/附件
+                old, _ = store_get(mod, id)
                 store_delete(mod, id)
-                return send_json(self, {"ok": True, "id": id})
-        # 错题删除（同步清对应训练卡）
+                media = purge_media_refs(_collect_refs(old)) if old else None
+                return send_json(self, {"ok": True, "id": id, "media": media})
+        # 错题删除（同步清对应训练卡 + 不再被引用的图片）
         if p.startswith("/api/train/errors/"):
             eid = p[len("/api/train/errors/"):]
+            old, _ = store_get("trainErrors", eid)
             store_delete("trainErrors", eid)
             for s in store_list("students", limit=2000):
                 cid = train_card_id(s.get("id"), eid)
                 c, _ = store_get("trainCards", cid)
                 if c:
                     store_delete("trainCards", cid)
-            return send_json(self, {"ok": True})
+            media = purge_media_refs(_collect_refs(old)) if old else None
+            return send_json(self, {"ok": True, "media": media})
         send_json(self, {"error": "未知接口 " + p}, 404)
 
 
