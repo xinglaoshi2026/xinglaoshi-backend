@@ -333,7 +333,7 @@
       <div class="card">
         <div class="collapse-head" id="errlist-head" onclick="toggleErrList()">
           <span class="tt">错题列表</span>
-          <span class="hint">点开可筛选 / 查看 / 导出</span>
+          <span class="pill" id="errlist-cnt">—</span><span class="hint">点开可筛选 / 查看 / 导出</span>
           <span class="chev" id="errlist-chev">▸</span>
         </div>
         <div id="errlist-body" class="hidden" style="margin-top:10px">
@@ -781,6 +781,10 @@ async function loadErrors(){
     call('/api/train/errors/practices'+(sid?'?studentId='+encodeURIComponent(sid):''))
   ]);
   const counts = (pj&&pj.counts)||{};
+  const listCnt = document.getElementById('errlist-cnt');
+  if(listCnt){
+    listCnt.textContent = '共 ' + (j?j.items:[]).length + ' 条';
+  }
   const box = document.getElementById('err-list'); box.innerHTML='';
   (j?j.items:[]).forEach(e=>{
     const imgs = (e.images&&e.images.length)?e.images:(e.image?[e.image]:[]);
@@ -1139,7 +1143,7 @@ async function loadDash(){
   window._DASH = j.perStudent||[]; window._DASH_DATE = d;
   const isToday = d===todayStr();
   document.getElementById('dash-overview').innerHTML =
-    stat(j.studentsTotal,'学生总数')+stat(j.tasksToday,isToday?'今日任务':d+' 任务')+stat(j.doneToday,isToday?'今日完成':'当日完成')+stat(d,'日期');
+    stat(j.studentsTotal,'学生总数')+stat(j.tasksToday,isToday?'今日任务':d+' 任务')+stat(j.doneToday,isToday?'今日完成':'当日完成');
   fillKpis(j, d, isToday);
   fillStuSelect('dash-stu');
   renderDashStu();
