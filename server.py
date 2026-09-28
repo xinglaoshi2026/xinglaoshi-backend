@@ -928,7 +928,7 @@ def html_mod_unescape(s):
     return _html.unescape(s)
 
 
-def build_train_errors_docx(name, errors):
+def build_train_errors_docx(name, errors, title=None, note=None):
     """把某学生的错题导出为 Word（复用组卷导出的排版：题面 + 答案/解析 + 图片）。"""
     qmap = {}
     ids = []
@@ -952,8 +952,8 @@ def build_train_errors_docx(name, errors):
                      "type": e.get("knowledgePoint") or "错题",
                      "qid": e.get("wrongDate") or ""}
         ids.append(qid)
-    paper = {"title": (name or "学生") + " 错题本",
-             "note": "共 %d 道错题　导出日期 %s" % (len(ids), _date_today()),
+    paper = {"title": title or ((name or "学生") + " 错题本"),
+             "note": note or ("共 %d 道错题　导出日期 %s" % (len(ids), _date_today())),
              "questionIds": ids}
     return build_paper_docx(paper, qmap)
 
@@ -1297,25 +1297,45 @@ class H(BaseHTTPRequestHandler):
             return send_json(self, {"items": items, "count": len(items)})
         if p == "/api/train/errors/export.docx":
             # 导出错题本(Word)。学生只能导出自己的；老师可带 ?studentId= 导出指定学生。
+            # 带 ?date=YYYY-MM-DD 时，只导出该天练习任务里的题（老师打印当天错题用）。
             if not eff_sid:
                 return send_json(self, {"error": "缺少学生"}, 400)
-            # 学生端防提前看答案：今日练习包未提交完成前不允许下载
+            date_arg = (q.get("date", [None])[0] or "").strip()
+            # 学生端防提前看答案：当日练习包未提交完成前不允许下载
             # （当天没有出题的空任务不算拦截，否则学生永远无法下载）
             if is_student:
-                task, _ = store_get("trainTasks", "t_%s_%s" % (eff_sid, _date_today()))
+                d = date_arg or _date_today()
+                task, _ = store_get("trainTasks", "t_%s_%s" % (eff_sid, d))
                 if task and task.get("errorIds") and task.get("status") != "done":
-                    return send_json(self, {"error": "请先完成今天的练习，再下载错题本"}, 403)
-            errs = [e["body"] for e in store_list("trainErrors", limit=5000)
-                    if (e["body"] or {}).get("studentId") == eff_sid]
+                    return send_json(self, {"error": "请先完成当天的练习，再下载错题"}, 403)
+            title = note = None
+            if date_arg:
+                task, _ = store_get("trainTasks", "t_%s_%s" % (eff_sid, date_arg))
+                ids = set(task.get("errorIds") or []) if task else set()
+                if not ids:
+                    return send_json(self, {"error": "该日期没有练习任务"}, 400)
+                errs = [e["body"] for e in store_list("trainErrors", limit=5000)
+                        if e["id"] in ids]
+                title = "%s %s 练习" % (((store_get("students", eff_sid)[0] or {})
+                                         .get("name") or eff_sid), date_arg)
+                note = "共 %d 道题　导出日期 %s" % (len(errs), _date_today())
+            else:
+                errs = [e["body"] for e in store_list("trainErrors", limit=5000)
+                        if (e["body"] or {}).get("studentId") == eff_sid]
             if not errs:
                 return send_json(self, {"error": "还没有错题可以导出"}, 400)
-            errs.sort(key=lambda e: (e.get("wrongDate") or "",
-                                     e.get("createdAt") or 0))
+            if date_arg:
+                # 当天任务内的顺序按任务里的顺序展示
+                order = {eid: i for i, eid in enumerate(ids)}
+                errs.sort(key=lambda e: order.get(e.get("id"), 999))
+            else:
+                errs.sort(key=lambda e: (e.get("wrongDate") or "",
+                                         e.get("createdAt") or 0))
             stu, _ = store_get("students", eff_sid)
             name = ((stu.get("name") if stu else "") or errs[0].get("studentName")
                     or eff_sid)
-            data = build_train_errors_docx(name, errs)
-            fname = urlquote("%s 错题本.docx" % name)
+            data = build_train_errors_docx(name, errs, title=title, note=note)
+            fname = urlquote((title or (name + " 错题本")) + ".docx")
             self.send_response(200)
             self.send_header("Content-Type", DOCX_CTYPE)
             self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + fname)

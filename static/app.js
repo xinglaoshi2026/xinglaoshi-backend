@@ -387,13 +387,21 @@
   let addQKp = ""; // 添加题目表单当前选中的知识点
   let modKpParent = ""; // 知识点编辑表单当前选中的父级（知识点树选择）
   let kpFocusId = ""; // 刚创建的知识点（在树中高亮并展开其祖先）
+  let kpOpen = new Set();  // 用户点开的节点（默认全部收起，逐级点开，避免整棵树被摊平）
   function openKpSheet(forWhat) {
     kpSheetFor = forWhat || null;
     kpFocusId = "";
+    kpOpen = new Set();          // 每次打开都从「只显示第一级」开始
     $("#kpSearch").value = "";
     renderKpTree();
     $("#kpSheet").classList.remove("hidden");
   }
+  // 点箭头：展开/收起该节点的下一级（只影响这一层）
+  function toggleKpNode(id) {
+    if (kpOpen.has(id)) kpOpen.delete(id); else kpOpen.add(id);
+    renderKpTree();
+  }
+  window.toggleKpNode = toggleKpNode;
   function closeKpSheet() { $("#kpSheet").classList.add("hidden"); }
   // 选中节点的祖先链（用于再次打开抽屉时自动展开到当前筛选位置）
   function kpAncestors(id) {
@@ -408,8 +416,12 @@
     const isAdd = kpSheetFor === "add";
     const isPick = kpSheetFor === "kpParent";
     const curSel = isAdd ? addQKp : (isPick ? modKpParent : qf.kpId);
-    const anc = curSel ? kpAncestors(curSel) : new Set();
-    if (kpFocusId) kpAncestors(kpFocusId).forEach(x => anc.add(x));
+    // 只有「搜索命中」或「刚新建知识点」时才自动展开；
+    // 平时完全按用户点开的状态显示（点高中只出它的下一级）。
+    const autoOpen = new Set();
+    if (kw) Object.keys(kpKids).forEach(k => autoOpen.add(k));
+    if (kpFocusId) kpAncestors(kpFocusId).forEach(x => autoOpen.add(x));
+    const anc = autoOpen;
     const allLabel = isPick ? "（顶级，无父级）" : "📚 全部知识点";
     // "＋"只在知识点管理场景（选择父级/管理）出现；题库选题/筛选时是纯选择器，不显示管理按钮
     const canManage = isPick;
@@ -424,9 +436,9 @@
       const cnt = kpCount(id);
       if (kw && !String(b.name || "").toLowerCase().includes(kw) && !kids.some(k => String(kpMap[k].name || "").toLowerCase().includes(kw))) return "";
       const hasKids = kids.length > 0;
-      const expanded = hasKids && anc.has(id);
+      const expanded = hasKids && (anc.has(id) || kpOpen.has(id));
       return '<div><div class="kp-row' + (curSel === id || kpFocusId === id ? " sel" : "") + '" data-kp="' + esc(id) + '" onclick="pickKp(\'' + esc(id) + '\')">' +
-        '<span class="kp-toggle' + (hasKids ? "" : " leaf") + (expanded ? " open" : "") + '" onclick="event.stopPropagation();this.classList.toggle(\'open\');this.closest(\'.kp-row\').parentElement.querySelector(\':scope > .kp-kids\').classList.toggle(\'open\')">' + (hasKids ? "▶" : "") + "</span>" +
+        '<span class="kp-toggle' + (hasKids ? "" : " leaf") + (expanded ? " open" : "") + '" onclick="event.stopPropagation();toggleKpNode(\'' + esc(id) + '\')">' + (hasKids ? "▶" : "") + "</span>" +
         '<span class="kp-name">' + esc(b.name || id) + "</span>" +
         (canManage ? '<span class="kp-add" title="在此知识点下新建子知识点" onclick="event.stopPropagation();kpNewChildAt(\'' + esc(id) + '\')">＋</span>' : "") +
         '<span class="kp-cnt">' + cnt + " 题</span></div>" +

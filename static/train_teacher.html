@@ -134,7 +134,10 @@
       </div>
       <div class="card">
         <h3>错题列表 <span style="font-size:12px;color:#8a90a2">（按学生筛选）</span></h3>
-        <select id="f-student" onchange="loadErrors()"><option value="">全部</option></select>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <select id="f-student" onchange="loadErrors()" style="flex:1;min-width:160px"><option value="">全部</option></select>
+          <button type="button" class="ghost sm" onclick="downloadFilteredErrors()">⬇️ 下载该生错题本(Word)</button>
+        </div>
         <div id="err-list"></div>
       </div>
     </div>
@@ -805,7 +808,36 @@ function renderTaskStu(){
   if(!t){ box.innerHTML='<p style="color:#8a90a2">该生今天没有任务（可点上方「生成今日任务」）。</p>'; return; }
   box.innerHTML=`<div style="border:1px solid #e6e8ef;border-radius:10px;padding:10px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
     <div><b>${t.studentName||stuName(t.studentId)}</b> · 共${(t.errorIds||[]).length}题 · ${STMAP[t.status]||t.status} ${t.score!=null?('· 正确率'+(t.score*100).toFixed(0)+'%'):''}</div>
-    <button class="ghost sm" onclick="viewTaskLogs('${t.id}')">查看作答</button></div>`;
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="ghost sm" onclick="viewTaskLogs('${t.id}')">查看作答</button>
+      <button class="ghost sm" onclick="downloadStuErrors('${t.studentId}','${t.date}')">⬇️ 下载当天错题(Word)</button>
+    </div></div>`;
+}
+// 下载 Word：老师端可导某学生「某天任务的题」或「全部错题本」
+async function downloadDocx(url, fallbackName){
+  try{
+    const r = await fetch(API+url, {headers: TOKEN?{'Authorization':'Bearer '+TOKEN}:{}});
+    if(!r.ok){ let m='下载失败'; try{ const j=await r.json(); m=j.error||m; }catch(e){} alert(m); return; }
+    const blob = await r.blob();
+    let fname = fallbackName || '错题.docx';
+    const cd = r.headers.get('Content-Disposition') || '';
+    const mm = cd.match(/filename\*=UTF-8''([^;]+)/i);
+    if(mm){ try{ fname = decodeURIComponent(mm[1]); }catch(e){} }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = fname;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+  }catch(e){ alert('下载失败，请重试'); }
+}
+function downloadFilteredErrors(){
+  const sid = document.getElementById('f-student').value;
+  if(!sid){ alert('请先在上方选择一名学生'); return; }
+  downloadStuErrors(sid, '');   // 不带日期 = 该生全部错题本
+}
+function downloadStuErrors(sid, date){
+  const url = '/api/train/errors/export.docx?studentId='+encodeURIComponent(sid)
+    + (date? ('&date='+encodeURIComponent(date)) : '');
+  downloadDocx(url, (stuName(sid)||'学生')+(date? (' '+date+' 练习') : ' 错题本')+'.docx');
 }
 async function viewTaskLogs(tid){
   const {j} = await call('/api/train/tasks/'+tid+'/logs');
