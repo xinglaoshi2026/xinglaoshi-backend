@@ -3,109 +3,309 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>错题循环训练 · 学生端</title>
+<title>错题练习 · 学生端</title>
 <style>
+  :root{
+    --bg:#fbf8f3;            /* 暖米白背景 */
+    --card:#fffdfa;
+    --ink:#3b352d;           /* 暖调深棕灰 */
+    --ink2:#6f665b;
+    --ink3:#a99f92;
+    --line:#efe6da;
+    --line2:#e7dccd;
+    --brand:#c07c4c;         /* 暖陶土色，柔和不刺眼 */
+    --brand2:#d9a172;
+    --brand-soft:#f8efe5;
+    --ok:#6d8f70; --ok-soft:#eef4ee;
+    --warn:#bb8a44; --warn-soft:#fdf4e7;
+    --err:#b2695f; --err-soft:#faefed;
+    --r:18px;
+    --sh:0 1px 2px rgba(90,70,50,.04), 0 8px 22px rgba(90,70,50,.06);
+  }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#f5f6fa;color:#1f2430;font-size:16px}
-  .c{max-width:640px;margin:0 auto;padding:12px 12px 30px}
-  .bar{background:#4361ee;color:#fff;padding:14px;border-radius:12px;margin-bottom:12px;text-align:center;font-size:18px;font-weight:600}
-  .card{background:#fff;border:1px solid #e6e8ef;border-radius:12px;padding:14px;margin-bottom:12px}
-  label{display:block;margin:6px 0 4px;color:#5a6072;font-size:13px}
-  select,input,textarea{width:100%;padding:10px;border:1px solid #d7dae6;border-radius:8px;font-size:15px}
-  button{background:#4361ee;color:#fff;border:0;padding:12px 16px;border-radius:10px;font-size:16px;width:100%;margin-top:10px;cursor:pointer}
-  button.ghost{background:#eef4ff;color:#3a56d4}
-  button.sm{width:auto;padding:8px 12px;font-size:14px;margin:4px 4px 0 0}
-  .q,.wq{margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid #eee}
-  .filetag{display:inline-block;background:#eef4ff;color:#3a56d4;border-radius:6px;padding:4px 8px;font-size:13px;margin:4px 6px 0 0;text-decoration:none}
-  .rv{background:#f8f9ff;border:1px solid #dfe3f5;border-radius:10px;padding:10px;margin-top:8px}
-  .pv,.tbs{display:flex;flex-wrap:wrap;gap:2px;margin-top:4px}
-  .tw{position:relative;display:inline-block;margin:4px 4px 0 0}
-  .tw img{width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid #e3e6f0;display:block}
-  .tw .x{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:#e5484d;color:#fff;border:0;font-size:12px;line-height:20px;padding:0;margin:0;cursor:pointer}
-  .done-tag{color:#2e9e5b;font-size:14px;margin-top:6px}
-  .qi{color:#8a90a2;font-size:12px;margin-bottom:4px}
-  img.qi{width:100%;border-radius:8px;margin-top:6px}
-  .ans{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
-  .ans button{width:auto;margin:0;padding:8px 14px;font-size:14px}
-  .right{background:#e7f7ee;color:#2e9e5b}
-  .wrong{background:#fdecec;color:#e5484d}
-  .self{background:#fff3e0;color:#c77700}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);font-size:16px;line-height:1.65;
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .c{max-width:560px;margin:0 auto;padding:14px 16px calc(96px + env(safe-area-inset-bottom))}
+  .card{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+    padding:16px;margin-bottom:14px;box-shadow:var(--sh);
+  }
+  h1,h2,h3{margin:0;font-weight:600;letter-spacing:.2px}
+  label{display:block;margin:10px 0 6px;color:var(--ink2);font-size:13.5px}
+  .hint{color:var(--ink3);font-size:12.5px;line-height:1.6}
+  select,input,textarea{
+    width:100%;padding:12px 13px;border:1px solid var(--line2);border-radius:12px;
+    font-size:15.5px;background:#fff;color:var(--ink);font-family:inherit;
+    transition:border-color .18s ease, box-shadow .18s ease;
+  }
+  textarea{line-height:1.7;resize:vertical}
+  select:focus,input:focus,textarea:focus{outline:0;border-color:var(--brand2);box-shadow:0 0 0 3px var(--brand-soft)}
+  button{
+    font-family:inherit;cursor:pointer;border:0;border-radius:12px;font-size:16px;
+    padding:13px 18px;width:100%;background:var(--brand);color:#fff;font-weight:600;
+    transition:transform .06s ease, filter .18s ease;
+  }
+  button:active{transform:translateY(1px)}
+  button:disabled{opacity:.55}
+  .btn2{background:var(--brand-soft);color:var(--brand)}
+  .btn3{background:#fff;color:var(--ink2);border:1px solid var(--line2)}
+  .sm{width:auto;padding:9px 14px;font-size:14px;margin:0}
   .hidden{display:none!important}
-  .score{text-align:center;font-size:20px;margin:8px 0}
-  .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
-  .topbar .nm{font-size:14px;color:#5a6072}
-  .topbar button{width:auto;margin:0;padding:6px 12px;font-size:13px;background:#eef4ff;color:#3a56d4}
-  .err{color:#e5484d;font-size:13px;margin-top:6px}
+
+  /* 顶部问候 */
+  .appbar{
+    position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;
+    gap:10px;padding:12px 2px 12px;margin:-14px 0 6px;
+    background:linear-gradient(180deg,rgba(251,248,243,.96) 60%,rgba(251,248,243,.75));
+    backdrop-filter:saturate(1.1) blur(6px);
+  }
+  .appbar .who{font-size:15.5px;color:var(--ink);font-weight:600;line-height:1.45;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .appbar .who.muted{font-weight:500;color:var(--ink2)}
+  .appbar .acts{display:flex;gap:8px;flex:0 0 auto}
+  .iconbtn{
+    width:auto;padding:8px 12px;font-size:13.5px;font-weight:500;
+    background:#fff;color:var(--ink2);border:1px solid var(--line2);border-radius:11px;
+  }
+
+  /* 登录 */
+  .loginwrap{padding:34px 4px 10px;text-align:center}
+  .logo{
+    width:64px;height:64px;border-radius:20px;margin:0 auto 14px;
+    background:linear-gradient(145deg,var(--brand2),var(--brand));
+    display:flex;align-items:center;justify-content:center;color:#fff;font-size:30px;
+    box-shadow:0 10px 26px rgba(192,124,76,.28);
+  }
+  .loginwrap h1{font-size:21px}
+  .loginwrap .sub{color:var(--ink3);font-size:13.5px;margin-top:6px}
+
+  /* 今日概览 */
+  .hero{display:flex;align-items:center;gap:14px}
+  .ring{
+    flex:0 0 auto;width:58px;height:58px;border-radius:50%;display:flex;align-items:center;
+    justify-content:center;font-size:15px;font-weight:700;color:var(--brand);
+    background:conic-gradient(var(--brand) var(--p,0%), var(--brand-soft) 0);
+    position:relative;
+  }
+  .ring::after{content:'';position:absolute;inset:5px;background:var(--card);border-radius:50%}
+  .ring span{position:relative;z-index:1}
+  .hero .t1{font-size:16.5px;font-weight:600}
+  .hero .t2{color:var(--ink3);font-size:13px;margin-top:3px}
+  .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600}
+  .pill.ok{background:var(--ok-soft);color:var(--ok)}
+  .pill.warn{background:var(--warn-soft);color:var(--warn)}
+  .pill.plain{background:var(--brand-soft);color:var(--brand)}
+
+  /* 步骤标题 */
+  .stephead{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+  .stepno{
+    flex:0 0 auto;width:26px;height:26px;border-radius:9px;background:var(--brand-soft);color:var(--brand);
+    display:flex;align-items:center;justify-content:center;font-size:13.5px;font-weight:700;
+  }
+  .stephead .st{font-size:15.5px;font-weight:600}
+  .stephead .sd{color:var(--ink3);font-size:12.5px;font-weight:400}
+
+  /* 上传区 */
+  .drop{
+    border:1.5px dashed var(--line2);border-radius:14px;padding:16px 14px;text-align:center;
+    background:#fffefb;margin-top:8px;
+  }
+  .drop .big{font-size:14.5px;color:var(--ink2)}
+  .pv,.tbs{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+  .tw{position:relative;display:inline-block}
+  .tw img{width:76px;height:76px;object-fit:cover;border-radius:12px;border:1px solid var(--line);display:block}
+  .tw .x{
+    position:absolute;top:-7px;right:-7px;width:22px;height:22px;border-radius:50%;background:var(--err);
+    color:#fff;border:0;font-size:13px;line-height:22px;padding:0;margin:0;box-shadow:0 2px 6px rgba(0,0,0,.12)
+  }
+  .tick{
+    position:absolute;top:-7px;right:-7px;width:22px;height:22px;border-radius:50%;background:var(--ok);
+    color:#fff;font-size:12px;line-height:22px;text-align:center
+  }
+  .statusline{font-size:13px;margin-top:10px;color:var(--ok)}
+  .statusline.warn{color:var(--warn)}
+
+  /* 题目 */
+  .q{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+     padding:16px;margin-bottom:14px;box-shadow:var(--sh)}
+  .qhead{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:10px}
+  .qno{
+    flex:0 0 auto;min-width:30px;height:26px;padding:0 9px;border-radius:9px;background:var(--brand);
+    color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center
+  }
+  .kchip{background:var(--brand-soft);color:var(--brand);font-size:12px;padding:3px 9px;border-radius:999px;font-weight:600}
+  .qbody{font-size:15.5px;line-height:1.75;color:var(--ink);word-break:break-word}
+  .qbody img,.qi{max-width:100%;border-radius:12px;display:block}
+  img.qi{width:100%;margin-top:8px;cursor:zoom-in;border:1px solid var(--line)}
+  .filetag{
+    display:inline-block;background:#fff;color:var(--brand);border:1px solid var(--line2);
+    border-radius:10px;padding:5px 10px;font-size:13px;margin:8px 8px 0 0;text-decoration:none
+  }
+  .ansbox{
+    background:var(--brand-soft);border:1px solid #f0e2d3;border-radius:14px;padding:13px 14px;margin-top:12px
+  }
+  .ansbox .lb{font-size:12.5px;color:var(--brand);font-weight:700;letter-spacing:.4px;margin-bottom:4px}
+  .ansbox .txt{color:var(--ink)}
+  .ansbox .ana{color:var(--ink2);margin-top:8px;font-size:15px}
+  .step3{margin-top:14px}
+  .seg{display:flex;gap:8px;margin-top:8px}
+  .seg button{
+    flex:1;width:auto;padding:11px 0;font-size:14.5px;font-weight:600;
+    background:#fff;color:var(--ink2);border:1.5px solid var(--line2);border-radius:12px
+  }
+  .seg button.on[data-v="self_right"]{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
+  .seg button.on[data-v="half"]{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+  .seg button.on[data-v="self_wrong"]{background:var(--err-soft);border-color:var(--err);color:var(--err)}
+  .fb{font-size:13px;margin-top:8px;color:var(--ok)}
+  .fb.pending{color:var(--warn)}
+
+  /* 最近一周错题 */
+  .weekhead{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .weekhead .tt{font-size:16px;font-weight:600}
+  .lock{
+    color:var(--warn);background:var(--warn-soft);border-radius:12px;padding:11px 13px;
+    font-size:13.5px;line-height:1.6;margin-top:12px
+  }
+  .wq{padding:13px 0;border-bottom:1px solid var(--line)}
+  .wq:last-child{border-bottom:0;padding-bottom:0}
+  .wq .qi{color:var(--ink3);font-size:12.5px;margin-bottom:4px}
+
+  /* 结果 */
+  .score{
+    text-align:center;font-size:17px;font-weight:600;color:var(--brand);
+    background:var(--brand-soft);border-radius:14px;padding:14px;margin-bottom:14px
+  }
+  .rescard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px 14px;margin-bottom:10px}
+  .rescard .qi{font-size:13.5px;color:var(--ink2)}
+
+  .err{color:var(--err);font-size:13px;margin-top:8px}
+
+  /* 底部操作条 */
+  .bottombar{
+    position:fixed;left:0;right:0;bottom:0;z-index:30;
+    padding:10px 16px calc(12px + env(safe-area-inset-bottom));
+    background:linear-gradient(180deg,rgba(251,248,243,.6),rgba(251,248,243,.98) 40%);
+    backdrop-filter:saturate(1.1) blur(8px);
+  }
+  .bottombar .inner{
+    max-width:560px;margin:0 auto;display:flex;align-items:center;gap:12px;
+    background:#fff;border:1px solid var(--line);border-radius:16px;padding:10px 12px;
+    box-shadow:0 8px 24px rgba(90,70,50,.10)
+  }
+  .bottombar .prog{flex:0 0 auto;font-size:12.5px;color:var(--ink3);line-height:1.3}
+  .bottombar .prog b{display:block;font-size:15px;color:var(--ink)}
+  .bottombar button{flex:1;margin:0}
+
+  /* 说明弹窗 */
+  .mask{
+    position:fixed;inset:0;z-index:99;display:flex;align-items:flex-end;justify-content:center;
+    background:rgba(59,53,45,.42);padding:0
+  }
+  .sheet{
+    background:var(--card);width:100%;max-width:560px;max-height:88vh;overflow:auto;
+    border-radius:22px 22px 0 0;padding:18px 18px calc(22px + env(safe-area-inset-bottom))
+  }
+  .sheet h2{font-size:17.5px}
+  .sheet ol{padding-left:20px;margin:12px 0 0;color:var(--ink2);font-size:14.5px;line-height:1.95}
+  .sheet ol b{color:var(--ink)}
 </style>
 </head>
 <body>
 <div class="c">
-  <div class="bar">我的错题练习</div>
-
-  <div id="login" class="card">
-    <label>账号</label>
-    <input id="username" placeholder="老师给你的账号">
-    <label>密码</label>
-    <input id="password" type="password" placeholder="密码">
-    <button onclick="doLogin()">登录</button>
-    <button class="ghost sm" style="width:100%;margin-top:8px" onclick="showHelp()">❓ 第一次用？看使用说明</button>
-    <div id="lmsg" class="err"></div>
+  <div id="login">
+    <div class="loginwrap">
+      <div class="logo">✎</div>
+      <h1>错题练习</h1>
+      <div class="sub">每天三道，慢慢就都会了</div>
+    </div>
+    <div class="card" style="margin-top:18px">
+      <label>账号</label>
+      <input id="username" placeholder="老师给你的账号" autocomplete="username">
+      <label>密码</label>
+      <input id="password" type="password" placeholder="密码" autocomplete="current-password">
+      <button onclick="doLogin()" style="margin-top:16px">登录</button>
+      <button class="btn2" style="margin-top:10px;font-size:14px;padding:11px" onclick="showHelp()">第一次用？看使用说明</button>
+      <div id="lmsg" class="err"></div>
+    </div>
   </div>
 
   <div id="main" class="hidden">
-    <div class="topbar">
-      <span class="nm" id="me"></span>
-      <div style="display:flex;gap:6px">
-        <button onclick="showHelp()">❓ 使用说明</button>
-        <button onclick="logout()">退出</button>
+    <div class="appbar">
+      <div class="who" id="me"></div>
+      <div class="acts">
+        <button class="iconbtn" onclick="showHelp()">说明</button>
+        <button class="iconbtn" onclick="logout()">退出</button>
       </div>
     </div>
+
     <div class="card" id="head"></div>
-    <div class="card" id="printCard" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-      <div style="font-size:13px;color:#5a6072">如果想在纸上写就点击下载按钮</div>
-      <button class="ghost sm" onclick="downloadTodayQuestions()">🖨️ 下载今天的题目（不含答案）</button>
+
+    <div class="card" id="printCard" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+      <div class="hint" style="flex:1;min-width:140px">如果想在纸上写就点击下载按钮</div>
+      <button class="btn2 sm" onclick="downloadTodayQuestions()">下载今天的题目</button>
     </div>
+
     <div class="card" id="sharedCard">
-      <label style="font-weight:bold">第1步 · 拍照上传计算过程（所有题目答案写在同一张纸上，在此上传）</label>
-      <div class="pv" id="shared-pv"></div>
-      <input id="shared-ph" type="file" accept="image/*" multiple onchange="addSharedPhotos(this)">
-      <div style="font-size:12px;color:#8a90a2;margin-top:4px">可一次选择多张图片，也可分多次拍照上传（一张纸写不完就多拍几张）。上传后下面每道题会自动显示答案。</div>
-      <div id="rvHint" style="font-size:13px;color:#2e9e5b;margin-top:6px"></div>
+      <div class="stephead">
+        <div class="stepno">1</div>
+        <div>
+          <div class="st">上传计算过程</div>
+          <div class="sd">所有题目答案写在同一张纸上，在此上传</div>
+        </div>
+      </div>
+      <div class="drop">
+        <div class="big">拍照或从相册选择，可一次多张</div>
+        <div class="hint" style="margin-top:4px">一张纸写不完可以多拍几张，分次上传也行</div>
+        <div class="pv" id="shared-pv"></div>
+        <input id="shared-ph" type="file" accept="image/*" multiple class="hidden" onchange="addSharedPhotos(this)">
+        <button class="btn3 sm" style="margin-top:12px" onclick="document.getElementById('shared-ph').click()">选择 / 拍摄照片</button>
+      </div>
+      <div id="rvHint" class="statusline"></div>
     </div>
+
     <div id="items"></div>
-    <button id="submitBtn" onclick="submit()">提交今日练习</button>
     <div id="result"></div>
+
     <div class="card" id="weekCard" style="margin-top:14px">
-      <div class="topbar">
-        <b>最近一周错题</b>
-        <button onclick="toggleWeek()" id="weekBtn">展开</button>
+      <div class="weekhead">
+        <div class="tt">最近一周错题</div>
+        <button class="btn3 sm hidden" onclick="toggleWeek()" id="weekBtn">展开</button>
       </div>
       <div id="weekList" class="hidden"></div>
-      <div id="weekLock" class="hidden" style="color:#c77700;font-size:13px;padding:8px 2px;line-height:1.5">🔒 完成今日练习后，这里就可以查看和下载错题。</div>
-      <div id="dlBox" class="hidden" style="margin-top:10px">
-        <button class="ghost" onclick="downloadErrors()">⬇️ 下载我的错题本（Word）</button>
-        <div style="font-size:12px;color:#8a90a2;margin-top:4px">把全部错题（含答案）导成 Word 文档，可打印出来在纸上练。</div>
+      <div id="weekLock" class="lock hidden">完成今日练习后，这里就可以查看和下载错题。</div>
+      <div id="dlBox" class="hidden" style="margin-top:12px">
+        <button class="btn2" onclick="downloadErrors()">下载我的错题本（Word）</button>
+        <div class="hint" style="margin-top:8px">把全部错题（含答案）导成 Word 文档，可打印出来在纸上练。</div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- 使用说明弹窗（放在 #main 之外，登录前也能查看） -->
-<div id="helpMask" class="hidden" onclick="if(event.target===this)closeHelp()"
-     style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99;display:flex;align-items:center;justify-content:center;padding:16px">
-  <div style="background:#fff;border-radius:14px;max-width:520px;width:100%;max-height:84vh;overflow:auto;padding:16px">
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <b>做题步骤说明</b>
-      <button class="sm ghost" onclick="closeHelp()">关闭</button>
+<div id="bottomBar" class="bottombar hidden">
+  <div class="inner">
+    <div class="prog">本次已填写<b id="progTxt">0 / 0</b></div>
+    <button id="submitBtn" onclick="submit()">提交今日练习</button>
+  </div>
+</div>
+
+<!-- 使用说明（放在 #main 之外，登录前也能查看） -->
+<div id="helpMask" class="mask hidden" onclick="if(event.target===this)closeHelp()">
+  <div class="sheet">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <h2>做题步骤说明</h2>
+      <button class="btn3 sm" onclick="closeHelp()">关闭</button>
     </div>
-    <ol style="padding-left:20px;line-height:1.9;color:#3a4152;font-size:14px;margin:10px 0 4px">
+    <ol>
       <li><b>第1步</b>：把今天<b>所有题目</b>的答案/计算过程写在<b>同一张纸</b>上，拍好照片后在最上面的框里上传——可以一次选多张，也可以分几次拍照上传。</li>
       <li><b>第2步</b>：上传成功后，下面每道题会<b>自动显示答案与解析</b>，不用逐题点。</li>
       <li><b>第3步</b>：对照答案给自己打分：做对了 / 半对 / 做错了。</li>
       <li><b>第4步</b>：写下这道题的<b>错误原因</b>（必填，不填无法提交）。</li>
       <li>所有题目都填完后，点最下方 <b>提交今日练习</b>。</li>
       <li>做错的题过几天还会再出现；每天只练 <b>3 道</b>，花几分钟就好。</li>
-      <li>想打印题目在纸上写：点 <b>🖨️ 下载今天的题目（不含答案）</b>；完成练习后可点 <b>⬇️ 下载我的错题本</b> 导出全部错题（含答案）。</li>
+      <li>想打印题目在纸上写：点 <b>下载今天的题目</b>；完成练习后可点 <b>下载我的错题本</b> 导出全部错题（含答案）。</li>
     </ol>
   </div>
 </div>
@@ -126,6 +326,7 @@ async function call(p, opts={}){
 function show(ok){
   document.getElementById('login').classList.toggle('hidden', ok);
   document.getElementById('main').classList.toggle('hidden', !ok);
+  if(!ok) document.getElementById('bottomBar').classList.add('hidden');
 }
 
 async function doLogin(){
@@ -155,12 +356,10 @@ function setMe(stu){
   const g = (stu && (stu.greeting||'').trim()) || '';
   if(g){
     el.textContent = g;
-    el.style.color = '#4361ee';
-    el.style.fontWeight = '600';
-    el.style.fontSize = '15px';
+    el.classList.remove('muted');
   }else{
     el.textContent = nm ? ('你好，'+nm) : '已登录';
-    el.style.color = ''; el.style.fontWeight = ''; el.style.fontSize = '';
+    el.classList.add('muted');
   }
 }
 
@@ -181,48 +380,63 @@ async function loadToday(){
   if(status===401){ logout(); return; }
   const task=j.task;
   const head=document.getElementById('head');
-  if(!task){ head.innerHTML='<b>今天还没有给你的练习包</b><br><span style="color:#8a90a2">让老师先点"生成今日任务"哦</span>'; document.getElementById('submitBtn').classList.add('hidden'); document.getElementById('sharedCard').classList.add('hidden'); document.getElementById('printCard').classList.add('hidden'); return; }
-  document.getElementById('submitBtn').classList.remove('hidden');
+  const bb=document.getElementById('bottomBar');
+  const hideAll = () => { bb.classList.add('hidden');
+    document.getElementById('sharedCard').classList.add('hidden');
+    document.getElementById('printCard').classList.add('hidden'); };
+  if(!task){
+    head.innerHTML='<div class="hero"><div><div class="t1">今天还没有练习</div>'
+      +'<div class="t2">等老师生成今日任务后就会出现在这里</div></div></div>';
+    hideAll(); return;
+  }
   const tst = task.status;
   // 双保险：状态字段为 done，或「已答题数 = 总题数」都算今天已完成
   const allDone = (j.total > 0 && (j.answered||0) >= j.total);
   const fin = (tst==='done') || allDone;
-  head.innerHTML='<b>'+task.date+' 练习</b> · 共'+j.items.length+'题'
-    + (fin ? ' · 已完成 ✓'
-       : (tst==='partial' ? ' · 部分完成（还有题没提交）' : ' · 待完成'));
+  const badge = fin ? '<span class="pill ok">已完成</span>'
+    : (tst==='partial' ? '<span class="pill warn">部分完成</span>' : '<span class="pill plain">待完成</span>');
+  head.innerHTML='<div class="hero">'
+    +'<div class="ring" style="--p:'+Math.round(((j.total? (j.answered||0)/j.total : 0))*100)+'%"><span>'
+    + (j.answered||0)+'/'+(j.total||0)+'</span></div>'
+    +'<div><div class="t1">'+task.date+' 练习 '+badge+'</div>'
+    +'<div class="t2">共 '+j.items.length+' 道题 · '
+    + (fin ? '今天已完成' : ('已提交 '+(j.answered||0)+' / '+(j.total||0)))
+    +'</div></div></div>';
   // 锁定提示：区分「完全没做」和「做了一部分」
   const lockEl = document.getElementById('weekLock');
   if(lockEl){
     lockEl.textContent = (tst==='partial' && !fin)
-      ? '🔒 你还有题目没提交，全部提交后这里就能查看和下载错题。'
-      : '🔒 完成今日练习后，这里就可以查看和下载错题。';
+      ? '你还有题目没提交，全部提交后这里就能查看和下载错题。'
+      : '完成今日练习后，这里就可以查看和下载错题。';
   }
   TASK_DONE = !task || fin;
   if(!j.items.length){
-    head.innerHTML='<b>'+task.date+'</b> · 今天没有需要练的错题，休息一下';
-    document.getElementById('submitBtn').classList.add('hidden');
-    document.getElementById('sharedCard').classList.add('hidden');
-    document.getElementById('printCard').classList.add('hidden');
+    head.innerHTML='<div class="hero"><div><div class="t1">今天没有需要练的错题</div>'
+      +'<div class="t2">'+task.date+' · 休息一下，明天见</div></div></div>';
+    hideAll();
     TASK_DONE=true; updateWeekLock(); return;
   }
   document.getElementById('printCard').classList.remove('hidden');
+  document.getElementById('sharedCard').classList.remove('hidden');
+  bb.classList.remove('hidden');
   SHARED={photos:[],urls:[]}; renderShared();
   const box=document.getElementById('items'); box.innerHTML=''; ST={};
   j.items.forEach((e,idx)=>{
     const imgs = (e.images&&e.images.length)?e.images:(e.image?[e.image]:[]);
-    const imgHtml = imgs.map(u=>`<img class="qi" style="cursor:zoom-in" src="${API+u}" onclick="zoomImg('${API+u}')">`).join('');
+    const imgHtml = imgs.map(u=>`<img class="qi" src="${API+u}" onclick="zoomImg('${API+u}')">`).join('');
     const files = (e.files&&e.files.length)? e.files.map(f=>{
       const fu = (typeof f==='string')?f:(f.url||''); const fn=(typeof f==='string')?'附件':(f.name||'附件');
-      return `<a class="filetag" href="${API+fu}" target="_blank" rel="noopener">📎 ${fn}</a>`;
+      return `<a class="filetag" href="${API+fu}" target="_blank" rel="noopener">附件 · ${fn}</a>`;
     }).join(' ') : '';
     box.insertAdjacentHTML('beforeend',`<div class="q" id="q_${idx}" data-idx="${idx}" data-eid="${e.id}">
-      <div class="qi">第${idx+1}题 · ${e.knowledgePoint||''} <span style="color:#8a90a2">${e.errorReason||''}</span></div>
-      <div>${(e.stem||(imgs.length?'':'（看图）'))}</div>${imgHtml}
-      ${files?('<div style="margin-top:6px">'+files+'</div>'):''}
+      <div class="qhead"><div class="qno">第${idx+1}题</div>${e.knowledgePoint?('<span class="kchip">'+e.knowledgePoint+'</span>'):''}</div>
+      <div class="qbody">${(e.stem||(imgs.length?'':'（看图作答）'))}</div>${imgHtml}
+      ${files?('<div style="margin-top:8px">'+files+'</div>'):''}
       <div id="rv_${idx}" class="rv hidden"></div>
-      <div id="fb_${idx}"></div>
+      <div id="fb_${idx}" class="fb"></div>
     </div>`);
   });
+  updateProgress();
 }
 // 公共计算过程（多题写在同一张纸上时只传一次，提交时每题都会带上这些图）
 let SHARED = {photos:[], urls:[]};
@@ -236,7 +450,7 @@ function addSharedPhotos(inp){
 function renderShared(){
   document.getElementById('shared-pv').innerHTML =
     SHARED.urls.map(u=>`<span class="tw"><img src="${API+u}" onclick="zoomImg('${API+u}')">`
-      + `<span style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:#2e9e5b;color:#fff;font-size:12px;line-height:20px;text-align:center">✓</span></span>`).join('')
+      + `<span class="tick">✓</span></span>`).join('')
     + SHARED.photos.map((f,i)=>
       `<span class="tw"><img src="${URL.createObjectURL(f)}"><button class="x" onclick="delSharedPhoto(${i})">×</button></span>`).join('');
 }
@@ -266,16 +480,16 @@ async function revealAll(){
   if(!qs.length) return;
   const hint=document.getElementById('rvHint');
   if(!SHARED.photos.length && !SHARED.urls.length){
-    if(hint) hint.textContent='请先拍照上传答案（可多张）';
+    if(hint){ hint.textContent='请先拍照上传答案（可多张）'; hint.className='statusline warn'; }
     return;
   }
-  if(hint) hint.textContent='正在上传并显示答案…';
+  if(hint){ hint.textContent='正在上传并显示答案…'; hint.className='statusline'; }
   try{ await uploadShared(); }catch(e){}
-  if(!SHARED.urls.length){ if(hint) hint.textContent='上传失败，请重试'; return; }
+  if(!SHARED.urls.length){ if(hint){ hint.textContent='上传失败，请重试'; hint.className='statusline warn'; } return; }
   for(const q of qs){
     await revealOne(q.dataset.idx);
   }
-  if(hint) hint.textContent='答案已显示，请完成下面每道题的第3、4步 ✓';
+  if(hint){ hint.textContent='答案已显示，请完成下面每道题的第 3、4 步'; hint.className='statusline'; }
 }
 async function revealOne(idx){
   const st=ST[idx]=ST[idx]||{revealed:false,result:'',note:''};
@@ -285,36 +499,60 @@ async function revealOne(idx){
   if(status===401){ logout(); return; }
   if(!j||j.error) return;
   st.revealed=true;
-  const ansImgs=(j.answerImages&&j.answerImages.length)?j.answerImages.map(u=>`<img class="qi" style="cursor:zoom-in" src="${API+u}" onclick="zoomImg('${API+u}')">`).join(''):'';
+  const ansImgs=(j.answerImages&&j.answerImages.length)?j.answerImages.map(u=>`<img class="qi" src="${API+u}" onclick="zoomImg('${API+u}')">`).join(''):'';
   document.getElementById('rv_'+idx).innerHTML=`
-    ${j.answer?('<div><b>答案：</b>'+j.answer+'</div>'):''}
-    <div style="color:#5a6072;margin-top:4px"><b>解析：</b>${j.analysis||'(无文字解析)'}</div>
-    ${ansImgs?('<div class="tbs" style="display:block">'+ansImgs+'</div>'):''}
-    <label style="margin-top:8px">第3步 · 自评</label>
-    <div class="ans">
-      <button class="sm right" onclick="setSelf(${idx},'self_right')">做对了</button>
-      <button class="sm self" onclick="setSelf(${idx},'half')">半对</button>
-      <button class="sm wrong" onclick="setSelf(${idx},'self_wrong')">做错了</button>
+    <div class="ansbox">
+      <div class="lb">答案与解析</div>
+      ${j.answer?('<div class="txt">'+j.answer+'</div>'):''}
+      <div class="ana">${j.analysis||'（无文字解析）'}</div>
+      ${ansImgs?('<div class="tbs">'+ansImgs+'</div>'):''}
     </div>
-    <label>第4步 · 错误原因（必填，不填无法提交）</label>
-    <textarea class="note" id="note_${idx}" placeholder="如：公式记错了 / 计算粗心 / 题目没读懂…" oninput="setNote(${idx},this.value)"></textarea>`;
+    <div class="step3">
+      <div class="stephead"><div class="stepno">3</div><div class="st" style="font-size:14.5px">对照答案，给自己打分</div></div>
+      <div class="seg">
+        <button type="button" data-v="self_right" onclick="setSelf(${idx},'self_right')">做对了</button>
+        <button type="button" data-v="half" onclick="setSelf(${idx},'half')">半对</button>
+        <button type="button" data-v="self_wrong" onclick="setSelf(${idx},'self_wrong')">做错了</button>
+      </div>
+    </div>
+    <div class="step3">
+      <div class="stephead"><div class="stepno">4</div><div class="st" style="font-size:14.5px">这道题错在哪</div></div>
+      <textarea class="note" id="note_${idx}" rows="2" placeholder="如：公式记错了 / 计算粗心 / 题目没读懂…" oninput="setNote(${idx},this.value)"></textarea>
+    </div>`;
   document.getElementById('rv_'+idx).classList.remove('hidden');
 }
 function setSelf(idx,val){
+  ST[idx]=ST[idx]||{revealed:true,result:'',note:''};
   ST[idx].result=val;
+  document.querySelectorAll('#rv_'+idx+' .seg button').forEach(b=>b.classList.toggle('on', b.dataset.v===val));
   setFb(idx);
 }
-function setNote(idx,v){ ST[idx].note=v; setFb(idx); }
+function setNote(idx,v){ ST[idx]=ST[idx]||{revealed:true,result:'',note:''}; ST[idx].note=v; setFb(idx); }
 function setFb(idx){
-  const st=ST[idx]; const el=document.getElementById('fb_'+idx);
-  if(!el) return;
-  if(st.result && (st.note||'').trim()){
-    el.innerHTML='<div class="done-tag">✓ 本题已记录（'+(st.result==='self_right'?'做对了':st.result==='half'?'半对':'做错了')+'）</div>';
-  }else if(st.result){
-    el.innerHTML='<div style="color:#c77700;font-size:13px;margin-top:4px">已选自评，还需填写错误原因</div>';
-  }else{
-    el.innerHTML='';
+  const st=ST[idx]||{};
+  const el=document.getElementById('fb_'+idx);
+  if(el){
+    const label = st.result==='self_right'?'做对了':(st.result==='half'?'半对':(st.result==='self_wrong'?'做错了':''));
+    if(st.result && (st.note||'').trim()){
+      el.innerHTML='<div class="fb">已记录（'+label+'）</div>';
+    }else if(st.result){
+      el.innerHTML='<div class="fb pending">已选自评，还需写错误原因</div>';
+    }else{
+      el.innerHTML='';
+    }
   }
+  updateProgress();
+}
+// 底部进度：完成 = 已自评且写了错误原因
+function updateProgress(){
+  const qs=[...document.querySelectorAll('#items .q')];
+  let done=0;
+  qs.forEach(q=>{
+    const s=ST[q.dataset.idx];
+    if(s && s.result && (s.note||'').trim()) done++;
+  });
+  const t=document.getElementById('progTxt');
+  if(t) t.textContent = done+' / '+qs.length;
 }
 
 // 使用说明（帮助前几次使用的学生）
@@ -325,10 +563,10 @@ function closeHelp(){ document.getElementById('helpMask').classList.add('hidden'
 function zoomImg(url){
   let m=document.getElementById('zoom-mask');
   if(!m){ m=document.createElement('div'); m.id='zoom-mask';
-    m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.78);display:flex;align-items:center;justify-content:center;z-index:99;cursor:zoom-out';
+    m.style.cssText='position:fixed;inset:0;background:rgba(59,53,45,.86);display:flex;align-items:center;justify-content:center;z-index:120;cursor:zoom-out';
     m.onclick=function(){ m.style.display='none'; };
     document.body.appendChild(m); }
-  m.innerHTML='<img src="'+url+'" style="max-width:94%;max-height:88%;border-radius:10px">';
+  m.innerHTML='<img src="'+url+'" style="max-width:94%;max-height:88%;border-radius:14px">';
   m.style.display='flex';
 }
 
@@ -360,16 +598,16 @@ async function submit(){
   btn.disabled=false; btn.textContent='提交今日练习';
   if(status===401){ logout(); return; }
   if(!j||!j.ok){ document.getElementById('result').textContent=(j&&j.error)||'提交失败'; return; }
-  let h='<div class="score">本次自评：'+j.right+'/'+j.total+' 题做对</div>';
+  let h='<div class="score">本次自评：'+j.right+' / '+j.total+' 题做对</div>';
   (j.results||[]).forEach((r,i)=>{
     const ok=r.result==='right'||r.result==='self_right';
-    const ansImgs=(r.answerImages&&r.answerImages.length)?r.answerImages.map(u=>`<img class="qi" style="cursor:zoom-in" src="${API+u}" onclick="zoomImg('${API+u}')">`).join(''):'';
-    h+=`<div class="card"><div class="qi">第${i+1}题 · <b>${ok?'✓ 对':'✗ 错'}</b></div>
-      <div style="color:#5a6072">解析：${r.analysis||'(无)'}</div>${ansImgs?('<div style="margin-top:4px">'+ansImgs+'</div>'):''}</div>`;
+    const ansImgs=(r.answerImages&&r.answerImages.length)?r.answerImages.map(u=>`<img class="qi" src="${API+u}" onclick="zoomImg('${API+u}')">`).join(''):'';
+    h+=`<div class="rescard"><div class="qi">第${i+1}题 · <b style="color:${ok?'var(--ok)':'var(--err)'}">${ok?'做对了':'做错了'}</b></div>
+      <div style="color:var(--ink2);margin-top:4px">${r.analysis||'（无解析）'}</div>${ansImgs?('<div>'+ansImgs+'</div>'):''}</div>`;
   });
-  h+='<p style="color:#8a90a2;font-size:13px">做错的题过几天会再来找你，加油！</p>';
+  h+='<p class="hint" style="text-align:center">做错的题过几天还会再来找你，加油。</p>';
   document.getElementById('result').innerHTML=h;
-  document.getElementById('submitBtn').classList.add('hidden');
+  document.getElementById('bottomBar').classList.add('hidden');
   // 当日作业已提交完成 → 解锁近期错题，并自动展开供复习
   TASK_DONE = true;
   updateWeekLock();
@@ -396,6 +634,47 @@ function updateWeekLock(){
     lock.classList.remove('hidden');
   }
 }
+function toggleWeek(){
+  if(!TASK_DONE){ return; }   // 当日作业未提交完成，锁定
+  const box=document.getElementById('weekList');
+  const btn=document.getElementById('weekBtn');
+  const hidden = box.classList.toggle('hidden');
+  btn.textContent = hidden ? '展开' : '收起';
+  if(!hidden && !WEEK_LOADED) loadWeek();
+}
+async function loadWeek(){
+  const {status,j}=await call('/api/train/errors');
+  if(status===401){ logout(); return; }
+  WEEK_LOADED = true;
+  const items = (j&&j.items)||[];
+  const cutoff = Date.now() - 7*24*3600*1000;
+  const recent = items.filter(e=>{
+    if(e.createdAt) return e.createdAt >= cutoff;
+    if(e.wrongDate) return new Date(e.wrongDate.replace(/-/g,'/')).getTime() >= cutoff;
+    return false;
+  }).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  const box = document.getElementById('weekList');
+  if(!recent.length){ box.innerHTML = '<div class="hint" style="padding:8px 0">最近一周还没有错题记录</div>'; return; }
+  box.innerHTML = recent.map((e,i)=>{
+    const imgs = ((e.images&&e.images.length)?e.images:(e.image?[e.image]:[]))
+      .map(u=>`<img class="qi" src="${API+u}" onclick="zoomImg('${API+u}')">`).join('');
+    const ansImgs = (e.answerImages&&e.answerImages.length)
+      ? e.answerImages.map(u=>`<img class="qi" src="${API+u}" onclick="zoomImg('${API+u}')">`).join('') : '';
+    const files = (e.files&&e.files.length)? e.files.map(f=>{
+      const fu=(typeof f==='string')?f:(f.url||''); const fn=(typeof f==='string')?'附件':(f.name||'附件');
+      return `<a class="filetag" href="${API+fu}" target="_blank" rel="noopener">附件 · ${fn}</a>`;
+    }).join(' ') : '';
+    return `<div class="wq">
+      <div class="qi">${i+1} · ${e.wrongDate||''} ${e.knowledgePoint?('· '+e.knowledgePoint):''}</div>
+      <div class="qbody">${(e.stem||'')}${(!e.stem&&!imgs.length)?'（看图）':''}</div>${imgs}
+      ${files?('<div style="margin-top:8px">'+files+'</div>'):''}
+      <button class="btn3 sm" style="margin-top:10px" onclick="const d=document.getElementById('wans_${i}'); d.classList.toggle('hidden'); this.textContent=d.classList.contains('hidden')?'看解析':'收起解析'">看解析</button>
+      <div id="wans_${i}" class="hidden"><div class="ansbox"><div class="lb">答案与解析</div>
+        <div class="ana" style="margin-top:0">${e.analysis||'（无文字解析）'}</div>${ansImgs?('<div class="tbs">'+ansImgs+'</div>'):''}</div></div>
+    </div>`;
+  }).join('');
+}
+
 // 打印版：只含今天要做的题目（不含答案/解析），做题前就能下载打印，方便在纸上作答
 async function downloadTodayQuestions(){
   try{
@@ -433,43 +712,6 @@ async function downloadErrors(){
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
   }catch(e){ alert('下载失败，请重试'); }
-}
-function toggleWeek(){
-  if(!TASK_DONE){ return; }   // 当日作业未提交完成，锁定
-  const box = document.getElementById('weekList');
-  const btn = document.getElementById('weekBtn');
-  const hidden = box.classList.toggle('hidden');
-  btn.textContent = hidden ? '展开' : '收起';
-  if(!hidden && !WEEK_LOADED) loadWeek();
-}
-async function loadWeek(){
-  const {status,j} = await call('/api/train/errors');
-  if(status===401){ logout(); return; }
-  WEEK_LOADED = true;
-  const items = (j&&j.items)||[];
-  const cutoff = Date.now() - 7*24*3600*1000;
-  const recent = items.filter(e=>{
-    if(e.createdAt) return e.createdAt >= cutoff;
-    if(e.wrongDate) return new Date(e.wrongDate.replace(/-/g,'/')).getTime() >= cutoff;
-    return false;
-  }).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-  const box = document.getElementById('weekList');
-  if(!recent.length){ box.innerHTML = '<div style="color:#8a90a2;font-size:14px;padding:6px 0">最近一周还没有错题记录</div>'; return; }
-  box.innerHTML = recent.map((e,i)=>{
-    const imgs = ((e.images&&e.images.length)?e.images:(e.image?[e.image]:[])).map(u=>`<img class="qi" style="cursor:zoom-in" src="${API+u}" onclick="zoomImg('${API+u}')">`).join('');
-    const ansImgs = (e.answerImages&&e.answerImages.length)?e.answerImages.map(u=>`<img class="qi" style="cursor:zoom-in" src="${API+u}" onclick="zoomImg('${API+u}')">`).join(''):'';
-    const files = (e.files&&e.files.length)? e.files.map(f=>{
-      const fu=(typeof f==='string')?f:(f.url||''); const fn=(typeof f==='string')?'附件':(f.name||'附件');
-      return `<a class="filetag" href="${API+fu}" target="_blank" rel="noopener">📎 ${fn}</a>`;
-    }).join(' ') : '';
-    return `<div class="wq">
-      <div class="qi">${i+1} · ${e.wrongDate||''} ${e.knowledgePoint?('<span style="color:#8a90a2">'+e.knowledgePoint+'</span>'):''}</div>
-      <div>${(e.stem||'')}${(!e.stem&&!imgs.length)?'（看图）':''}</div>${imgs}
-      ${files?('<div style="margin-top:6px">'+files+'</div>'):''}
-      <button class="sm ghost" onclick="const d=document.getElementById('wans_${i}'); d.classList.toggle('hidden'); this.textContent=d.classList.contains('hidden')?'看解析':'收起解析'">看解析</button>
-      <div id="wans_${i}" class="hidden"><div style="color:#5a6072;margin-top:4px">${e.analysis||'(无文字解析)'}</div>${ansImgs?('<div>'+ansImgs+'</div>'):''}</div>
-    </div>`;
-  }).join('');
 }
 
 // 启动时若有 token 尝试直接进入(后端会校验有效性)
