@@ -420,6 +420,61 @@
   }
   body.theme-dark ::selection{background:#4A3627;color:#F3DCC4}
 
+  /* ---- 青竹皮肤（浅豆绿）——与工作台「青竹」同步 ---- */
+  body[data-skin="sage"]{
+    --bg:#F3F6F1; --surface:#FFFFFF; --surface2:#F4F8F2;
+    --ink:#323A30; --ink2:#5E685C; --ink3:#8A968A;
+    --line:#E6ECE3; --line2:#D7E0D3;
+    --brand:#8DAE92; --brand2:#AEC8B0; --brand3:#5F7D63; --brand-soft:#EBF2EA;
+    --gold:#7E9A80;
+    --ok:#5F8A66; --ok-soft:#EDF3EE;
+    --warn:#B8863F; --warn-soft:#FCF3E6;
+    --err:#A9605A; --err-soft:#F9EEEC;
+    --sh1:inset 0 1px 0 rgba(255,255,255,.7), 0 1px 2px rgba(80,110,82,.05), 0 1px 1px rgba(80,110,82,.04);
+    --sh2:inset 0 1px 0 rgba(255,255,255,.7), 0 2px 6px rgba(80,110,82,.06), 0 12px 28px rgba(80,110,82,.07);
+    --sh3:0 24px 60px rgba(60,90,64,.18), 0 6px 16px rgba(60,90,64,.10);
+    --ring:0 0 0 3px rgba(141,174,146,.18);
+    --grad:linear-gradient(180deg, var(--brand2) 0%, var(--brand) 100%);
+    background-image:radial-gradient(1200px 420px at 50% -140px, #F4F8F1 0%, rgba(244,248,241,0) 70%);
+  }
+  body[data-skin="sage"] .app-head{
+    background:linear-gradient(180deg, rgba(243,246,241,.95) 58%, rgba(243,246,241,.72));
+    border-bottom-color:rgba(215,224,211,.55);
+  }
+  body[data-skin="sage"] .side-nav a.active{ background:rgba(141,174,146,.18); }
+  body[data-skin="sage"] .side-nav a.active::before{ background:var(--brand2); box-shadow:0 0 12px rgba(141,174,146,.7); }
+  body[data-skin="sage"] .side-foot button.on{ background:rgba(141,174,146,.22); border-color:rgba(141,174,146,.45); }
+  body[data-skin="sage"] .err-row:hover{ background:#F1F6EF; }
+  body[data-skin="sage"] tbody tr:hover td{ background:#F1F6EF; }
+
+  /* ---- 青竹皮肤 · 深色（绿调暗色）---- */
+  body.theme-dark[data-skin="sage"]{
+    --bg:#16201A; --surface:#1E2A22; --surface2:#243029;
+    --ink:#E6EEE7; --ink2:#C2CFC5; --ink3:#8AA092;
+    --line:#2C3A30; --line2:#36473B;
+    --brand:#9DC2A4; --brand2:#BBD4BE; --brand3:#6F9074; --brand-soft:#243029;
+    --gold:#8FB097;
+    --ok:#8FB08F; --ok-soft:#28311F;
+    --warn:#D2A45F; --warn-soft:#332A1D;
+    --err:#CE837B; --err-soft:#342423;
+    --sh1:inset 0 1px 0 rgba(255,255,255,.05), 0 1px 2px rgba(0,0,0,.30);
+    --sh2:inset 0 1px 0 rgba(255,255,255,.055), 0 2px 6px rgba(0,0,0,.34), 0 12px 28px rgba(0,0,0,.30);
+    --sh3:0 24px 60px rgba(0,0,0,.55), 0 6px 16px rgba(0,0,0,.40);
+    --ring:0 0 0 3px rgba(157,194,164,.24);
+    background-image:radial-gradient(1100px 400px at 50% -160px, #1E2A22 0%, rgba(30,42,34,0) 72%);
+  }
+  body.theme-dark[data-skin="sage"] .app-head{
+    background:linear-gradient(180deg, rgba(30,42,34,.95) 58%, rgba(30,42,34,.72));
+    border-bottom-color:rgba(255,255,255,.07);
+  }
+  body.theme-dark[data-skin="sage"] .side{ background:linear-gradient(180deg,#13201A 0%,#0F1813 100%); }
+  body.theme-dark[data-skin="sage"] .pastezone{ background:var(--surface); }
+  body.theme-dark[data-skin="sage"] .modal-mask{ background:rgba(8,14,10,.62); }
+  body.theme-dark[data-skin="sage"] ::-webkit-scrollbar-thumb{ background:#34453A; }
+  body.theme-dark[data-skin="sage"] ::-webkit-scrollbar-thumb:hover{ background:#42564A; }
+  body.theme-dark[data-skin="sage"] .err-row:hover{ background:#222E26; }
+  body.theme-dark[data-skin="sage"] tbody tr:hover td{ background:#222E26; }
+
   /* ---- 应用外壳 ---- */
   .shell{display:flex;align-items:flex-start;min-height:100vh}
   .side{
@@ -1665,9 +1720,13 @@ function initScrollSpy(){
 }
 
 // 主题：暖米白 / 暖黑
-function initTheme(){
-  const dark = (localStorage.getItem('tt_theme')||'light') === 'dark';
-  document.body.classList.toggle('theme-dark', dark);
+function applySkinFromUrl(){
+  const p = new URLSearchParams(location.search);
+  const skin = p.get('skin');
+  if(skin==='sage'||skin==='warm') document.body.setAttribute('data-skin', skin);
+}
+function syncThemeBtn(){
+  const dark = document.body.classList.contains('theme-dark');
   const lb = document.getElementById('theme-lb');
   if(lb) lb.textContent = dark ? '浅色' : '深色';
   const ic = document.querySelector('#theme-ic use');
@@ -1675,6 +1734,23 @@ function initTheme(){
   const b = document.getElementById('theme-btn');
   if(b) b.title = dark ? '切换到浅色' : '切换到深色';
 }
+function initTheme(){
+  const dark = (localStorage.getItem('tt_theme')||'light') === 'dark';
+  document.body.classList.toggle('theme-dark', dark);
+  applySkinFromUrl();
+  syncThemeBtn();
+}
+// 接收工作台（父窗口）下发的主题 / 皮肤
+window.addEventListener('message', function(e){
+  const d = e.data || {};
+  if(d.type !== 'wb-theme') return;
+  if(d.skin==='sage'||d.skin==='warm') document.body.setAttribute('data-skin', d.skin);
+  if(d.dark===true || d.dark===false){
+    document.body.classList.toggle('theme-dark', d.dark);
+    localStorage.setItem('tt_theme', d.dark ? 'dark' : 'light');
+  }
+  syncThemeBtn();
+});
 function toggleTheme(){
   const dark = !document.body.classList.contains('theme-dark');
   localStorage.setItem('tt_theme', dark ? 'dark' : 'light');
