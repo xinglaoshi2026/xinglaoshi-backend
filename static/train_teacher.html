@@ -496,9 +496,9 @@
   body.theme-dark[data-skin="sage"] .err-row:hover{ background:#222E26; }
   body.theme-dark[data-skin="sage"] tbody tr:hover td{ background:#222E26; }
 
-  /* ---- 灰白皮肤（严格对齐参考图：浅灰侧栏 + 纯白主区 + 近黑文字）---- */
+  /* ---- 灰白皮肤（微信式：深黑侧栏 + 浅灰白主区）---- */
   body[data-skin="stone"]{
-    --bg:#FAFAFB; --surface:#FFFFFF; --surface2:#F3F3F5;
+    --bg:#F5F5F5; --surface:#FFFFFF; --surface2:#F0F0F2;
     --ink:#1B1C1E; --ink2:#4E5154; --ink3:#8A8C8E;
     --line:#E8E8EA; --line2:#DCDCDE;
     --brand:#565B61; --brand2:#7E848B; --brand3:#3F4348; --brand-soft:#EEEEF0;
@@ -518,25 +518,25 @@
     border-bottom-color:rgba(220,220,222,.55);
   }
   body[data-skin="stone"] .side{
-    background:#F2F2F2;
-    color:#242628; border-right-color:rgba(0,0,0,.07);
-    box-shadow:1px 0 0 rgba(0,0,0,.02), 14px 0 44px rgba(45,50,58,.07);
+    background:#2E2E2E;
+    color:rgba(255,255,255,.72); border-right-color:rgba(0,0,0,.3);
+    box-shadow:1px 0 0 rgba(255,255,255,.03), 14px 0 44px rgba(0,0,0,.18);
   }
-  body[data-skin="stone"] .side-brand{ border-bottom-color:rgba(0,0,0,.07); }
-  body[data-skin="stone"] .side-brand .bi{ filter:grayscale(.55) saturate(.5); }
-  body[data-skin="stone"] .side-brand .bt{ color:#181818; }
+  body[data-skin="stone"] .side-brand{ border-bottom-color:rgba(255,255,255,.07); }
+  body[data-skin="stone"] .side-brand .bi{ filter:none; }
+  body[data-skin="stone"] .side-brand .bt{ color:#F0F0F0; }
   body[data-skin="stone"] .side-brand .bs{ color:#8A8C8E; }
   body[data-skin="stone"] .side-nav .nv-label{ color:#8A8C8E; }
-  body[data-skin="stone"] .side-nav a{ color:#4E5154; }
-  body[data-skin="stone"] .side-nav a:hover{ background:rgba(0,0,0,.05); color:#181818; }
-  body[data-skin="stone"] .side-nav a.active{ background:#DDDDDD; color:#181818; }
-  body[data-skin="stone"] .side-nav a.active::before{ background:var(--primary-dark, #3F4348); box-shadow:0 0 10px rgba(63,67,72,.5); }
-  body[data-skin="stone"] .side-nav a .cnt{ color:#6E7277; background:rgba(0,0,0,.05); }
-  body[data-skin="stone"] .side-nav a.active .cnt{ color:#181818; background:rgba(0,0,0,.085); }
-  body[data-skin="stone"] .side-foot{ border-top-color:rgba(0,0,0,.07); }
-  body[data-skin="stone"] .side-foot button{ background:rgba(0,0,0,.04); color:#4E5154; border-color:rgba(0,0,0,.10); }
-  body[data-skin="stone"] .side-foot button:hover{ background:rgba(0,0,0,.085); color:#181818; }
-  body[data-skin="stone"] .side-foot button.on{ background:#DDDDDD; color:#181818; border-color:rgba(0,0,0,.13); }
+  body[data-skin="stone"] .side-nav a{ color:rgba(255,255,255,.6); }
+  body[data-skin="stone"] .side-nav a:hover{ background:rgba(255,255,255,.08); color:#fff; }
+  body[data-skin="stone"] .side-nav a.active{ background:rgba(255,255,255,.14); color:#fff; }
+  body[data-skin="stone"] .side-nav a.active::before{ background:var(--brand2, #7E848B); box-shadow:0 0 10px rgba(126,132,139,.6); }
+  body[data-skin="stone"] .side-nav a .cnt{ color:#9CA2AA; background:rgba(255,255,255,.07); }
+  body[data-skin="stone"] .side-nav a.active .cnt{ color:#fff; background:rgba(255,255,255,.14); }
+  body[data-skin="stone"] .side-foot{ border-top-color:rgba(255,255,255,.07); }
+  body[data-skin="stone"] .side-foot button{ background:rgba(255,255,255,.07); color:rgba(255,255,255,.72); border-color:rgba(255,255,255,.11); }
+  body[data-skin="stone"] .side-foot button:hover{ background:rgba(255,255,255,.13); color:#fff; }
+  body[data-skin="stone"] .side-foot button.on{ background:rgba(255,255,255,.18); color:#fff; border-color:rgba(255,255,255,.3); }
   body[data-skin="stone"] .err-row:hover{ background:#F4F6F8; }
   body[data-skin="stone"] tbody tr:hover td{ background:#F4F6F8; }
 
