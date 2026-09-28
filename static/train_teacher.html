@@ -810,7 +810,8 @@ function renderTaskStu(){
     <div><b>${t.studentName||stuName(t.studentId)}</b> · 共${(t.errorIds||[]).length}题 · ${STMAP[t.status]||t.status} ${t.score!=null?('· 正确率'+(t.score*100).toFixed(0)+'%'):''}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
       <button class="ghost sm" onclick="viewTaskLogs('${t.id}')">查看作答</button>
-      <button class="ghost sm" onclick="downloadStuErrors('${t.studentId}','${t.date}')">⬇️ 下载当天错题(Word)</button>
+      <button class="ghost sm" onclick="downloadStuErrors('${t.studentId}','${t.date}',true)">🖨️ 下载当天题目(不含答案)</button>
+      <button class="ghost sm" onclick="downloadStuErrors('${t.studentId}','${t.date}')">⬇️ 下载当天错题(含答案)</button>
     </div></div>`;
 }
 // 下载 Word：老师端可导某学生「某天任务的题」或「全部错题本」
@@ -834,10 +835,12 @@ function downloadFilteredErrors(){
   if(!sid){ alert('请先在上方选择一名学生'); return; }
   downloadStuErrors(sid, '');   // 不带日期 = 该生全部错题本
 }
-function downloadStuErrors(sid, date){
+function downloadStuErrors(sid, date, questionsOnly){
   const url = '/api/train/errors/export.docx?studentId='+encodeURIComponent(sid)
-    + (date? ('&date='+encodeURIComponent(date)) : '');
-  downloadDocx(url, (stuName(sid)||'学生')+(date? (' '+date+' 练习') : ' 错题本')+'.docx');
+    + (date? ('&date='+encodeURIComponent(date)) : '')
+    + (questionsOnly? '&mode=questions' : '');
+  const nm = stuName(sid)||'学生';
+  downloadDocx(url, nm + (date? (' '+date) : '') + (questionsOnly? ' 练习题(不含答案)' : ' 错题本') + '.docx');
 }
 async function viewTaskLogs(tid){
   const {j} = await call('/api/train/tasks/'+tid+'/logs');

@@ -57,6 +57,10 @@
       <button onclick="logout()">退出</button>
     </div>
     <div class="card" id="head"></div>
+    <div class="card" id="printCard" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <div style="font-size:13px;color:#5a6072">想把题目打印出来、在纸上写？</div>
+      <button class="ghost sm" onclick="downloadTodayQuestions()">🖨️ 下载今天的题目（不含答案）</button>
+    </div>
     <div class="card" id="sharedCard">
       <label style="font-weight:bold">第1步 · 拍照上传计算过程（多题写在同一张纸上，只需传一次）</label>
       <div class="pv" id="shared-pv"></div>
@@ -131,7 +135,7 @@ async function loadToday(){
   if(status===401){ logout(); return; }
   const task=j.task;
   const head=document.getElementById('head');
-  if(!task){ head.innerHTML='<b>今天还没有给你的练习包</b><br><span style="color:#8a90a2">让老师先点"生成今日任务"哦</span>'; document.getElementById('submitBtn').classList.add('hidden'); document.getElementById('sharedCard').classList.add('hidden'); return; }
+  if(!task){ head.innerHTML='<b>今天还没有给你的练习包</b><br><span style="color:#8a90a2">让老师先点"生成今日任务"哦</span>'; document.getElementById('submitBtn').classList.add('hidden'); document.getElementById('sharedCard').classList.add('hidden'); document.getElementById('printCard').classList.add('hidden'); return; }
   document.getElementById('submitBtn').classList.remove('hidden');
   head.innerHTML='<b>'+task.date+' 练习</b> · 共'+j.items.length+'题'+(task.status==='done'||task.status==='partial'?' · 已完成 ✓':' · 待完成');
   TASK_DONE = !task || task.status==='done';   // 无作业 或 已提交完成 → 解锁近期错题
@@ -139,8 +143,10 @@ async function loadToday(){
     head.innerHTML='<b>'+task.date+'</b> · 今天没有需要练的错题，休息一下';
     document.getElementById('submitBtn').classList.add('hidden');
     document.getElementById('sharedCard').classList.add('hidden');
+    document.getElementById('printCard').classList.add('hidden');
     TASK_DONE=true; updateWeekLock(); return;
   }
+  document.getElementById('printCard').classList.remove('hidden');
   SHARED={photos:[],urls:[]}; renderShared();
   const box=document.getElementById('items'); box.innerHTML=''; ST={};
   j.items.forEach((e,idx)=>{
@@ -339,6 +345,23 @@ function updateWeekLock(){
     dl.classList.add('hidden');
     lock.classList.remove('hidden');
   }
+}
+// 打印版：只含今天要做的题目（不含答案/解析），做题前就能下载打印，方便在纸上作答
+async function downloadTodayQuestions(){
+  try{
+    const r = await fetch(API+'/api/train/errors/export.docx?mode=questions',
+      {headers: TOKEN?{'Authorization':'Bearer '+TOKEN}:{}});
+    if(!r.ok){ let m='下载失败'; try{ const j=await r.json(); m=j.error||m; }catch(e){} alert(m); return; }
+    const blob = await r.blob();
+    let fname = '今天的题目.docx';
+    const cd = r.headers.get('Content-Disposition') || '';
+    const mm = cd.match(/filename\*=UTF-8''([^;]+)/i);
+    if(mm){ try{ fname = decodeURIComponent(mm[1]); }catch(e){} }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = fname;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+  }catch(e){ alert('下载失败，请重试'); }
 }
 // 下载错题本（Word）：与「组卷下载」同一套排版，后端导出全部错题（含答案）
 async function downloadErrors(){

@@ -928,32 +928,36 @@ def html_mod_unescape(s):
     return _html.unescape(s)
 
 
-def build_train_errors_docx(name, errors, title=None, note=None):
-    """把某学生的错题导出为 Word（复用组卷导出的排版：题面 + 答案/解析 + 图片）。"""
+def build_train_errors_docx(name, errors, title=None, note=None,
+                            with_answers=True, blank_lines=0, header=None):
+    """把某学生的错题导出为 Word（复用组卷导出的排版：题面 + 答案/解析 + 图片）。
+    with_answers=False 时只印题目（供学生做题前打印出来在纸上作答，不含任何答案/解析/答案图）。"""
     qmap = {}
     ids = []
     for i, e in enumerate(errors, 1):
         qid = "te%d" % i
         imgs = [u for u in (e.get("images") or []) if isinstance(u, str)]
-        aimgs = [u for u in (e.get("answerImages") or []) if isinstance(u, str)]
         content = (("<p>%s</p>" % e["stem"]) if e.get("stem") else "") + \
                   "".join('<img src="%s">' % u for u in imgs)
         ans = []
-        if e.get("analysis"):
-            ans.append("<p>答案：%s</p>" % e["analysis"])
-        elif aimgs:
-            ans.append("<p>答案：</p>")
-        ans += ['<img src="%s">' % u for u in aimgs]
-        atts = [f.get("name") for f in (e.get("files") or [])
-                if isinstance(f, dict) and f.get("name")]
-        if atts:
-            ans.append("<p>附件：%s（请在手机上查看）</p>" % "、".join(atts))
+        if with_answers:
+            aimgs = [u for u in (e.get("answerImages") or []) if isinstance(u, str)]
+            if e.get("analysis"):
+                ans.append("<p>答案：%s</p>" % e["analysis"])
+            elif aimgs:
+                ans.append("<p>答案：</p>")
+            ans += ['<img src="%s">' % u for u in aimgs]
+            atts = [f.get("name") for f in (e.get("files") or [])
+                    if isinstance(f, dict) and f.get("name")]
+            if atts:
+                ans.append("<p>附件：%s（请在手机上查看）</p>" % "、".join(atts))
         qmap[qid] = {"content": content, "answer": "".join(ans),
                      "type": e.get("knowledgePoint") or "错题",
                      "qid": e.get("wrongDate") or ""}
         ids.append(qid)
     paper = {"title": title or ((name or "学生") + " 错题本"),
              "note": note or ("共 %d 道错题　导出日期 %s" % (len(ids), _date_today())),
+             "header": header, "blankLines": blank_lines,
              "questionIds": ids}
     return build_paper_docx(paper, qmap)
 
@@ -996,8 +1000,11 @@ def build_paper_docx(paper, questions_map):
     paras.append(_p_text(paper.get("title") or "试卷", bold=True, sz=32))
     if paper.get("note"):
         paras.append(_p_text(paper["note"], sz=20))
+    if paper.get("header"):
+        paras.append(_p_text(paper["header"], sz=20))
     paras.append(_p_text("", sz=12))
 
+    blank_lines = int(paper.get("blankLines") or 0)  # 每题下方留白，供打印后在纸上作答
     ids = paper.get("questionIds") or []
     for i, qid in enumerate(ids, 1):
         qb = questions_map.get(qid) or {}
@@ -1035,6 +1042,8 @@ def build_paper_docx(paper, questions_map):
                 media.append((arc, data))
                 paras.append(_p_image(rid, img_idx, cx, cy))
         paras.append(_p_text("", sz=12))
+        for _ in range(blank_lines):   # 打印版：每题下方留白
+            paras.append('<w:p><w:r><w:rPr><w:sz w:val="22"/></w:rPr><w:t xml:space="preserve">　</w:t></w:r></w:p>')
 
     doc = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
@@ -1296,12 +1305,44 @@ class H(BaseHTTPRequestHandler):
                 items = [e for e in items if e.get("studentId") == eff_sid]
             return send_json(self, {"items": items, "count": len(items)})
         if p == "/api/train/errors/export.docx":
-            # 导出错题本(Word)。学生只能导出自己的；老师可带 ?studentId= 导出指定学生。
-            # 带 ?date=YYYY-MM-DD 时，只导出该天练习任务里的题（老师打印当天错题用）。
+            # 导出 Word。学生只能导出自己的；老师可带 ?studentId= 导出指定学生。
+            #  ?date=YYYY-MM-DD  只导该天练习任务里的题
+            #  ?mode=questions   只印题目、不含答案/解析/答案图（供做题前打印到纸上写）
             if not eff_sid:
                 return send_json(self, {"error": "缺少学生"}, 400)
             date_arg = (q.get("date", [None])[0] or "").strip()
-            # 学生端防提前看答案：当日练习包未提交完成前不允许下载
+            mode = (q.get("mode", [None])[0] or "").strip().lower()
+            questions_only = mode in ("questions", "stem", "print")
+            if questions_only:
+                # 只印题目：不含任何答案，学生做题前即可下载打印
+                d = date_arg or _date_today()
+                task, _ = store_get("trainTasks", "t_%s_%s" % (eff_sid, d))
+                ids = set(task.get("errorIds") or []) if task else set()
+                if not ids:
+                    return send_json(self, {"error": "当天没有练习任务"}, 400)
+                errs = [e["body"] for e in store_list("trainErrors", limit=5000)
+                        if e["id"] in ids]
+                order = {eid: i for i, eid in enumerate(task.get("errorIds") or [])}
+                errs.sort(key=lambda e: order.get(e.get("id"), 999))
+                stu, _ = store_get("students", eff_sid)
+                nm = ((stu.get("name") if stu else "") or eff_sid)
+                data = build_train_errors_docx(
+                    nm, errs,
+                    title="%s %s 练习题" % (nm, d),
+                    note="共 %d 道题　请打印后在纸上作答" % len(errs),
+                    with_answers=False, blank_lines=6,
+                    header="姓名：______________　　日期：______________")
+                fname = urlquote("%s %s 练习题.docx" % (nm, d))
+                self.send_response(200)
+                self.send_header("Content-Type", DOCX_CTYPE)
+                self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + fname)
+                self.send_header("Content-Length", str(len(data)))
+                self.send_cors()
+                self.end_headers()
+                self.wfile.write(data)
+                self._responded = True
+                return
+            # 学生端防提前看答案：当日练习包未提交完成前不允许下载（含答案的错题本）
             # （当天没有出题的空任务不算拦截，否则学生永远无法下载）
             if is_student:
                 d = date_arg or _date_today()
