@@ -711,6 +711,28 @@ def train_on_answer(card, result):
     store_put("trainCards", card["id"], card)
 
 
+def train_task_all_answered(task):
+    """该任务的题是否全部提交过（按 trainLogs 判断）。"""
+    ids = set(task.get("errorIds") or [])
+    if not ids:
+        return False
+    done = set()
+    for l in store_list("trainLogs", limit=20000):
+        b = l.get("body") or {}
+        if b.get("taskId") == task.get("id"):
+            done.add(b.get("errorId"))
+    return ids <= done
+
+
+def train_heal_task_status(task):
+    """旧数据自愈：题已全部提交、状态却还是 partial（早期按正确率判定留下的），纠正为 done。
+    否则学生答完但做错过题，再次进入时「最近一周错题」会被永久锁住。"""
+    if task and task.get("status") == "partial" and train_task_all_answered(task):
+        task["status"] = "done"
+        store_put("trainTasks", task["id"], task)
+    return task
+
+
 def train_build_daily(student_id, date_str, include_new=True):
     """为某学生生成某天应练的错题卡（到期错题优先, 新课巩固补充, 不足则提前拉取）。
     每日题量上限 TRAIN_DAILY_MAX（默认 3 道），避免学生负担过重写不完。"""
@@ -817,6 +839,7 @@ def train_student_today(student_id, date_str=None):
         task, _ = store_get("trainTasks", tid)
     if not task:
         return {"task": None, "items": []}
+    train_heal_task_status(task)   # 旧数据自愈：答完却没记成 done 的纠正过来
     items = []
     for eid in task.get("errorIds", []):
         e, _ = store_get("trainErrors", eid)
@@ -872,7 +895,13 @@ def train_submit(student_id, date_str, answers):
                         "stem": e.get("stem") or ""})
     if total:
         task["score"] = round(right_n / total, 2)
-        task["status"] = "done" if right_n == total else "partial"
+        # 状态按「完成度」判定（不是正确率）：今天的题全部提交过就是 done，
+        # 否则 partial。正确率另有 score 字段。此前按 right_n==total 判定，
+        # 导致「做错的题」被记成 partial，学生端再进入时近期错题被永久锁住。
+        answered_ids = {a.get("errorId") for a in answers if a.get("errorId")}
+        expected = set(task.get("errorIds") or [])
+        task["status"] = ("done" if (expected and expected <= answered_ids)
+                          else ("done" if not expected else "partial"))
         task["finishedAt"] = now_ms()
         task["updatedAt"] = now_ms()
         store_put("trainTasks", tid, task)
@@ -886,7 +915,8 @@ def train_dashboard(date_str=None):
     today = date_str or _date_today()
     tasks_today = [t["body"] for t in store_list("trainTasks", limit=4000)
                    if t["body"].get("date") == today]
-    done = sum(1 for t in tasks_today if t.get("status") in ("done", "partial"))
+    # 只有「全部题目都提交过」(done) 才算今日完成；partial=只提交了一部分
+    done = sum(1 for t in tasks_today if t.get("status") == "done")
     cards = [c["body"] for c in store_list("trainCards", limit=6000)]
     per_student = []
     for s in students:
@@ -1346,6 +1376,7 @@ class H(BaseHTTPRequestHandler):
             if is_student:
                 d = date_arg or _date_today()
                 task, _ = store_get("trainTasks", "t_%s_%s" % (eff_sid, d))
+                train_heal_task_status(task)
                 if task and task.get("errorIds") and task.get("status") != "done":
                     return send_json(self, {"error": "请先完成当天的练习，再下载错题"}, 403)
             title = note = None
@@ -1429,9 +1460,20 @@ class H(BaseHTTPRequestHandler):
             d = q.get("date", [None])[0]
             stu_names = {s.get("id"): (s.get("name") or s.get("username") or s.get("id"))
                          for s in (b["body"] for b in store_list("students", limit=2000))}
+            # 自愈：题已全部提交、状态却还是 partial 的旧任务纠正为 done（与 /api/train/today 一致）
+            logs_by_task = {}
+            for lg in store_list("trainLogs", limit=20000):
+                lb = lg.get("body") or {}
+                if lb.get("taskId"):
+                    logs_by_task.setdefault(lb["taskId"], set()).add(lb.get("errorId"))
             items = []
             for t in store_list("trainTasks", limit=8000):
                 b = dict(t["body"])
+                if b.get("status") == "partial":
+                    need = set(b.get("errorIds") or [])
+                    if need and need <= logs_by_task.get(b.get("id"), set()):
+                        b["status"] = "done"
+                        store_put("trainTasks", b["id"], b)
                 b["studentName"] = stu_names.get(b.get("studentId"), b.get("studentId"))
                 items.append(b)
             if eff_sid:

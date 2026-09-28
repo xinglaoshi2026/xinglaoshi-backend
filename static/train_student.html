@@ -183,8 +183,18 @@ async function loadToday(){
   const head=document.getElementById('head');
   if(!task){ head.innerHTML='<b>今天还没有给你的练习包</b><br><span style="color:#8a90a2">让老师先点"生成今日任务"哦</span>'; document.getElementById('submitBtn').classList.add('hidden'); document.getElementById('sharedCard').classList.add('hidden'); document.getElementById('printCard').classList.add('hidden'); return; }
   document.getElementById('submitBtn').classList.remove('hidden');
-  head.innerHTML='<b>'+task.date+' 练习</b> · 共'+j.items.length+'题'+(task.status==='done'||task.status==='partial'?' · 已完成 ✓':' · 待完成');
-  TASK_DONE = !task || task.status==='done';   // 无作业 或 已提交完成 → 解锁近期错题
+  const tst = task.status;
+  head.innerHTML='<b>'+task.date+' 练习</b> · 共'+j.items.length+'题'
+    + (tst==='done' ? ' · 已完成 ✓'
+       : (tst==='partial' ? ' · 部分完成（还有题没提交）' : ' · 待完成'));
+  // 锁定提示：区分「完全没做」和「做了一部分」
+  const lockEl = document.getElementById('weekLock');
+  if(lockEl){
+    lockEl.textContent = (tst==='partial')
+      ? '🔒 你还有题目没提交，把今天的题目全部提交后，这里就能查看和下载错题。'
+      : '🔒 完成今日作业后，这里才能查看（防止提前看到答案、重复做题时作弊）。';
+  }
+  TASK_DONE = !task || tst==='done';   // 无作业 或 已全部提交 → 解锁近期错题
   if(!j.items.length){
     head.innerHTML='<b>'+task.date+'</b> · 今天没有需要练的错题，休息一下';
     document.getElementById('submitBtn').classList.add('hidden');
