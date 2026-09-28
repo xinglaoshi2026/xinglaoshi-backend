@@ -608,6 +608,44 @@ def _days_between(d1, d2):
         return 0
 
 
+def purge_student_data(sid):
+    """彻底删除某学生及其全部训练数据：错题、训练卡、作答日志、每日任务、草稿照片、账号、学生记录。
+    返回各模块删除条数与媒体清理结果。供教师端「删除学生及全部数据」使用。"""
+    if not sid:
+        return {"ok": False, "error": "缺少学生"}
+    # 1) 收集该生记录引用的媒体 rel（错题图 + 作答草稿照片），稍后清理不再被引用的部分
+    refs = set()
+    for mod in ("trainErrors", "trainLogs"):
+        for it in store_list(mod, limit=100000):
+            b = it.get("body") if isinstance(it, dict) else None
+            if b and b.get("studentId") == sid:
+                refs |= _collect_refs(b)
+    # 2) 删除该生全部训练记录
+    counts = {}
+    for mod in ("trainErrors", "trainCards", "trainLogs", "trainTasks"):
+        n = 0
+        for it in store_list(mod, limit=100000):
+            b = it.get("body") if isinstance(it, dict) else None
+            if b and b.get("studentId") == sid:
+                store_delete(mod, b.get("id"))
+                n += 1
+        counts[mod] = n
+    # 3) 删除该生登录账号
+    try:
+        cx = db()
+        cx.execute("DELETE FROM users WHERE student_id=?", (sid,))
+        cx.commit(); cx.close()
+    except Exception:
+        pass
+    # 4) 删除学生记录本身
+    store_delete("students", sid)
+    # 5) 清理不再被任何记录引用的媒体（草稿照片等；错题↔题库共用图会被保留）
+    media = purge_media_refs(refs)
+    counts["media"] = media
+    counts["ok"] = True
+    return counts
+
+
 def train_card_id(student_id, error_id):
     return "c_%s_%s" % (student_id, error_id)
 
@@ -1629,6 +1667,18 @@ class H(BaseHTTPRequestHandler):
             stu["greeting"] = (body.get("greeting") or "").strip()
             store_put("students", sid, stu)
             return send_json(self, {"ok": True, "greeting": stu["greeting"]})
+        if p == "/api/train/student/purge":
+            # 彻底删除某学生及其全部数据（含草稿照片/账号）。仅老师/管理员。
+            if u.get("role") not in ("admin", "teacher"):
+                return send_json(self, {"error": "无权限"}, 403)
+            body, err = read_body(self)
+            if err:
+                return send_json(self, {"error": err}, 400)
+            sid = (body.get("studentId") or "").strip()
+            if not sid:
+                return send_json(self, {"error": "缺少 studentId"}, 400)
+            r = purge_student_data(sid)
+            return send_json(self, r)
         if p == "/api/train/errors":
             body, err = read_body(self)
             if err:

@@ -1351,6 +1351,7 @@ function renderMgmt(){
       <div class="sc-acts">
         <button onclick="setStu('${s.id}')"><svg class="ic"><use href="#i-key"/></svg>保存账号</button>
         <button type="button" class="ghost" onclick="viewStuErrors('${s.id}')"><svg class="ic"><use href="#i-list"/></svg>查看错题</button>
+        <button type="button" class="danger" onclick="delStudent('${s.id}')" title="彻底删除该生及其错题、作答记录、草稿照片、账号"><svg class="ic"><use href="#i-trash"/></svg>删除</button>
       </div>
     </div>
     <div class="sc-greet">
@@ -1400,6 +1401,20 @@ async function setStu(sid){
   await loadStuMgmt();
   document.getElementById('mgmt-stu').value = sid;
   renderMgmt();
+}
+async function delStudent(sid){
+  const name = (window._STU_MAP&&window._STU_MAP[sid]) || sid;
+  if(!confirm('确定彻底删除学生「'+name+'」吗？\n\n将一并删除：\n· 该生的全部错题\n· 作答记录与草稿照片\n· 登录账号\n\n此操作不可恢复。')) return;
+  const {status,j} = await call('/api/train/student/purge',{method:'POST',json:{studentId:sid}});
+  if(status!==200 || !j || !j.ok){ alert((j&&j.error)||'删除失败'); return; }
+  const rm = (j.media&&j.media.removed)||0;
+  alert('已删除。清理：错题 '+(j.trainErrors||0)+' 道、作答记录 '+(j.trainLogs||0)+' 条、照片 '+rm+' 张。');
+  await loadStuMgmt();
+  document.getElementById('mgmt-stu').value='';
+  renderMgmt();
+  loadStudents();
+  loadErrors();
+  renderTasks(); loadDash();
 }
 async function genTasks(){
   const {j} = await call('/api/train/tasks/generate',{method:'POST'});
