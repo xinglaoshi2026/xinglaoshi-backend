@@ -57,6 +57,12 @@
       <button onclick="logout()">退出</button>
     </div>
     <div class="card" id="head"></div>
+    <div class="card" id="sharedCard">
+      <label style="font-weight:bold">第1步 · 拍照上传计算过程（多题写在同一张纸上，只需传一次）</label>
+      <div class="pv" id="shared-pv"></div>
+      <input id="shared-ph" type="file" accept="image/*" multiple onchange="addSharedPhotos(this)">
+      <div style="font-size:12px;color:#8a90a2;margin-top:4px">如果某道题另有单独的过程图，可在该题下方再补传（不传也可以）。</div>
+    </div>
     <div id="items"></div>
     <button id="submitBtn" onclick="submit()">提交今日练习</button>
     <div id="result"></div>
@@ -116,6 +122,7 @@ function logout(){
   document.getElementById('weekList').classList.add('hidden');
   document.getElementById('weekBtn').textContent='展开';
   WEEK_LOADED=false;
+  SHARED={photos:[],urls:[]};
   show(false);
 }
 
@@ -124,15 +131,17 @@ async function loadToday(){
   if(status===401){ logout(); return; }
   const task=j.task;
   const head=document.getElementById('head');
-  if(!task){ head.innerHTML='<b>今天还没有给你的练习包</b><br><span style="color:#8a90a2">让老师先点"生成今日任务"哦</span>'; document.getElementById('submitBtn').classList.add('hidden'); return; }
+  if(!task){ head.innerHTML='<b>今天还没有给你的练习包</b><br><span style="color:#8a90a2">让老师先点"生成今日任务"哦</span>'; document.getElementById('submitBtn').classList.add('hidden'); document.getElementById('sharedCard').classList.add('hidden'); return; }
   document.getElementById('submitBtn').classList.remove('hidden');
   head.innerHTML='<b>'+task.date+' 练习</b> · 共'+j.items.length+'题'+(task.status==='done'||task.status==='partial'?' · 已完成 ✓':' · 待完成');
   TASK_DONE = !task || task.status==='done';   // 无作业 或 已提交完成 → 解锁近期错题
   if(!j.items.length){
     head.innerHTML='<b>'+task.date+'</b> · 今天没有需要练的错题，休息一下';
     document.getElementById('submitBtn').classList.add('hidden');
+    document.getElementById('sharedCard').classList.add('hidden');
     TASK_DONE=true; updateWeekLock(); return;
   }
+  SHARED={photos:[],urls:[]}; renderShared();
   const box=document.getElementById('items'); box.innerHTML=''; ST={};
   j.items.forEach((e,idx)=>{
     const imgs = (e.images&&e.images.length)?e.images:(e.image?[e.image]:[]);
@@ -145,7 +154,7 @@ async function loadToday(){
       <div class="qi">第${idx+1}题 · ${e.knowledgePoint||''} <span style="color:#8a90a2">${e.errorReason||''}</span></div>
       <div>${(e.stem||(imgs.length?'':'（看图）'))}</div>${imgHtml}
       ${files?('<div style="margin-top:6px">'+files+'</div>'):''}
-      <label>第1步 · 拍照上传我的计算过程（必传）</label>
+      <label>本题另有过程图时补充上传（可选）</label>
       <div class="pv" id="pv_${idx}"></div>
       <input id="ph_${idx}" type="file" accept="image/*" multiple onchange="addPhotos(${idx},this)">
       <button class="sm ghost" id="rvbtn_${idx}" onclick="reveal(${idx})">第2步 · 提交并看答案</button>
@@ -153,6 +162,36 @@ async function loadToday(){
       <div id="fb_${idx}"></div>
     </div>`);
   });
+}
+// 公共计算过程（多题写在同一张纸上时只传一次，提交时每题都会带上这些图）
+let SHARED = {photos:[], urls:[]};
+function addSharedPhotos(inp){
+  [...inp.files].forEach(f=>SHARED.photos.push(f));
+  inp.value='';
+  renderShared();
+}
+function renderShared(){
+  document.getElementById('shared-pv').innerHTML =
+    SHARED.urls.map(u=>`<span class="tw"><img src="${API+u}" onclick="zoomImg('${API+u}')"><span class="x" style="opacity:.6">已传</span></span>`).join('')
+    + SHARED.photos.map((f,i)=>
+      `<span class="tw"><img src="${URL.createObjectURL(f)}"><button class="x" onclick="delSharedPhoto(${i})">×</button></span>`).join('');
+}
+function delSharedPhoto(i){
+  if(SHARED.urls.length){ alert('已提交的过程照片不能删除'); return; }
+  SHARED.photos.splice(i,1); renderShared();
+}
+async function uploadShared(){
+  for(const f of SHARED.photos){
+    const uniq = Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+    try{
+      const fr = await fetch(API+'/api/train/media?sub=drafts&name='+encodeURIComponent(uniq+'_'+(f.name||'photo.jpg')),
+        {method:'POST',headers:{'Authorization':'Bearer '+TOKEN},body:f});
+      const fj = await fr.json();
+      if(fj.ok) SHARED.urls.push(fj.url.replace(API,''));
+    }catch(e){}
+  }
+  SHARED.photos = [];
+  renderShared();
 }
 // 每题状态: photos[File] urls[已上传] result note
 let ST={};
@@ -175,11 +214,14 @@ function delPhoto(idx,i){
 // 第2步: 上传过程照片 → 拉取答案/解析 → 显示自评+错误原因
 async function reveal(idx){
   const st=ST[idx]=ST[idx]||{photos:[],urls:[],result:'',note:''};
-  if(!st.photos.length && !st.urls.length){ alert('请先拍照上传计算过程，再提交看答案'); return; }
+  if(!st.photos.length && !st.urls.length && !SHARED.photos.length && !SHARED.urls.length){
+    alert('请先在上方拍照上传计算过程（多题写在同一张纸上，传一次即可），再提交看答案'); return;
+  }
   const eid=document.getElementById('q_'+idx).dataset.eid;
   const btn=document.getElementById('rvbtn_'+idx);
   btn.disabled=true; btn.textContent='上传中…';
   try{
+    await uploadShared();
     for(const f of st.photos){
       // 文件名加唯一前缀，避免多学生/多次上传同名文件互相覆盖
       const uniq = Date.now().toString(36) + Math.random().toString(36).slice(2,7);
@@ -239,19 +281,25 @@ function zoomImg(url){
 async function submit(){
   const qs=[...document.querySelectorAll('#items .q')];
   if(!qs.length) return;
+  const btn=document.getElementById('submitBtn');
+  btn.disabled=true; btn.textContent='上传中…';
+  try{ await uploadShared(); }
+  catch(e){ btn.disabled=false; btn.textContent='提交今日练习'; alert('过程图上传失败，请重试'); return; }
+  const shared = SHARED.urls.slice();   // 一张纸写多题：这些图每题都会带上
   const answers=[];
-  for(const q of qs){
+  for(let i=0;i<qs.length;i++){
+    const q=qs[i], n=i+1;
     const idx=q.dataset.idx, eid=q.dataset.eid;
     const st=ST[idx]||{photos:[],urls:[],result:'',note:''};
-    if(!st.urls.length){ alert('第'+(idx+1)+'题还没上传计算过程，请先完成第1、2步'); return; }
-    if(!st.result){ alert('第'+(idx+1)+'题还没自评对错，请完成第3步'); return; }
-    if(!(st.note||'').trim()){ alert('第'+(idx+1)+'题还没写错误原因，请完成第4步'); return; }
+    const imgs = shared.concat(st.urls||[]);
+    if(!imgs.length){ alert('第'+n+'题还没上传计算过程，请先完成第1、2步'); btn.disabled=false; btn.textContent='提交今日练习'; return; }
+    if(!st.result){ alert('第'+n+'题还没自评对错，请完成第3步'); btn.disabled=false; btn.textContent='提交今日练习'; return; }
+    if(!(st.note||'').trim()){ alert('第'+n+'题还没写错误原因，请完成第4步'); btn.disabled=false; btn.textContent='提交今日练习'; return; }
     answers.push({errorId:eid, result:st.result,
-                  draftImage:st.urls[0]||'', draftImages:st.urls,
+                  draftImage:imgs[0]||'', draftImages:imgs,
                   errorNote:st.note.trim()});
   }
-  const btn=document.getElementById('submitBtn');
-  btn.disabled=true; btn.textContent='提交中…';
+  btn.textContent='提交中…';
   const {status,j}=await call('/api/train/submit',{method:'POST',body:JSON.stringify({answers})});
   btn.disabled=false; btn.textContent='提交今日练习';
   if(status===401){ logout(); return; }

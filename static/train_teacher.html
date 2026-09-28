@@ -92,6 +92,10 @@
               <div id="e-student-box"></div>
             </div>
           </div>
+          <div style="flex:1;min-width:240px">
+            <label>归档知识点（可选，决定这道题在题库知识点树里的位置）</label>
+            <select id="e-kp"><option value="">错题自动收录（默认）</option></select>
+          </div>
         </div>
         <div class="qa-cols" style="margin-top:10px">
           <div>
@@ -210,6 +214,7 @@ function start(){
   document.getElementById('login').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
   loadStudents();
+  loadKpOptions();
   renderTasks(); loadDash(); loadStuMgmt();
 }
 async function autoLogin(){
@@ -420,6 +425,9 @@ function extractMediaRel(h){
 }
 function pickQb(id){
   const q = qbCache[id]; if(!q) return;
+  // 顺手把该题的知识点带到「归档知识点」下拉（可再改）
+  const kpSel = document.getElementById('e-kp');
+  if(kpSel && q.kpId && KP_MAP[q.kpId]) kpSel.value = q.kpId;
   document.getElementById('e-stem').value = stripHtml(q.content||'');
   document.getElementById('e-analysis').value = stripHtml(q.answer||'');
   // 题面图归题面、答案图归答案（答案图学生提交后才可见）
@@ -444,6 +452,29 @@ function clearForm(){
   document.getElementById('e-files').value='';
   pendingImgs={stem:[], answer:[]}; renderThumbs('stem'); renderThumbs('answer');
   pickedImgs=[]; pickedAnsImgs=[]; updatePickedHint();
+}
+// 知识点下拉：录入错题时归档到「错题自动收录」或指定知识点（决定题库树里的位置）
+let KP_MAP = {};
+async function loadKpOptions(){
+  const sel = document.getElementById('e-kp'); if(!sel) return;
+  const {j} = await call('/api/knowledgePoints?limit=2000');
+  const items = (Array.isArray(j)?j:[]).map(x=>x.body||x).filter(x=>x&&x.id);
+  KP_MAP = {};
+  items.forEach(x=>{ KP_MAP[x.id] = x.name || x.id; });
+  const byParent = {};
+  items.forEach(x=>{ const p = x.parentId||''; (byParent[p]=byParent[p]||[]).push(x); });
+  const opts = []; const seen = {};
+  (function walk(pid, depth){
+    (byParent[pid]||[]).forEach(x=>{
+      if(seen[x.id] || depth>8) return;
+      seen[x.id] = 1;
+      opts.push(`<option value="${x.id}">${'　'.repeat(depth)}${x.name||x.id}</option>`);
+      walk(x.id, depth+1);
+    });
+  })('',0);
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">错题自动收录（默认）</option>' + opts.join('');
+  if(cur && KP_MAP[cur]) sel.value = cur;
 }
 // 一道待发错题的内容指纹：题面文字 + 答案文字 + 题库带入图片路径 + 粘贴/选择图片(名/大小/修改时间)
 function batchSig(o){
@@ -470,8 +501,11 @@ function addBatch(){
   const sig = batchSig(cur);
   const dupIdx = batchErrs.findIndex(b=>batchSig(b)===sig);
   if(dupIdx >= 0 && !confirm('这和第 '+(dupIdx+1)+' 题内容完全一致（题面/答案/图片都相同），确定要再加一份吗？\n（取消=返回检查，避免重复发给同一学生）')) return;
+  const kpSel = document.getElementById('e-kp');
   batchErrs.push({
     stem, analysis,
+    kpId: kpSel ? kpSel.value : '',
+    kpName: kpSel && kpSel.value ? (KP_MAP[kpSel.value] || '') : '',
     pickedI: pickedImgs.slice(), pickedA: pickedAnsImgs.slice(),
     pendS: pendingImgs.stem, pendA: pendingImgs.answer, files
   });
@@ -520,6 +554,7 @@ async function saveBatch(){
       files.push({name:f.name, url:fj.url.replace(API,'')});
     }
     const body = { studentIds: ids, stem: b.stem, analysis: b.analysis,
+      kpId: b.kpId||'', knowledgePoint: b.kpName||'',
       images, answerImages, files, image: images[0]||'' };
     const {status,j} = await call('/api/train/errors',{method:'POST',json:body});
     if(status!==200){ msg.textContent=(j&&j.error)||'保存失败'; msg.className='err'; return; }
