@@ -151,6 +151,7 @@
   }
   .stephead .st{font-size:16px;font-weight:650}
   .stephead .sd{color:var(--ink3);font-size:12.5px;font-weight:400;margin-top:1px}
+  .opt-hint{font-size:12px;font-weight:400;color:var(--ink3);margin-left:4px}
 
   /* ---------- 上传区 ---------- */
   .drop{
@@ -428,7 +429,7 @@
       <li><b>第1步</b>：把今天<b>所有题目</b>的答案/计算过程写在<b>同一张纸</b>上，拍好照片后在最上面的框里上传——可以一次选多张，也可以分几次拍照上传。</li>
       <li><b>第2步</b>：上传成功后，下面每道题会<b>自动显示答案与解析</b>，不用逐题点。</li>
       <li><b>第3步</b>：对照答案给自己打分：做对了 / 半对 / 做错了。</li>
-      <li><b>第4步</b>：写下这道题的<b>错误原因</b>（必填，不填无法提交）。</li>
+      <li><b>第4步</b>：如果自评是<b>半对或做错了</b>，请写下<b>错误原因</b>（必填）；自评<b>做对了</b>可不填。</li>
       <li>所有题目都填完后，点最下方 <b>提交今日练习</b>。</li>
       <li>做错的题过几天还会再出现；每天只练 <b>3 道</b>，花几分钟就好。</li>
       <li>想打印题目在纸上写：点 <b>下载今天的题目</b>；完成练习后可点 <b>下载我的错题本</b> 导出全部错题（含答案）。</li>
@@ -687,8 +688,8 @@ async function revealOne(idx){
         <button type="button" data-v="self_wrong" onclick="setSelf(${idx},'self_wrong')"><svg class="ic"><use href="#i-x"/></svg>做错了</button>
       </div>
     </div>
-    <div class="step3">
-      <div class="stephead"><div class="stepno">4</div><div class="st" style="font-size:14.5px">这道题错在哪</div></div>
+    <div class="step3" id="step4_${idx}">
+      <div class="stephead"><div class="stepno">4</div><div class="st" style="font-size:14.5px">这道题错在哪<span class="opt-hint">（半对/做错必填 · 做对可不填）</span></div></div>
       <textarea class="note" id="note_${idx}" rows="2" placeholder="如：公式记错了 / 计算粗心 / 题目没读懂…" oninput="setNote(${idx},this.value)"></textarea>
     </div>`;
   document.getElementById('rv_'+idx).classList.remove('hidden');
@@ -697,6 +698,9 @@ function setSelf(idx,val){
   ST[idx]=ST[idx]||{revealed:true,result:'',note:''};
   ST[idx].result=val;
   document.querySelectorAll('#rv_'+idx+' .seg button').forEach(b=>b.classList.toggle('on', b.dataset.v===val));
+  // 做对了无需填原因：隐藏第4步；半对/做错则需要填写
+  const s4=document.getElementById('step4_'+idx);
+  if(s4) s4.style.display = (val==='self_right') ? 'none' : '';
   setFb(idx);
 }
 function setNote(idx,v){ ST[idx]=ST[idx]||{revealed:true,result:'',note:''}; ST[idx].note=v; setFb(idx); }
@@ -705,12 +709,14 @@ function setFb(idx){
   const el=document.getElementById('fb_'+idx);
   if(el){
     const label = st.result==='self_right'?'做对了':(st.result==='half'?'半对':(st.result==='self_wrong'?'做错了':''));
-    if(st.result && (st.note||'').trim()){
-      el.innerHTML='<div class="fb"><svg class="ic"><use href="#i-check"/></svg>已记录（'+label+'）</div>';
-    }else if(st.result){
-      el.innerHTML='<div class="fb pending"><svg class="ic"><use href="#i-alert"/></svg>已选自评，还需写错误原因</div>';
-    }else{
+    if(!st.result){
       el.innerHTML='';
+    }else if(st.result==='self_right'){
+      el.innerHTML='<div class="fb"><svg class="ic"><use href="#i-check"/></svg>已记录（做对了），无需填写原因</div>';
+    }else if((st.note||'').trim()){
+      el.innerHTML='<div class="fb"><svg class="ic"><use href="#i-check"/></svg>已记录（'+label+'）</div>';
+    }else{
+      el.innerHTML='<div class="fb pending"><svg class="ic"><use href="#i-alert"/></svg>已选自评（'+label+'），还需写错误原因</div>';
     }
   }
   updateProgress();
@@ -722,7 +728,7 @@ function updateProgress(){
   qs.forEach(q=>{
     if(q.dataset.answered==='1'){ done++; return; }   // 今天已交过，计入进度
     const s=ST[q.dataset.idx];
-    if(s && s.result && (s.note||'').trim()) done++;
+    if(s && s.result && (s.result==='self_right' || (s.note||'').trim())) done++;
   });
   const t=document.getElementById('progTxt');
   if(t) t.textContent = done+' / '+qs.length;
@@ -765,7 +771,8 @@ async function submit(){
     if(q.dataset.answered==='1' && !st.result){ answers.push({errorId:eid}); continue; }
     if(!st.revealed){ fail('第'+n+'题的答案还没显示，请先在第1步上传答案照片'); return; }
     if(!st.result){ fail('第'+n+'题还没自评对错，请完成第3步'); return; }
-    if(!(st.note||'').trim()){ fail('第'+n+'题还没写错误原因，请完成第4步'); return; }
+    const needNote = (st.result==='half' || st.result==='self_wrong');
+    if(needNote && !(st.note||'').trim()){ fail('第'+n+'题（'+(st.result==='half'?'半对':'做错')+'）还没写错误原因，请完成第4步'); return; }
     answers.push({errorId:eid, result:st.result,
                   draftImage:shared[0]||'', draftImages:shared,
                   errorNote:st.note.trim()});
