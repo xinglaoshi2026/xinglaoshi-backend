@@ -729,7 +729,7 @@ async function cleanupCloud(){
   const btn = document.getElementById('clean-btn');
   const msg = document.getElementById('clean-msg');
   btn.disabled = true; btn.textContent = '清理中…'; msg.textContent = ''; msg.className = '';
-  const {status,j} = await call('/api/admin/cleanup_orphans');
+  const {status,j} = await call('/api/admin/cleanup_orphans', {method:'POST'});
   btn.disabled = false; btn.textContent = '🧹 清理云端无用图片';
   if(status !== 200){ msg.className='err'; msg.textContent = (j&&j.error)||'清理失败'; return; }
   const mb = ((j.freed_bytes||0)/1048576).toFixed(1);
