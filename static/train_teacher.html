@@ -1724,6 +1724,11 @@ function applySkinFromUrl(){
   const p = new URLSearchParams(location.search);
   const skin = p.get('skin');
   if(skin==='sage'||skin==='warm') document.body.setAttribute('data-skin', skin);
+  const dark = p.get('dark');
+  if(dark==='1'||dark==='true'){
+    document.body.classList.add('theme-dark');
+    localStorage.setItem('tt_theme','dark');
+  }
 }
 function syncThemeBtn(){
   const dark = document.body.classList.contains('theme-dark');
