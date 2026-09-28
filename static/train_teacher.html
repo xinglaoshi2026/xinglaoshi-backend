@@ -445,6 +445,16 @@ function clearForm(){
   pendingImgs={stem:[], answer:[]}; renderThumbs('stem'); renderThumbs('answer');
   pickedImgs=[]; pickedAnsImgs=[]; updatePickedHint();
 }
+// 一道待发错题的内容指纹：题面文字 + 答案文字 + 题库带入图片路径 + 粘贴/选择图片(名/大小/修改时间)
+function batchSig(o){
+  const picked = a => (a||[]).join('|');
+  const pasted = a => (a||[]).map(it=>{
+    const f = (it && it.file) || {};
+    return `${f.name||''}:${f.size||0}:${f.lastModified||0}`;
+  }).join('|');
+  return [o.stem||'', o.analysis||'', picked(o.pickedI), picked(o.pickedA),
+          pasted(o.pendS), pasted(o.pendA)].join('#');
+}
 function addBatch(){
   const msg = document.getElementById('e-msg'); msg.textContent='';
   const stem = qs('#e-stem'), analysis = qs('#e-analysis');
@@ -452,11 +462,14 @@ function addBatch(){
   if(!stem && !pickedImgs.length && !pendingImgs.stem.length){
     msg.textContent='请先填写题面文字或添加题目图片'; msg.className='err'; return;
   }
-  // 防重复：与已加入的某题相同(题面文字+题图数+答案图数)时提醒确认
-  const dup = batchErrs.find(b=>b.stem===stem &&
-    (b.pickedI.length+b.pendS.length)===(pickedImgs.length+pendingImgs.stem.length) &&
-    (b.pickedA.length+b.pendA.length)===(pickedAnsImgs.length+pendingImgs.answer.length));
-  if(dup && !confirm('这道题和待发列表里已有的题相同，确定要再加一份吗？\n（取消=返回检查，避免重复发给同一学生）')) return;
+  // 防重复：仅当题面文字、答案文字、图片（题库带入路径 + 粘贴图片文件名/大小/时间）全都一致时才算同一题，
+  // 避免“两道不同题都只有一张题图”被误判成重复。
+  const cur = { stem, analysis,
+    pickedI: pickedImgs, pickedA: pickedAnsImgs,
+    pendS: pendingImgs.stem, pendA: pendingImgs.answer };
+  const sig = batchSig(cur);
+  const dupIdx = batchErrs.findIndex(b=>batchSig(b)===sig);
+  if(dupIdx >= 0 && !confirm('这和第 '+(dupIdx+1)+' 题内容完全一致（题面/答案/图片都相同），确定要再加一份吗？\n（取消=返回检查，避免重复发给同一学生）')) return;
   batchErrs.push({
     stem, analysis,
     pickedI: pickedImgs.slice(), pickedA: pickedAnsImgs.slice(),
