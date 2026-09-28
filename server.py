@@ -498,6 +498,8 @@ def _run_orphan_cleanup():
             fp = os.path.join(root, fn)
             raw_rel = os.path.relpath(fp, MEDIA_DIR).replace(os.sep, "/")
             decoded = urlunquote(raw_rel)
+            if decoded.startswith("_exports/") or raw_rel.startswith("_exports/"):
+                continue   # 导出的 Word 等文件，不作为孤儿清理
             if decoded in refs or raw_rel in refs or raw_rel in keep_disk:
                 continue
             try:

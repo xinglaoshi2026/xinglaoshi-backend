@@ -5,62 +5,100 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>错题循环训练 · 老师端</title>
 <style>
+  :root{
+    --bg:#fbf8f3; --card:#fffdfa; --ink:#3b352d; --ink2:#6f665b; --ink3:#a99f92;
+    --line:#efe6da; --line2:#e7dccd;
+    --brand:#c07c4c; --brand2:#d9a172; --brand-soft:#f8efe5;
+    --ok:#6d8f70; --ok-soft:#eef4ee; --warn:#bb8a44; --warn-soft:#fdf4e7;
+    --err:#b2695f; --err-soft:#faefed; --r:14px;
+    --sh:0 1px 2px rgba(90,70,50,.04), 0 6px 18px rgba(90,70,50,.05);
+  }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#f5f6fa;color:#1f2430;font-size:15px}
-  .wrap{max-width:900px;margin:0 auto;padding:14px}
-  .tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
-  .tab{padding:8px 14px;background:#fff;border:1px solid #e6e8ef;border-radius:20px;cursor:pointer}
-  .tab.active{background:#4361ee;color:#fff;border-color:#4361ee}
-  .card{background:#fff;border:1px solid #e6e8ef;border-radius:12px;padding:14px;margin-bottom:12px}
-  label{display:block;margin:8px 0 4px;color:#5a6072;font-size:13px}
-  input,select,textarea{width:100%;padding:9px;border:1px solid #d7dae6;border-radius:8px;font-size:14px;font-family:inherit}
-  button{background:#4361ee;color:#fff;border:0;padding:10px 16px;border-radius:8px;font-size:14px;cursor:pointer;margin-top:10px}
-  button.ghost{background:#eef4ff;color:#3a56d4}
-  button.danger{background:#fdecec;color:#e5484d}
-  .row{display:flex;gap:10px;flex-wrap:wrap}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+       background:var(--bg);color:var(--ink);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px;margin:0 auto;padding:12px 14px 40px}
+  h3{margin:0 0 8px;font-size:15.5px;font-weight:600}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px;box-shadow:var(--sh)}
+  label{display:block;margin:6px 0 4px;color:var(--ink2);font-size:12.5px}
+  input,select,textarea{width:100%;padding:9px 10px;border:1px solid var(--line2);border-radius:10px;
+    font-size:14px;font-family:inherit;background:#fff;color:var(--ink);transition:border-color .16s,box-shadow .16s}
+  input:focus,select:focus,textarea:focus{outline:0;border-color:var(--brand2);box-shadow:0 0 0 3px var(--brand-soft)}
+  textarea{line-height:1.65;resize:vertical}
+  button{background:var(--brand);color:#fff;border:0;padding:9px 15px;border-radius:10px;font-size:14px;
+    font-weight:600;cursor:pointer;margin-top:0;transition:filter .15s,transform .06s;font-family:inherit}
+  button:hover{filter:brightness(1.03)}
+  button:active{transform:translateY(1px)}
+  button.ghost{background:var(--brand-soft);color:var(--brand)}
+  button.danger{background:var(--err-soft);color:var(--err)}
+  button.sm{width:auto;padding:7px 11px;font-size:13px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
   .row>*{flex:1;min-width:140px}
-  .err{color:#e5484d;font-size:13px}
-  .ok{color:#2e9e5b;font-size:13px}
-  .pill{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;background:#eef4ff;color:#3a56d4;margin:2px}
-  .pill.m{background:#fff3e0;color:#c77700}
+  .row2{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .row2>*{flex:1;min-width:160px}
+  .hint{color:var(--ink3);font-size:12.5px;line-height:1.55}
+  .err{color:var(--err);font-size:13px}
+  .ok{color:var(--ok);font-size:13px}
+  .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;background:var(--brand-soft);color:var(--brand);margin:2px;font-weight:600}
+  .pill.m{background:var(--warn-soft);color:var(--warn)}
+  .pill.ok{background:var(--ok-soft);color:var(--ok)}
   table{width:100%;border-collapse:collapse;font-size:13px}
-  th,td{border-bottom:1px solid #eee;padding:6px;text-align:left}
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
-  .stat{background:#fff;border:1px solid #e6e8ef;border-radius:12px;padding:12px;text-align:center}
-  .stat b{font-size:22px;display:block}
-  img.thumb{max-width:80px;max-height:80px;border-radius:6px;border:1px solid #eee;cursor:zoom-in}
+  th,td{border-bottom:1px solid var(--line);padding:7px 6px;text-align:left}
+  th{color:var(--ink2);font-weight:600;background:#fdfaf6}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+  .stat{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px;text-align:center}
+  .stat b{font-size:22px;display:block;color:var(--brand)}
+  .stat span{color:var(--ink3);font-size:12.5px}
+  img.thumb{max-width:80px;max-height:80px;border-radius:8px;border:1px solid var(--line);cursor:zoom-in}
   .hidden{display:none!important}
-  .chk{display:inline-block;margin:4px 6px 4px 0;background:#f3f5fb;border:1px solid #e2e6f0;border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer}
+  .chk{display:inline-block;margin:4px 6px 4px 0;background:#fff;border:1px solid var(--line2);border-radius:9px;padding:6px 10px;font-size:13px;cursor:pointer}
   .chk input{width:auto;margin-right:6px}
-  .sm{width:auto;padding:8px 12px;font-size:13px;margin:4px 4px 0 0}
   .thumbs{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
-  .thumbs img{max-width:90px;max-height:90px;border-radius:6px;border:1px solid #eee}
+  .thumbs img{max-width:90px;max-height:90px;border-radius:8px;border:1px solid var(--line)}
   .thumb-wrap{position:relative;display:inline-block}
-  .thumb-wrap .x{position:absolute;top:-7px;right:-7px;background:#e5484d;color:#fff;border-radius:50%;width:18px;height:18px;line-height:18px;text-align:center;font-size:12px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.3)}
-  .pastezone{border:1px dashed #c7cdf0;border-radius:8px;padding:10px;color:#8a90a2;font-size:13px;cursor:pointer;background:#fafbff;margin-top:6px}
-  .pastezone:focus{outline:none;border-color:#4361ee}
-  .pastezone.drag{border-color:#4361ee;background:#eef4ff}
-  .pract{border:1px solid #d7dae6;background:#fff;border-radius:8px;padding:5px 9px;font-size:12px;cursor:pointer;margin-left:6px}
-  .pract b{color:#4361ee}
-  .modal-mask{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:60}
-  .modal-box{background:#fff;border-radius:12px;padding:16px;max-width:92%;max-height:82%;overflow:auto;min-width:280px}
-  .filetag{display:inline-block;background:#eef4ff;color:#3a56d4;border-radius:8px;padding:4px 8px;font-size:12px;margin:3px}
-  .qb{border:1px dashed #c7cdf0;border-radius:10px;padding:10px;margin-top:10px;background:#fafbff}
-  .qb-item{border:1px solid #e6e8ef;border-radius:10px;padding:10px;margin-top:8px;background:#fff}
-  .qb-item img{max-width:100%;border-radius:6px;margin-top:4px}
-  .sec{margin:20px 0 10px;padding:9px 14px;background:#4361ee;color:#fff;border-radius:10px;font-size:15px;font-weight:bold;display:flex;justify-content:space-between;align-items:center;gap:8px}
-  .sec .rules-btn{background:rgba(255,255,255,.22);color:#fff;border:1px solid rgba(255,255,255,.55);border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer;white-space:nowrap}
+  .thumb-wrap .x{position:absolute;top:-7px;right:-7px;background:var(--err);color:#fff;border-radius:50%;width:18px;height:18px;line-height:18px;text-align:center;font-size:12px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+  .pastezone{border:1px dashed var(--line2);border-radius:10px;padding:10px;color:var(--ink3);font-size:13px;cursor:pointer;background:#fffefb;margin-top:6px}
+  .pastezone:focus{outline:none;border-color:var(--brand2)}
+  .pastezone.drag{border-color:var(--brand2);background:var(--brand-soft)}
+  .pract{border:1px solid var(--line2);background:#fff;border-radius:8px;padding:5px 9px;font-size:12px;cursor:pointer;margin-left:6px}
+  .pract b{color:var(--brand)}
+  .modal-mask{position:fixed;inset:0;background:rgba(59,53,45,.42);display:flex;align-items:center;justify-content:center;z-index:60}
+  .modal-box{background:var(--card);border-radius:16px;padding:16px;max-width:92%;max-height:84%;overflow:auto;min-width:280px;border:1px solid var(--line);box-shadow:0 18px 50px rgba(60,45,30,.2)}
+  .filetag{display:inline-block;background:#fff;color:var(--brand);border:1px solid var(--line2);border-radius:9px;padding:4px 9px;font-size:12px;margin:3px}
+  .qb{border:1px dashed var(--line2);border-radius:12px;padding:12px;margin-top:10px;background:#fffefb}
+  .qb-item{border:1px solid var(--line);border-radius:12px;padding:10px;margin-top:8px;background:#fff}
+  .qb-item img{max-width:100%;border-radius:8px;margin-top:4px}
+  .sec{margin:16px 0 10px;padding:9px 14px;background:linear-gradient(135deg,var(--brand2),var(--brand));
+    color:#fff;border-radius:12px;font-size:15px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .sec .rules-btn{background:rgba(255,255,255,.22);color:#fff;border:1px solid rgba(255,255,255,.55);border-radius:9px;padding:4px 10px;font-size:13px;cursor:pointer;white-space:nowrap}
   .sec .rules-btn:active{background:rgba(255,255,255,.4)}
   .rules-table{border-collapse:collapse;margin:6px 0;width:100%}
-  .rules-table th,.rules-table td{border:1px solid #d6dbe8;padding:5px 8px;font-size:13px;text-align:center}
-  .rules-table th{background:#f0f3ff}
+  .rules-table th,.rules-table td{border:1px solid var(--line2);padding:5px 8px;font-size:13px;text-align:center}
+  .rules-table th{background:var(--brand-soft)}
   .rules-box li{margin:5px 0;line-height:1.55}
   .qa-cols{display:flex;gap:14px;flex-wrap:wrap}
-  .qa-cols>div{flex:1;min-width:300px}
-  #stu-drop .chk{display:flex;align-items:center;gap:6px;padding:5px 4px;border-bottom:1px solid #f0f2f8;margin:0}
+  .qa-cols>div{flex:1;min-width:280px}
+  #stu-drop .chk{display:flex;align-items:center;gap:6px;padding:5px 4px;border-bottom:1px solid var(--line);margin:0}
   #stu-drop .chk:last-child{border-bottom:none}
-  .btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
-  .batch-item{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 10px;border:1px solid #e3e7f2;border-radius:8px;margin-top:6px;background:#f8f9ff;font-size:13px}
+  .batch-item{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 10px;
+    border:1px solid var(--line);border-radius:10px;margin-top:6px;background:var(--brand-soft);font-size:13px}
+  /* —— 录入区工具条（紧凑：左边归档信息，右边操作按钮）—— */
+  .toolbar{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-top:12px;
+    padding-top:12px;border-top:1px dashed var(--line)}
+  .toolbar .tb-left{display:flex;gap:10px;flex-wrap:wrap;flex:1;min-width:260px}
+  .toolbar .tb-left .fld{flex:1;min-width:150px;position:relative}
+  .toolbar .tb-actions{display:flex;gap:8px;flex-wrap:wrap}
+  .toolbar .tb-actions button{margin:0;white-space:nowrap}
+  .savebar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px;
+    padding:10px 12px;background:var(--brand-soft);border-radius:12px}
+  .savebar .hint{flex:1;min-width:180px}
+  .savebar button{margin:0;white-space:nowrap}
+  /* —— 可折叠区块头 —— */
+  .collapse-head{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;padding:2px 0}
+  .collapse-head .tt{font-size:15.5px;font-weight:600}
+  .collapse-head .chev{margin-left:auto;color:var(--ink3);font-size:13px;transition:transform .15s}
+  .collapse-head.open .chev{transform:rotate(90deg)}
+  #stu-drop{position:absolute;top:100%;left:0;right:0;z-index:30;background:#fff;border:1px solid var(--line2);
+    border-radius:12px;margin-top:4px;padding:10px;box-shadow:0 10px 28px rgba(60,45,30,.14);max-height:260px;overflow:auto}
 </style>
 </head>
 <body>
@@ -80,65 +118,79 @@
     <div class="sec" id="sec-errors"><span>① 错题录入</span><button type="button" class="rules-btn" onclick="showRules()">📖 训练规则</button></div>
     <div id="t-errors">
       <div class="card">
-        <div class="row" style="align-items:flex-end">
-          <div style="flex:1;min-width:260px;position:relative">
-            <label>学生（点击展开，勾选可多选）</label>
-            <button type="button" class="ghost" id="stu-drop-btn" style="width:100%;justify-content:flex-start" onclick="toggleStuDrop()">👥 选择学生（已选 0 人）</button>
-            <div id="stu-drop" class="hidden" style="position:absolute;top:100%;left:0;right:0;z-index:30;background:#fff;border:1px solid #d6dbe8;border-radius:10px;margin-top:4px;padding:10px;box-shadow:0 6px 18px rgba(0,0,0,.12);max-height:240px;overflow:auto">
-              <div style="margin-bottom:6px">
-                <button type="button" class="ghost sm" onclick="selAllStu(true)">全选</button>
-                <button type="button" class="ghost sm" onclick="selAllStu(false)">清空</button>
-              </div>
-              <div id="e-student-box"></div>
-            </div>
-          </div>
-          <div style="flex:1;min-width:240px">
-            <label>归档知识点（可选，决定这道题在题库知识点树里的位置）</label>
-            <select id="e-kp"><option value="">错题自动收录（默认）</option></select>
-          </div>
-        </div>
-        <div class="qa-cols" style="margin-top:10px">
+        <!-- 1) 题面 / 答案 放最上面 -->
+        <div class="qa-cols">
           <div>
-            <label>题面（文字或直接 Ctrl+V 粘贴题目图片）</label>
+            <label>题面 <span class="hint">（文字；也可 Ctrl+V 直接粘贴题目图片）</span></label>
             <textarea id="e-stem" rows="4" placeholder="题目文字，可直接粘贴截图/照片"></textarea>
             <div class="thumbs" id="stem-thumbs"></div>
             <input id="e-imgs" type="file" accept="image/*" multiple class="hidden">
           </div>
           <div>
-            <label>答案 / 解析（可粘贴图片，已取消客观题答案框）</label>
+            <label>答案 / 解析 <span class="hint">（文字；也可 Ctrl+V 粘贴答案图片）</span></label>
             <textarea id="e-analysis" rows="4" placeholder="解析文字，或 Ctrl+V 粘贴答案图片"></textarea>
             <div class="thumbs" id="answer-thumbs"></div>
             <input id="e-ans-imgs" type="file" accept="image/*" multiple class="hidden">
           </div>
         </div>
-        <input id="e-files" type="file" multiple class="hidden">
-        <div class="btn-row">
-          <button type="button" class="ghost" onclick="document.getElementById('e-imgs').click()">📎 题目图片</button>
-          <button type="button" class="ghost" onclick="document.getElementById('e-ans-imgs').click()">📎 答案图片</button>
-          <button type="button" class="ghost" onclick="toggleQb()">📚 从题库选题目</button>
-          <button type="button" onclick="addBatch()">➕ 加入待发列表</button>
-          <button onclick="saveBatch()">📤 保存全部错题（<span id="batch-n">0</span>）</button>
+        <!-- 2) 归档信息 + 操作按钮（一行解决） -->
+        <div class="toolbar">
+          <div class="tb-left">
+            <div class="fld">
+              <label>选择学生 <span class="hint">（可多选）</span></label>
+              <button type="button" class="ghost" id="stu-drop-btn" onclick="toggleStuDrop()">选择学生（已选 0 人）</button>
+              <div id="stu-drop" class="hidden">
+                <div style="margin-bottom:6px">
+                  <button type="button" class="ghost sm" onclick="selAllStu(true)">全选</button>
+                  <button type="button" class="ghost sm" onclick="selAllStu(false)">清空</button>
+                </div>
+                <div id="e-student-box"></div>
+              </div>
+            </div>
+            <div class="fld">
+              <label>归档知识点 <span class="hint">（可选）</span></label>
+              <select id="e-kp"><option value="">错题自动收录（默认）</option></select>
+            </div>
+          </div>
+          <div class="tb-actions">
+            <button type="button" class="ghost" onclick="document.getElementById('e-imgs').click()">📎 题目图片</button>
+            <button type="button" class="ghost" onclick="document.getElementById('e-ans-imgs').click()">📎 答案图片</button>
+            <button type="button" class="ghost" onclick="toggleQb()">📚 从题库选题目</button>
+            <button type="button" onclick="addBatch()">➕ 加入待发列表</button>
+          </div>
         </div>
+        <input id="e-files" type="file" multiple class="hidden">
         <div id="picked-hint" class="ok hidden"></div>
-        <p style="font-size:12px;color:#8a90a2;margin:6px 0 0">💡 保存的每道错题会自动进入下方「从题库选题目」，按题目内容去重（同一道题只存一份），以后可一键复用给做过同题的其他学生。</p>
         <div id="qb" class="qb hidden">
           <div class="row">
             <div><label>知识点</label><select id="qb-kp"><option value="">全部知识点</option></select></div>
             <div><label>关键字（题面/标签/来源）</label><input id="qb-q" placeholder="如：牛二、动量"></div>
           </div>
-          <button type="button" class="sm" onclick="searchQb()">搜索题库</button>
+          <button type="button" class="sm" style="margin-top:8px" onclick="searchQb()">搜索题库</button>
           <div id="qb-list"></div>
         </div>
         <div id="batch-box"></div>
+        <!-- 3) 保存条 -->
+        <div class="savebar">
+          <div class="hint">💡 保存后自动进入「从题库选题目」，按题目内容去重（同一道题只存一份），可一键复用给做过同题的其他学生。</div>
+          <button onclick="saveBatch()">📤 保存全部错题（<span id="batch-n">0</span>）</button>
+        </div>
         <div id="e-msg"></div>
       </div>
+      <!-- 4) 错题列表：默认折叠，点击展开 -->
       <div class="card">
-        <h3>错题列表 <span style="font-size:12px;color:#8a90a2">（按学生筛选）</span></h3>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <select id="f-student" onchange="loadErrors()" style="flex:1;min-width:160px"><option value="">全部</option></select>
-          <button type="button" class="ghost sm" onclick="downloadFilteredErrors()">⬇️ 下载该生错题本(Word)</button>
+        <div class="collapse-head" id="errlist-head" onclick="toggleErrList()">
+          <span class="tt">错题列表</span>
+          <span class="hint">点开可筛选 / 查看 / 导出</span>
+          <span class="chev" id="errlist-chev">▸</span>
         </div>
-        <div id="err-list"></div>
+        <div id="errlist-body" class="hidden" style="margin-top:10px">
+          <div class="row2">
+            <select id="f-student" onchange="loadErrors()"><option value="">全部学生</option></select>
+            <button type="button" class="ghost sm" style="flex:0 0 auto" onclick="downloadFilteredErrors()">⬇️ 下载该生错题本(Word)</button>
+          </div>
+          <div id="err-list"></div>
+        </div>
       </div>
     </div>
 
@@ -146,15 +198,15 @@
     <div class="sec" id="sec-tasks">② 每日任务</div>
     <div id="t-tasks">
       <div class="card">
-        <h3>生成每日任务</h3>
-        <p class="ok">为全体学生生成今天的练习包（到期错题 + 新课巩固，每天 3 道）。</p>
-        <button onclick="genTasks()">生成今日任务</button>
+        <div class="row2">
+          <button style="flex:0 0 auto" onclick="genTasks()">⚡ 生成今日任务</button>
+          <div class="hint" style="flex:1;min-width:200px">为全体学生生成今天的练习包（到期错题 + 新课巩固，每天 3 道）。生成后在下面按学生查看。</div>
+        </div>
         <div id="task-msg"></div>
-      </div>
-      <div class="card">
-        <h3>任务详情 <span style="font-size:12px;color:#8a90a2">（下拉选择学生查看）</span></h3>
-        <select id="task-stu" onchange="renderTaskStu()"></select>
-        <div id="task-detail" style="margin-top:10px"></div>
+        <div class="row2" style="margin-top:8px">
+          <div style="flex:0 0 220px"><label>查看学生</label><select id="task-stu" onchange="renderTaskStu()"></select></div>
+          <div id="task-detail" style="flex:1;min-width:300px"></div>
+        </div>
       </div>
     </div>
 
@@ -162,15 +214,17 @@
     <div class="sec" id="sec-dash">③ 完成看板</div>
     <div id="t-dash">
       <div class="card">
-        <h3>每日概览 <span style="font-size:12px;color:#8a90a2">（可回看最近 7 天）</span></h3>
-        <label>查看日期</label>
-        <select id="dash-date" onchange="loadDash()"></select>
+        <div class="row2">
+          <div style="flex:0 0 190px"><label>查看日期（最近 7 天）</label><select id="dash-date" onchange="loadDash()"></select></div>
+          <div class="hint" style="flex:1">今日完成人数、提交率、平均正确率等概览</div>
+        </div>
         <div class="grid" id="dash-overview" style="margin-top:10px"></div>
       </div>
       <div class="card">
-        <h3>学生详情 <span style="font-size:12px;color:#8a90a2">（下拉选择学生）</span></h3>
-        <select id="dash-stu" onchange="renderDashStu()"></select>
-        <div id="dash-detail" style="margin-top:10px"></div>
+        <div class="row2">
+          <div style="flex:0 0 220px"><label>查看学生</label><select id="dash-stu" onchange="renderDashStu()"></select></div>
+          <div id="dash-detail" style="flex:1;min-width:300px"></div>
+        </div>
       </div>
     </div>
 
@@ -178,16 +232,17 @@
     <div class="sec" id="sec-students">④ 学生管理</div>
     <div id="t-students">
       <div class="card">
-        <h3>学生账号管理</h3>
-        <p class="ok">给每个学生设置账号和密码后，学生用账号登录 <b>/train_student</b> 只能看到自己的练习，无法看到他人。</p>
-        <label>选择学生</label>
-        <select id="mgmt-stu" onchange="renderMgmt()"></select>
+        <div class="row2">
+          <div style="flex:0 0 220px"><label>选择学生</label><select id="mgmt-stu" onchange="renderMgmt()"></select></div>
+          <div class="hint" style="flex:1;min-width:240px">给学生设账号后，他用账号登录学生端只能看到自己的练习；下面还能给他写一句鼓励语（显示在学生端最上方）。</div>
+        </div>
         <div id="mgmt-detail" style="margin-top:10px"></div>
       </div>
       <div class="card">
-        <h3>存储维护</h3>
-        <p class="ok">删除题库题目、试卷、错题时，云端已自动删除对应的图片文件；若历史遗留了无用图片，可点此手动清理一次。</p>
-        <button id="clean-btn" type="button" class="ghost" onclick="cleanupCloud()">🧹 清理云端无用图片</button>
+        <div class="row2">
+          <button id="clean-btn" type="button" class="ghost" style="flex:0 0 auto" onclick="cleanupCloud()">🧹 清理云端无用图片</button>
+          <div class="hint" style="flex:1;min-width:240px">删除题目/试卷/错题时，云端已自动清理对应图片；这里可手动清一次历史遗留的无用图片。</div>
+        </div>
         <div id="clean-msg" style="margin-top:6px"></div>
       </div>
     </div>
@@ -764,11 +819,21 @@ async function setGreeting(sid){
   msg.style.color='#2e9e5b'; msg.textContent = g? '已保存，学生下次打开就能看到 ✓' : '已清空（学生端将显示默认问候）';
   const s = (window._MGMT.stus||[]).find(x=>x.id===sid); if(s) s.greeting = g;
 }
-// 在「错题录入」区按学生筛选并展示该生错题（单页滚动定位）
+// 错题列表：默认折叠，点标题展开/收起
+function toggleErrList(force){
+  const body = document.getElementById('errlist-body');
+  const head = document.getElementById('errlist-head');
+  if(!body || !head) return;
+  const want = (typeof force === 'boolean') ? force : body.classList.contains('hidden');
+  body.classList.toggle('hidden', !want);
+  head.classList.toggle('open', want);
+}
+// 在「错题录入」区按学生筛选并展示该生错题（展开列表 + 滚动定位）
 async function viewStuErrors(sid){
   const sel = document.getElementById('f-student');
   if(sel){ sel.value = sid; }
   await loadErrors();
+  toggleErrList(true);
   const sec = document.getElementById('sec-errors');
   if(sec) sec.scrollIntoView({behavior:'smooth'});
 }
@@ -829,21 +894,49 @@ function renderTaskStu(){
       <button class="ghost sm" onclick="downloadStuErrors('${t.studentId}','${t.date}')">⬇️ 下载当天错题(含答案)</button>
     </div></div>`;
 }
-// 下载 Word：老师端可导某学生「某天任务的题」或「全部错题本」
+// 轻提示（右下角气泡，避免用 alert 打断）
+function toastMsg(text, ok){
+  let el = document.getElementById('xls-toast');
+  if(!el){
+    el = document.createElement('div'); el.id = 'xls-toast';
+    el.style.cssText = 'position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:200;'
+      + 'background:#3b352d;color:#fff;padding:10px 16px;border-radius:12px;font-size:14px;'
+      + 'box-shadow:0 8px 24px rgba(0,0,0,.18);max-width:86vw;text-align:center';
+    document.body.appendChild(el);
+  }
+  el.textContent = text;
+  el.style.display = 'block';
+  clearTimeout(el._t); el._t = setTimeout(()=>{ el.style.display='none'; }, 3200);
+}
+function _ab2b64(buf){
+  const bytes = new Uint8Array(buf); let bin = ''; const chunk = 0x8000;
+  for(let i=0;i<bytes.length;i+=chunk) bin += String.fromCharCode.apply(null, bytes.subarray(i, i+chunk));
+  return btoa(bin);
+}
+// 下载 Word：老师端可导某学生「某天任务的题」或「全部错题本」。
+// 在电脑端工作台里（内嵌 iframe）浏览器不支持 blob 下载 → 交给本机保存并用 Word 打开。
 async function downloadDocx(url, fallbackName){
   try{
     const r = await fetch(API+url, {headers: TOKEN?{'Authorization':'Bearer '+TOKEN}:{}});
-    if(!r.ok){ let m='下载失败'; try{ const j=await r.json(); m=j.error||m; }catch(e){} alert(m); return; }
-    const blob = await r.blob();
+    if(!r.ok){ let m='下载失败'; try{ const j=await r.json(); m=j.error||m; }catch(e){} toastMsg(m); return; }
     let fname = fallbackName || '错题.docx';
     const cd = r.headers.get('Content-Disposition') || '';
     const mm = cd.match(/filename\*=UTF-8''([^;]+)/i);
     if(mm){ try{ fname = decodeURIComponent(mm[1]); }catch(e){} }
+    const buf = await r.arrayBuffer();
+    const embedded = (window.self !== window.top);
+    if(embedded){
+      window.parent.postMessage({type:'xls-save-file', name:fname, b64:_ab2b64(buf)}, '*');
+      toastMsg('已交给电脑端保存：'+fname);
+      return;
+    }
+    const blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = fname;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
-  }catch(e){ alert('下载失败，请重试'); }
+    toastMsg('已开始下载：'+fname);
+  }catch(e){ toastMsg('下载失败，请重试'); }
 }
 function downloadFilteredErrors(){
   const sid = document.getElementById('f-student').value;
