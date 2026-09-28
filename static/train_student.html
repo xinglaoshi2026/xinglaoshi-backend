@@ -67,6 +67,10 @@
       </div>
       <div id="weekList" class="hidden"></div>
       <div id="weekLock" class="hidden" style="color:#c77700;font-size:13px;padding:8px 2px;line-height:1.5">🔒 完成今日作业后，这里才能查看（防止提前看到答案、重复做题时作弊）。</div>
+      <div id="dlBox" class="hidden" style="margin-top:10px">
+        <button class="ghost" onclick="downloadErrors()">⬇️ 下载我的错题本（Word）</button>
+        <div style="font-size:12px;color:#8a90a2;margin-top:4px">把全部错题（含答案）导成 Word 文档，可打印出来在纸上练。</div>
+      </div>
     </div>
   </div>
 </div>
@@ -276,14 +280,38 @@ let TASK_DONE = false;   // 当日作业是否已提交完成（提交后才解�
 function updateWeekLock(){
   const lock = document.getElementById('weekLock');
   const btn = document.getElementById('weekBtn');
+  const dl = document.getElementById('dlBox');
   if(TASK_DONE){
     lock.classList.add('hidden');
     btn.classList.remove('hidden'); btn.disabled = false;
+    dl.classList.remove('hidden');
   }else{
     document.getElementById('weekList').classList.add('hidden');
     btn.classList.add('hidden');
+    dl.classList.add('hidden');
     lock.classList.remove('hidden');
   }
+}
+// 下载错题本（Word）：与「组卷下载」同一套排版，后端导出全部错题（含答案）
+async function downloadErrors(){
+  try{
+    const r = await fetch(API+'/api/train/errors/export.docx', {headers: TOKEN?{'Authorization':'Bearer '+TOKEN}:{}});
+    if(!r.ok){
+      let m = '下载失败';
+      try{ const j = await r.json(); m = j.error || m; }catch(e){}
+      alert(m); return;
+    }
+    const blob = await r.blob();
+    let fname = '错题本.docx';
+    const cd = r.headers.get('Content-Disposition') || '';
+    const mm = cd.match(/filename\*=UTF-8''([^;]+)/i);
+    if(mm){ try{ fname = decodeURIComponent(mm[1]); }catch(e){} }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = fname;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+  }catch(e){ alert('下载失败，请重试'); }
 }
 function toggleWeek(){
   if(!TASK_DONE){ return; }   // 当日作业未提交完成，锁定

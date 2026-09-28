@@ -583,6 +583,7 @@ def _migrate_media_to_r2():
 # ---------------- 错题循环训练（间隔重复 / 艾宾浩斯简化） ----------------
 TRAIN_MODULES = ["trainErrors", "trainCards", "trainTasks", "trainLogs"]
 TRAIN_INTERVALS = [1, 2, 4, 7, 15, 30]  # 各掌握等级对应的间隔天数
+TRAIN_DAILY_MAX = 3  # 每日练习题量上限（老师反馈 5~8 道太多写不完）
 
 
 def _date_today():
@@ -686,30 +687,30 @@ def train_on_answer(card, result):
 
 
 def train_build_daily(student_id, date_str, include_new=True):
-    """为某学生生成某天应练的错题卡（到期错题优先, 新课巩固补充, 不足则提前拉取）。"""
+    """为某学生生成某天应练的错题卡（到期错题优先, 新课巩固补充, 不足则提前拉取）。
+    每日题量上限 TRAIN_DAILY_MAX（默认 3 道），避免学生负担过重写不完。"""
     cards = [c["body"] if isinstance(c, dict) else c for c in
              store_list("trainCards", limit=3000)]
     due = [c for c in cards if c.get("studentId") == student_id
            and c.get("status") == "active" and c.get("nextDueDate", "") <= date_str]
     due.sort(key=lambda c: (c.get("level", 0),
                             -_days_between(c.get("nextDueDate", date_str), date_str)))
-    picked = due[:6]
+    picked = due[:TRAIN_DAILY_MAX]
     picked_ids = {p.get("errorId") for p in picked}
-    if include_new and len(picked) < 8:
-        # 新课巩固：近7天收录且仍 level0 的错题, 最多2道
+    if include_new and len(picked) < TRAIN_DAILY_MAX:
+        # 新课巩固：近7天收录且仍 level0 的错题，补足当日名额
         new_errs = [e["body"] for e in store_list("trainErrors", limit=3000)]
-        cnt = 0
         for e in new_errs:
+            if len(picked) >= TRAIN_DAILY_MAX:
+                break
             if e.get("studentId") != student_id:
                 continue
             cid = train_card_id(student_id, e["id"])
             c = next((x for x in cards if x.get("id") == cid), None)
             if c and c.get("level", 0) == 0 and _days_between(c.get("firstSeen", date_str), date_str) <= 7:
                 if e["id"] not in picked_ids:
-                    picked.append(c); picked_ids.add(e["id"]); cnt += 1
-            if cnt >= 2:
-                break
-    if len(picked) < 4:
+                    picked.append(c); picked_ids.add(e["id"])
+    if len(picked) < TRAIN_DAILY_MAX:
         up = [c for c in cards if c.get("studentId") == student_id
               and c.get("status") == "active" and c.get("nextDueDate", "") > date_str
               and _days_between(date_str, c.get("nextDueDate", date_str)) <= 1]
@@ -717,7 +718,7 @@ def train_build_daily(student_id, date_str, include_new=True):
         for c in up:
             if c.get("errorId") not in picked_ids:
                 picked.append(c); picked_ids.add(c.get("errorId"))
-            if len(picked) >= 4:
+            if len(picked) >= TRAIN_DAILY_MAX:
                 break
     return picked
 
@@ -900,6 +901,36 @@ def _content_segments(html):
 def html_mod_unescape(s):
     import html as _html
     return _html.unescape(s)
+
+
+def build_train_errors_docx(name, errors):
+    """把某学生的错题导出为 Word（复用组卷导出的排版：题面 + 答案/解析 + 图片）。"""
+    qmap = {}
+    ids = []
+    for i, e in enumerate(errors, 1):
+        qid = "te%d" % i
+        imgs = [u for u in (e.get("images") or []) if isinstance(u, str)]
+        aimgs = [u for u in (e.get("answerImages") or []) if isinstance(u, str)]
+        content = (("<p>%s</p>" % e["stem"]) if e.get("stem") else "") + \
+                  "".join('<img src="%s">' % u for u in imgs)
+        ans = []
+        if e.get("analysis"):
+            ans.append("<p>答案：%s</p>" % e["analysis"])
+        elif aimgs:
+            ans.append("<p>答案：</p>")
+        ans += ['<img src="%s">' % u for u in aimgs]
+        atts = [f.get("name") for f in (e.get("files") or [])
+                if isinstance(f, dict) and f.get("name")]
+        if atts:
+            ans.append("<p>附件：%s（请在手机上查看）</p>" % "、".join(atts))
+        qmap[qid] = {"content": content, "answer": "".join(ans),
+                     "type": e.get("knowledgePoint") or "错题",
+                     "qid": e.get("wrongDate") or ""}
+        ids.append(qid)
+    paper = {"title": (name or "学生") + " 错题本",
+             "note": "共 %d 道错题　导出日期 %s" % (len(ids), _date_today()),
+             "questionIds": ids}
+    return build_paper_docx(paper, qmap)
 
 
 def _p_text(text, bold=False, sz=22):
@@ -1239,6 +1270,35 @@ class H(BaseHTTPRequestHandler):
             if eff_sid:
                 items = [e for e in items if e.get("studentId") == eff_sid]
             return send_json(self, {"items": items, "count": len(items)})
+        if p == "/api/train/errors/export.docx":
+            # 导出错题本(Word)。学生只能导出自己的；老师可带 ?studentId= 导出指定学生。
+            if not eff_sid:
+                return send_json(self, {"error": "缺少学生"}, 400)
+            # 学生端防提前看答案：今日练习包未提交完成前不允许下载
+            if is_student:
+                task, _ = store_get("trainTasks", "t_%s_%s" % (eff_sid, _date_today()))
+                if task and task.get("status") != "done":
+                    return send_json(self, {"error": "请先完成今天的练习，再下载错题本"}, 403)
+            errs = [e["body"] for e in store_list("trainErrors", limit=5000)
+                    if (e["body"] or {}).get("studentId") == eff_sid]
+            if not errs:
+                return send_json(self, {"error": "还没有错题可以导出"}, 400)
+            errs.sort(key=lambda e: (e.get("wrongDate") or "",
+                                     e.get("createdAt") or 0))
+            stu, _ = store_get("students", eff_sid)
+            name = ((stu.get("name") if stu else "") or errs[0].get("studentName")
+                    or eff_sid)
+            data = build_train_errors_docx(name, errs)
+            fname = urlquote("%s 错题本.docx" % name)
+            self.send_response(200)
+            self.send_header("Content-Type", DOCX_CTYPE)
+            self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + fname)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_cors()
+            self.end_headers()
+            self.wfile.write(data)
+            self._responded = True
+            return
         if p == "/api/train/errors/practices":
             # 每个错题的练习次数（可选按学生过滤）
             sid = q.get("studentId", [None])[0] or eff_sid

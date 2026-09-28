@@ -140,7 +140,7 @@
     <div id="t-tasks">
       <div class="card">
         <h3>生成每日任务</h3>
-        <p class="ok">为全体学生生成今天的练习包（到期错题 + 新课巩固，5~8 题）。</p>
+        <p class="ok">为全体学生生成今天的练习包（到期错题 + 新课巩固，每天 3 道）。</p>
         <button onclick="genTasks()">生成今日任务</button>
         <div id="task-msg"></div>
       </div>
@@ -619,11 +619,11 @@ function showRules(){
       <li><b>下次应练日期</b>（nextDueDate）</li>
       <li><b>状态</b>：循环中(active) / 已毕业(month_pool)</li>
     </ul>
-    <p style="margin:4px 0"><b>二、每日出题（目标 4~8 题）</b>：</p>
+    <p style="margin:4px 0"><b>二、每日出题（每天 3 道）</b>：</p>
     <ul style="margin:2px 0 8px 18px;padding:0">
-      <li>到期错题优先（最不会的先练），最多 6 道</li>
-      <li>不足 8 道时补近 7 天新收录错题，最多 2 道</li>
-      <li>仍不足 4 道时提前拉明后天到期的题补足</li>
+      <li>到期错题优先（最不会的先练），最多 3 道</li>
+      <li>不足 3 道时补近 7 天新收录的错题</li>
+      <li>仍不足 3 道时提前拉明后天到期的题补足</li>
     </ul>
     <p style="margin:4px 0"><b>三、做对/做错后的变化</b>：</p>
     <ul style="margin:2px 0 8px 18px;padding:0">
