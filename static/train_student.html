@@ -81,7 +81,7 @@
         <button onclick="toggleWeek()" id="weekBtn">展开</button>
       </div>
       <div id="weekList" class="hidden"></div>
-      <div id="weekLock" class="hidden" style="color:#c77700;font-size:13px;padding:8px 2px;line-height:1.5">🔒 完成今日作业后，这里才能查看（防止提前看到答案、重复做题时作弊）。</div>
+      <div id="weekLock" class="hidden" style="color:#c77700;font-size:13px;padding:8px 2px;line-height:1.5">🔒 完成今日练习后，这里就可以查看和下载错题。</div>
       <div id="dlBox" class="hidden" style="margin-top:10px">
         <button class="ghost" onclick="downloadErrors()">⬇️ 下载我的错题本（Word）</button>
         <div style="font-size:12px;color:#8a90a2;margin-top:4px">把全部错题（含答案）导成 Word 文档，可打印出来在纸上练。</div>
@@ -184,17 +184,20 @@ async function loadToday(){
   if(!task){ head.innerHTML='<b>今天还没有给你的练习包</b><br><span style="color:#8a90a2">让老师先点"生成今日任务"哦</span>'; document.getElementById('submitBtn').classList.add('hidden'); document.getElementById('sharedCard').classList.add('hidden'); document.getElementById('printCard').classList.add('hidden'); return; }
   document.getElementById('submitBtn').classList.remove('hidden');
   const tst = task.status;
+  // 双保险：状态字段为 done，或「已答题数 = 总题数」都算今天已完成
+  const allDone = (j.total > 0 && (j.answered||0) >= j.total);
+  const fin = (tst==='done') || allDone;
   head.innerHTML='<b>'+task.date+' 练习</b> · 共'+j.items.length+'题'
-    + (tst==='done' ? ' · 已完成 ✓'
+    + (fin ? ' · 已完成 ✓'
        : (tst==='partial' ? ' · 部分完成（还有题没提交）' : ' · 待完成'));
   // 锁定提示：区分「完全没做」和「做了一部分」
   const lockEl = document.getElementById('weekLock');
   if(lockEl){
-    lockEl.textContent = (tst==='partial')
-      ? '🔒 你还有题目没提交，把今天的题目全部提交后，这里就能查看和下载错题。'
-      : '🔒 完成今日作业后，这里才能查看（防止提前看到答案、重复做题时作弊）。';
+    lockEl.textContent = (tst==='partial' && !fin)
+      ? '🔒 你还有题目没提交，全部提交后这里就能查看和下载错题。'
+      : '🔒 完成今日练习后，这里就可以查看和下载错题。';
   }
-  TASK_DONE = !task || tst==='done';   // 无作业 或 已全部提交 → 解锁近期错题
+  TASK_DONE = !task || fin;
   if(!j.items.length){
     head.innerHTML='<b>'+task.date+'</b> · 今天没有需要练的错题，休息一下';
     document.getElementById('submitBtn').classList.add('hidden');

@@ -711,17 +711,22 @@ def train_on_answer(card, result):
     store_put("trainCards", card["id"], card)
 
 
+def train_answered_ids(task_id):
+    """该任务下已提交过的错题 id 集合（按 trainLogs 判断）。"""
+    out = set()
+    for l in store_list("trainLogs", limit=20000):
+        b = l.get("body") or {}
+        if b.get("taskId") == task_id:
+            out.add(b.get("errorId"))
+    return out
+
+
 def train_task_all_answered(task):
     """该任务的题是否全部提交过（按 trainLogs 判断）。"""
     ids = set(task.get("errorIds") or [])
     if not ids:
         return False
-    done = set()
-    for l in store_list("trainLogs", limit=20000):
-        b = l.get("body") or {}
-        if b.get("taskId") == task.get("id"):
-            done.add(b.get("errorId"))
-    return ids <= done
+    return ids <= train_answered_ids(task.get("id"))
 
 
 def train_heal_task_status(task):
@@ -840,6 +845,9 @@ def train_student_today(student_id, date_str=None):
     if not task:
         return {"task": None, "items": []}
     train_heal_task_status(task)   # 旧数据自愈：答完却没记成 done 的纠正过来
+    # 已答/总题数一并下发，学生端据此判断"今天是否已全部完成"（不单纯依赖 status 字段）
+    need = set(task.get("errorIds") or [])
+    answered_n = len(need & train_answered_ids(task.get("id")))
     items = []
     for eid in task.get("errorIds", []):
         e, _ = store_get("trainErrors", eid)
@@ -848,7 +856,8 @@ def train_student_today(student_id, date_str=None):
         # 学生端不下发答案/解析/答案图(答案在上传计算过程后通过 /reveal 获取)
         pub = {k: v for k, v in e.items() if k not in ("answer", "analysis", "answerImages")}
         items.append(pub)
-    return {"task": task, "items": items}
+    return {"task": task, "items": items,
+            "answered": answered_n, "total": len(need)}
 
 
 def train_submit(student_id, date_str, answers):
