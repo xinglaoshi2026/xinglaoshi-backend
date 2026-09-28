@@ -747,7 +747,22 @@ function renderMgmt(){
         <button onclick="setStu('${s.id}')">保存</button>
         <button type="button" class="ghost" onclick="viewStuErrors('${s.id}')">查看错题</button>
       </div>
+    </div>
+    <div style="margin-top:10px;border-top:1px dashed #e0e4ef;padding-top:8px">
+      <label>给这位学生写的鼓励语（学生登录后显示在最上方；留空则显示「你好，姓名」）</label>
+      <textarea id="sg_${s.id}" rows="2" placeholder="如：张家泽，昨天的错题今天再练一遍，你一定行！">${(s.greeting||'').replace(/</g,'&lt;')}</textarea>
+      <button type="button" class="ghost sm" onclick="setGreeting('${s.id}')">保存鼓励语</button>
+      <span id="sgmsg_${s.id}" style="font-size:12px;margin-left:8px"></span>
     </div></div>`;
+}
+async function setGreeting(sid){
+  const el = document.getElementById('sg_'+sid);
+  const msg = document.getElementById('sgmsg_'+sid);
+  const g = (el.value||'').trim();
+  const {status,j} = await call('/api/train/student/greeting',{method:'POST',json:{studentId:sid,greeting:g}});
+  if(status!==200){ msg.style.color='#e5484d'; msg.textContent=(j&&j.error)||'保存失败'; return; }
+  msg.style.color='#2e9e5b'; msg.textContent = g? '已保存，学生下次打开就能看到 ✓' : '已清空（学生端将显示默认问候）';
+  const s = (window._MGMT.stus||[]).find(x=>x.id===sid); if(s) s.greeting = g;
 }
 // 在「错题录入」区按学生筛选并展示该生错题（单页滚动定位）
 async function viewStuErrors(sid){

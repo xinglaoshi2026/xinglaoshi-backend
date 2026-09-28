@@ -62,7 +62,7 @@
     </div>
     <div class="card" id="head"></div>
     <div class="card" id="printCard" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-      <div style="font-size:13px;color:#5a6072">想把题目打印出来、在纸上写？</div>
+      <div style="font-size:13px;color:#5a6072">如果想在纸上写就点击下载按钮</div>
       <button class="ghost sm" onclick="downloadTodayQuestions()">🖨️ 下载今天的题目（不含答案）</button>
     </div>
     <div class="card" id="sharedCard">
@@ -138,9 +138,30 @@ async function doLogin(){
   TOKEN=j.token; ME=(j.user&&j.user.username)||u;
   localStorage.setItem('tt_token', TOKEN);
   show(true);
-  document.getElementById('me').textContent='你好，'+ME;
+  setMe(null);
+  try{
+    const r = await call('/api/train/students');
+    if(r.status===200 && r.j && r.j.items && r.j.items[0]) setMe(r.j.items[0]);
+  }catch(e){}
   await loadToday();
   updateWeekLock();
+}
+
+// 顶部问候语：老师写的鼓励语优先显示；没写就显示「你好，姓名」
+function setMe(stu){
+  const el = document.getElementById('me');
+  if(!el) return;
+  const nm = (stu && (stu.name||stu.username)) || ME || '';
+  const g = (stu && (stu.greeting||'').trim()) || '';
+  if(g){
+    el.textContent = g;
+    el.style.color = '#4361ee';
+    el.style.fontWeight = '600';
+    el.style.fontSize = '15px';
+  }else{
+    el.textContent = nm ? ('你好，'+nm) : '已登录';
+    el.style.color = ''; el.style.fontWeight = ''; el.style.fontSize = '';
+  }
 }
 
 function logout(){
@@ -444,7 +465,7 @@ if(TOKEN){
   call('/api/train/students').then(({status,j})=>{
     if(status===401){ logout(); return; }
     const me = (j && j.items && j.items[0]) || null;
-    document.getElementById('me').textContent = me ? ('你好，'+(me.name||me.username||'')) : '已登录';
+    setMe(me);
     loadToday().then(updateWeekLock);
   });
 }

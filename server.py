@@ -1026,16 +1026,15 @@ def build_paper_docx(paper, questions_map):
                     ext = "jpeg"
                 img_idx += 1
                 w, h = _img_dims(data)
-                # 按原生像素 + 目标 DPI 计算真实尺寸，避免打印时被放大发虚；
-                # 仅当比页宽还大时才等比缩到页宽（缩小仍清晰）
+                # 统一按「页面可用宽度」铺满：题目截图通常像素不多，
+                # 若按原尺寸(pt)排版会很小、打印看不清；放大不超过 3 倍以免糊。
                 nat_w = int(w * _EMU_PER_IN / _PRINT_DPI)
                 nat_h = int(h * _EMU_PER_IN / _PRINT_DPI)
-                if nat_w > _EMU_MAX:
-                    cx = _EMU_MAX
-                    cy = int(nat_h * _EMU_MAX / max(nat_w, 1))
-                else:
-                    cx = nat_w
-                    cy = nat_h
+                target = _EMU_MAX
+                if nat_w * 3 < target:
+                    target = nat_w * 3
+                cx = target
+                cy = int(nat_h * target / max(nat_w, 1))
                 rid = "rId%d" % (100 + img_idx)
                 arc = "word/media/img%d.%s" % (img_idx, ext)
                 rels.append((rid, "media/img%d.%s" % (img_idx, ext)))
@@ -1549,6 +1548,22 @@ class H(BaseHTTPRequestHandler):
                 add_user(cx, username, pw, role="student", student_id=sid)
             cx.commit(); cx.close()
             return send_json(self, {"ok": True})
+        if p == "/api/train/student/greeting":
+            # 老师给某学生写鼓励语 → 学生端顶部显示（留空则显示默认「你好，姓名」）
+            if u.get("role") not in ("admin", "teacher"):
+                return send_json(self, {"error": "无权限"}, 403)
+            body, err = read_body(self)
+            if err:
+                return send_json(self, {"error": err}, 400)
+            sid = body.get("studentId")
+            if not sid:
+                return send_json(self, {"error": "缺少 studentId"}, 400)
+            stu, _ = store_get("students", sid)
+            if not stu:
+                return send_json(self, {"error": "学生不存在"}, 404)
+            stu["greeting"] = (body.get("greeting") or "").strip()
+            store_put("students", sid, stu)
+            return send_json(self, {"ok": True, "greeting": stu["greeting"]})
         if p == "/api/train/errors":
             body, err = read_body(self)
             if err:
