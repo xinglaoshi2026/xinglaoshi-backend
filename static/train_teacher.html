@@ -489,6 +489,74 @@
   body.theme-dark[data-skin="sage"] .err-row:hover{ background:#222E26; }
   body.theme-dark[data-skin="sage"] tbody tr:hover td{ background:#222E26; }
 
+  /* ---- 灰白皮肤（中性石墨 × 冷灰白）——与工作台「灰白」同步 ---- */
+  body[data-skin="stone"]{
+    --bg:#F7F8FA; --surface:#FFFFFF; --surface2:#F3F4F6;
+    --ink:#2B2E33; --ink2:#5A6067; --ink3:#8B9199;
+    --line:#E9EBEE; --line2:#DDE1E6;
+    --brand:#6E7681; --brand2:#9AA2AC; --brand3:#505760; --brand-soft:#F1F3F5;
+    --gold:#7A848E;
+    --ok:#5F8A66; --ok-soft:#EDF3EE;
+    --warn:#B8863F; --warn-soft:#FCF3E6;
+    --err:#A9605A; --err-soft:#F9EEEC;
+    --sh1:inset 0 1px 0 rgba(255,255,255,.7), 0 1px 2px rgba(45,50,58,.05), 0 1px 1px rgba(45,50,58,.04);
+    --sh2:inset 0 1px 0 rgba(255,255,255,.7), 0 2px 6px rgba(45,50,58,.06), 0 12px 28px rgba(45,50,58,.07);
+    --sh3:0 24px 60px rgba(40,45,52,.18), 0 6px 16px rgba(40,45,52,.10);
+    --ring:0 0 0 3px rgba(110,118,129,.18);
+    --grad:linear-gradient(180deg, var(--brand2) 0%, var(--brand) 100%);
+    background-image:radial-gradient(1200px 420px at 50% -140px, #FAFBFC 0%, rgba(250,251,252,0) 70%);
+  }
+  body[data-skin="stone"] .app-head{
+    background:linear-gradient(180deg, rgba(247,248,250,.95) 58%, rgba(247,248,250,.72));
+    border-bottom-color:rgba(225,228,232,.55);
+  }
+  body[data-skin="stone"] .side{
+    background:linear-gradient(180deg,#3C4148 0%,#26292E 100%);
+    color:#C7CCD2; border-right-color:rgba(0,0,0,.28);
+    box-shadow:1px 0 0 rgba(255,255,255,.03), 14px 0 44px rgba(40,45,52,.14);
+  }
+  body[data-skin="stone"] .side-brand .bi{ filter:grayscale(.55) saturate(.5); }
+  body[data-skin="stone"] .side-brand .bt{ color:#EDEFF1; }
+  body[data-skin="stone"] .side-brand .bs{ color:#9AA0A8; }
+  body[data-skin="stone"] .side-nav .nv-label{ color:#8B9199; }
+  body[data-skin="stone"] .side-nav a{ color:#C2C7CD; }
+  body[data-skin="stone"] .side-nav a.active{ background:rgba(110,118,129,.20); }
+  body[data-skin="stone"] .side-nav a.active::before{ background:var(--brand2); box-shadow:0 0 12px rgba(110,118,129,.7); }
+  body[data-skin="stone"] .side-nav a.active .cnt{ color:#E2E5E8; }
+  body[data-skin="stone"] .side-nav a .cnt{ color:#98A0A8; }
+  body[data-skin="stone"] .side-foot button{ color:#C7CCD2; }
+  body[data-skin="stone"] .side-foot button.on{ background:rgba(110,118,129,.24); border-color:rgba(110,118,129,.45); }
+  body[data-skin="stone"] .err-row:hover{ background:#F4F6F8; }
+  body[data-skin="stone"] tbody tr:hover td{ background:#F4F6F8; }
+
+  /* ---- 灰白皮肤 · 深色（石墨暗色）---- */
+  body.theme-dark[data-skin="stone"]{
+    --bg:#16181B; --surface:#1E2126; --surface2:#26292E;
+    --ink:#E9EBEE; --ink2:#C6CBD1; --ink3:#9CA2AA;
+    --line:#2A2D32; --line2:#34383E;
+    --brand:#AEB6C0; --brand2:#C6CDD5; --brand3:#8A929C; --brand-soft:#26292E;
+    --gold:#8FA6B0;
+    --ok:#8FB08F; --ok-soft:#28311F;
+    --warn:#D2A45F; --warn-soft:#332A1D;
+    --err:#CE837B; --err-soft:#342423;
+    --sh1:inset 0 1px 0 rgba(255,255,255,.05), 0 1px 2px rgba(0,0,0,.30);
+    --sh2:inset 0 1px 0 rgba(255,255,255,.055), 0 2px 6px rgba(0,0,0,.34), 0 12px 28px rgba(0,0,0,.30);
+    --sh3:0 24px 60px rgba(0,0,0,.55), 0 6px 16px rgba(0,0,0,.40);
+    --ring:0 0 0 3px rgba(174,182,192,.24);
+    background-image:radial-gradient(1100px 400px at 50% -160px, #1E2126 0%, rgba(30,33,38,0) 72%);
+  }
+  body.theme-dark[data-skin="stone"] .app-head{
+    background:linear-gradient(180deg, rgba(22,24,27,.95) 58%, rgba(22,24,27,.72));
+    border-bottom-color:rgba(255,255,255,.07);
+  }
+  body.theme-dark[data-skin="stone"] .side{ background:linear-gradient(180deg,#101215 0%,#0B0D0F 100%); }
+  body.theme-dark[data-skin="stone"] .pastezone{ background:var(--surface); }
+  body.theme-dark[data-skin="stone"] .modal-mask{ background:rgba(8,10,12,.62); }
+  body.theme-dark[data-skin="stone"] ::-webkit-scrollbar-thumb{ background:#2E3238; }
+  body.theme-dark[data-skin="stone"] ::-webkit-scrollbar-thumb:hover{ background:#3A3F45; }
+  body.theme-dark[data-skin="stone"] .err-row:hover{ background:#26292E; }
+  body.theme-dark[data-skin="stone"] tbody tr:hover td{ background:#26292E; }
+
   /* ---- 应用外壳 ---- */
   .shell{display:flex;align-items:flex-start;min-height:100vh}
   .side{
@@ -1737,7 +1805,7 @@ function initScrollSpy(){
 function applySkinFromUrl(){
   const p = new URLSearchParams(location.search);
   const skin = p.get('skin');
-  if(skin==='sage'||skin==='warm') document.body.setAttribute('data-skin', skin);
+  if(skin==='sage'||skin==='warm'||skin==='stone') document.body.setAttribute('data-skin', skin);
   const dark = p.get('dark');
   if(dark==='1'||dark==='true'){
     document.body.classList.add('theme-dark');
@@ -1763,7 +1831,7 @@ function initTheme(){
 window.addEventListener('message', function(e){
   const d = e.data || {};
   if(d.type !== 'wb-theme') return;
-  if(d.skin==='sage'||d.skin==='warm') document.body.setAttribute('data-skin', d.skin);
+  if(d.skin==='sage'||d.skin==='warm'||d.skin==='stone') document.body.setAttribute('data-skin', d.skin);
   if(d.dark===true || d.dark===false){
     document.body.classList.toggle('theme-dark', d.dark);
     localStorage.setItem('tt_theme', d.dark ? 'dark' : 'light');
