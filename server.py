@@ -1275,9 +1275,10 @@ class H(BaseHTTPRequestHandler):
             if not eff_sid:
                 return send_json(self, {"error": "缺少学生"}, 400)
             # 学生端防提前看答案：今日练习包未提交完成前不允许下载
+            # （当天没有出题的空任务不算拦截，否则学生永远无法下载）
             if is_student:
                 task, _ = store_get("trainTasks", "t_%s_%s" % (eff_sid, _date_today()))
-                if task and task.get("status") != "done":
+                if task and task.get("errorIds") and task.get("status") != "done":
                     return send_json(self, {"error": "请先完成今天的练习，再下载错题本"}, 403)
             errs = [e["body"] for e in store_list("trainErrors", limit=5000)
                     if (e["body"] or {}).get("studentId") == eff_sid]
