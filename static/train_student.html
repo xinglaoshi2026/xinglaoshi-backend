@@ -417,10 +417,29 @@ async function loadToday(){
     TASK_DONE=true; updateWeekLock(); return;
   }
   document.getElementById('printCard').classList.remove('hidden');
+  const box=document.getElementById('items');
+  if(fin){
+    // 今天已全部提交：不再显示填写表单，否则底部"本次已填写 0/3"会和顶部"已完成"矛盾
+    document.getElementById('sharedCard').classList.add('hidden');
+    bb.classList.add('hidden');
+    const sc = (typeof task.score === 'number') ? Math.round(task.score*100) : null;
+    box.innerHTML = '<div class="card" style="text-align:center">'
+      + '<div class="logo" style="margin-bottom:12px">✓</div>'
+      + '<h3 style="font-size:17px">今天已完成</h3>'
+      + '<div class="hint" style="margin-top:6px">共 '+(j.total||j.items.length)+' 道题'
+      + (sc!=null? (' · 自评正确率 '+sc+'%') : '') + '</div>'
+      + '<div class="hint" style="margin-top:10px">想复习可以看下面「最近一周错题」，'
+      + '也可以点上面的按钮下载错题本，打印出来在纸上再练一遍。</div>'
+      + '</div>';
+    ST={};
+    updateProgress();
+    TASK_DONE=true; updateWeekLock();
+    return;
+  }
   document.getElementById('sharedCard').classList.remove('hidden');
   bb.classList.remove('hidden');
   SHARED={photos:[],urls:[]}; renderShared();
-  const box=document.getElementById('items'); box.innerHTML=''; ST={};
+  box.innerHTML=''; ST={};
   j.items.forEach((e,idx)=>{
     const imgs = (e.images&&e.images.length)?e.images:(e.image?[e.image]:[]);
     const imgHtml = imgs.map(u=>`<img class="qi" src="${API+u}" onclick="zoomImg('${API+u}')">`).join('');
@@ -428,8 +447,8 @@ async function loadToday(){
       const fu = (typeof f==='string')?f:(f.url||''); const fn=(typeof f==='string')?'附件':(f.name||'附件');
       return `<a class="filetag" href="${API+fu}" target="_blank" rel="noopener">附件 · ${fn}</a>`;
     }).join(' ') : '';
-    box.insertAdjacentHTML('beforeend',`<div class="q" id="q_${idx}" data-idx="${idx}" data-eid="${e.id}">
-      <div class="qhead"><div class="qno">第${idx+1}题</div>${e.knowledgePoint?('<span class="kchip">'+e.knowledgePoint+'</span>'):''}</div>
+    box.insertAdjacentHTML('beforeend',`<div class="q" id="q_${idx}" data-idx="${idx}" data-eid="${e.id}" data-answered="${e.answered?1:0}">
+      <div class="qhead"><div class="qno">第${idx+1}题</div>${e.knowledgePoint?('<span class="kchip">'+e.knowledgePoint+'</span>'):''}${e.answered?('<span class="pill ok">今天已交</span>'):''}</div>
       <div class="qbody">${(e.stem||(imgs.length?'':'（看图作答）'))}</div>${imgHtml}
       ${files?('<div style="margin-top:8px">'+files+'</div>'):''}
       <div id="rv_${idx}" class="rv hidden"></div>
@@ -548,6 +567,7 @@ function updateProgress(){
   const qs=[...document.querySelectorAll('#items .q')];
   let done=0;
   qs.forEach(q=>{
+    if(q.dataset.answered==='1'){ done++; return; }   // 今天已交过，计入进度
     const s=ST[q.dataset.idx];
     if(s && s.result && (s.note||'').trim()) done++;
   });
@@ -586,6 +606,8 @@ async function submit(){
     const q=qs[i], n=i+1;
     const idx=q.dataset.idx, eid=q.dataset.eid;
     const st=ST[idx]||{revealed:false,result:'',note:''};
+    // 今天已经交过的题（中途退出后再进来）：不用重填，直接跳过（服务端不会重复记分）
+    if(q.dataset.answered==='1' && !st.result){ answers.push({errorId:eid}); continue; }
     if(!st.revealed){ fail('第'+n+'题的答案还没显示，请先在第1步上传答案照片'); return; }
     if(!st.result){ fail('第'+n+'题还没自评对错，请完成第3步'); return; }
     if(!(st.note||'').trim()){ fail('第'+n+'题还没写错误原因，请完成第4步'); return; }

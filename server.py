@@ -847,7 +847,8 @@ def train_student_today(student_id, date_str=None):
     train_heal_task_status(task)   # 旧数据自愈：答完却没记成 done 的纠正过来
     # 已答/总题数一并下发，学生端据此判断"今天是否已全部完成"（不单纯依赖 status 字段）
     need = set(task.get("errorIds") or [])
-    answered_n = len(need & train_answered_ids(task.get("id")))
+    done_ids = train_answered_ids(task.get("id"))
+    answered_n = len(need & done_ids)
     items = []
     for eid in task.get("errorIds", []):
         e, _ = store_get("trainErrors", eid)
@@ -855,6 +856,7 @@ def train_student_today(student_id, date_str=None):
             continue
         # 学生端不下发答案/解析/答案图(答案在上传计算过程后通过 /reveal 获取)
         pub = {k: v for k, v in e.items() if k not in ("answer", "analysis", "answerImages")}
+        pub["answered"] = eid in done_ids   # 今天这题是否已交过（中途退出再进来时无需重填）
         items.append(pub)
     return {"task": task, "items": items,
             "answered": answered_n, "total": len(need)}
@@ -867,23 +869,31 @@ def train_submit(student_id, date_str, answers):
     task, _ = store_get("trainTasks", tid)
     if not task:
         return {"ok": False, "error": "今日任务不存在"}
+    # 今天这题是否已经交过（学生中途退出后再进来重做时，不重复记流水/不重复推进卡片等级）
+    prev = {}
+    for l in store_list("trainLogs", limit=20000):
+        b = l.get("body") or {}
+        if b.get("taskId") == tid and b.get("errorId"):
+            prev[b["errorId"]] = b
     results = []
-    right_n = 0
-    total = 0
+    new_n = 0
     for a in answers:
         eid = a.get("errorId")
         e, _ = store_get("trainErrors", eid)
         if not e:
             continue
-        total += 1
         result = a.get("result")  # right/half/wrong/self_right/self_wrong
         qans = (e.get("answer") or "").strip()
         # 客观题自动判分(仅当明确给出 submittedAnswer 且为标准题)
         if qans and a.get("submittedAnswer") is not None and result in (None, "", "auto"):
             norm = lambda s: re.sub(r"\s+", "", str(s)).lower()
             result = "right" if norm(a.get("submittedAnswer")) == norm(qans) else "wrong"
-        if result in ("right", "self_right"):
-            right_n += 1
+        if eid in prev:
+            results.append({"errorId": eid, "result": prev[eid].get("result"),
+                            "answer": qans, "analysis": e.get("analysis") or "",
+                            "answerImages": e.get("answerImages") or [],
+                            "stem": e.get("stem") or "", "already": True})
+            continue
         cid = train_card_id(student_id, eid)
         c, _ = store_get("trainCards", cid)
         if not c:
@@ -898,24 +908,26 @@ def train_submit(student_id, date_str, answers):
                "errorNote": (a.get("errorNote") or "").strip(),
                "durationSec": a.get("durationSec") or 0, "updatedAt": now_ms()}
         store_put("trainLogs", lid, log)
+        prev[eid] = log
+        new_n += 1
         results.append({"errorId": eid, "result": result,
                         "answer": qans, "analysis": e.get("analysis") or "",
                         "answerImages": e.get("answerImages") or [],
                         "stem": e.get("stem") or ""})
+    # 分数/状态按该任务的全部流水重算（含本次与今天之前已交的题）
+    need = set(task.get("errorIds") or [])
+    answered = [prev[e] for e in need if e in prev]
+    total = len(answered)
+    right_n = sum(1 for b in answered if b.get("result") in ("right", "self_right"))
     if total:
         task["score"] = round(right_n / total, 2)
-        # 状态按「完成度」判定（不是正确率）：今天的题全部提交过就是 done，
-        # 否则 partial。正确率另有 score 字段。此前按 right_n==total 判定，
-        # 导致「做错的题」被记成 partial，学生端再进入时近期错题被永久锁住。
-        answered_ids = {a.get("errorId") for a in answers if a.get("errorId")}
-        expected = set(task.get("errorIds") or [])
-        task["status"] = ("done" if (expected and expected <= answered_ids)
-                          else ("done" if not expected else "partial"))
+        # 状态按「完成度」判定（不是正确率）：今天的题全部提交过就是 done，否则 partial。
+        task["status"] = "done" if (need and need <= set(prev)) else "partial"
         task["finishedAt"] = now_ms()
         task["updatedAt"] = now_ms()
         store_put("trainTasks", tid, task)
     return {"ok": True, "score": task.get("score"), "total": total,
-            "right": right_n, "results": results}
+            "right": right_n, "results": results, "new": new_n}
 
 
 def train_dashboard(date_str=None):
