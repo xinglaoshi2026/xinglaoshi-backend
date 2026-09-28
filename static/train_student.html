@@ -48,13 +48,17 @@
     <label>密码</label>
     <input id="password" type="password" placeholder="密码">
     <button onclick="doLogin()">登录</button>
+    <button class="ghost sm" style="width:100%;margin-top:8px" onclick="showHelp()">❓ 第一次用？看使用说明</button>
     <div id="lmsg" class="err"></div>
   </div>
 
   <div id="main" class="hidden">
     <div class="topbar">
       <span class="nm" id="me"></span>
-      <button onclick="logout()">退出</button>
+      <div style="display:flex;gap:6px">
+        <button onclick="showHelp()">❓ 使用说明</button>
+        <button onclick="logout()">退出</button>
+      </div>
     </div>
     <div class="card" id="head"></div>
     <div class="card" id="printCard" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
@@ -62,10 +66,11 @@
       <button class="ghost sm" onclick="downloadTodayQuestions()">🖨️ 下载今天的题目（不含答案）</button>
     </div>
     <div class="card" id="sharedCard">
-      <label style="font-weight:bold">第1步 · 拍照上传计算过程（多题写在同一张纸上，只需传一次）</label>
+      <label style="font-weight:bold">第1步 · 拍照上传计算过程（所有题目答案写在同一张纸上，在此上传）</label>
       <div class="pv" id="shared-pv"></div>
       <input id="shared-ph" type="file" accept="image/*" multiple onchange="addSharedPhotos(this)">
-      <div style="font-size:12px;color:#8a90a2;margin-top:4px">如果某道题另有单独的过程图，可在该题下方再补传（不传也可以）。</div>
+      <div style="font-size:12px;color:#8a90a2;margin-top:4px">可一次选择多张图片，也可分多次拍照上传（一张纸写不完就多拍几张）。上传后下面每道题会自动显示答案。</div>
+      <div id="rvHint" style="font-size:13px;color:#2e9e5b;margin-top:6px"></div>
     </div>
     <div id="items"></div>
     <button id="submitBtn" onclick="submit()">提交今日练习</button>
@@ -82,6 +87,26 @@
         <div style="font-size:12px;color:#8a90a2;margin-top:4px">把全部错题（含答案）导成 Word 文档，可打印出来在纸上练。</div>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- 使用说明弹窗（放在 #main 之外，登录前也能查看） -->
+<div id="helpMask" class="hidden" onclick="if(event.target===this)closeHelp()"
+     style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99;display:flex;align-items:center;justify-content:center;padding:16px">
+  <div style="background:#fff;border-radius:14px;max-width:520px;width:100%;max-height:84vh;overflow:auto;padding:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <b>做题步骤说明</b>
+      <button class="sm ghost" onclick="closeHelp()">关闭</button>
+    </div>
+    <ol style="padding-left:20px;line-height:1.9;color:#3a4152;font-size:14px;margin:10px 0 4px">
+      <li><b>第1步</b>：把今天<b>所有题目</b>的答案/计算过程写在<b>同一张纸</b>上，拍好照片后在最上面的框里上传——可以一次选多张，也可以分几次拍照上传。</li>
+      <li><b>第2步</b>：上传成功后，下面每道题会<b>自动显示答案与解析</b>，不用逐题点。</li>
+      <li><b>第3步</b>：对照答案给自己打分：做对了 / 半对 / 做错了。</li>
+      <li><b>第4步</b>：写下这道题的<b>错误原因</b>（必填，不填无法提交）。</li>
+      <li>所有题目都填完后，点最下方 <b>提交今日练习</b>。</li>
+      <li>做错的题过几天还会再出现；每天只练 <b>3 道</b>，花几分钟就好。</li>
+      <li>想打印题目在纸上写：点 <b>🖨️ 下载今天的题目（不含答案）</b>；完成练习后可点 <b>⬇️ 下载我的错题本</b> 导出全部错题（含答案）。</li>
+    </ol>
   </div>
 </div>
 
@@ -160,10 +185,6 @@ async function loadToday(){
       <div class="qi">第${idx+1}题 · ${e.knowledgePoint||''} <span style="color:#8a90a2">${e.errorReason||''}</span></div>
       <div>${(e.stem||(imgs.length?'':'（看图）'))}</div>${imgHtml}
       ${files?('<div style="margin-top:6px">'+files+'</div>'):''}
-      <label>本题另有过程图时补充上传（可选）</label>
-      <div class="pv" id="pv_${idx}"></div>
-      <input id="ph_${idx}" type="file" accept="image/*" multiple onchange="addPhotos(${idx},this)">
-      <button class="sm ghost" id="rvbtn_${idx}" onclick="reveal(${idx})">第2步 · 提交并看答案</button>
       <div id="rv_${idx}" class="rv hidden"></div>
       <div id="fb_${idx}"></div>
     </div>`);
@@ -172,13 +193,16 @@ async function loadToday(){
 // 公共计算过程（多题写在同一张纸上时只传一次，提交时每题都会带上这些图）
 let SHARED = {photos:[], urls:[]};
 function addSharedPhotos(inp){
+  const n = inp.files.length;
   [...inp.files].forEach(f=>SHARED.photos.push(f));
-  inp.value='';
+  inp.value='';         // 清空以便继续拍照/选图，已选中的仍保留在列表里
   renderShared();
+  if(n) revealAll();    // 上传后自动展开所有题目的答案（第2步）
 }
 function renderShared(){
   document.getElementById('shared-pv').innerHTML =
-    SHARED.urls.map(u=>`<span class="tw"><img src="${API+u}" onclick="zoomImg('${API+u}')"><span class="x" style="opacity:.6">已传</span></span>`).join('')
+    SHARED.urls.map(u=>`<span class="tw"><img src="${API+u}" onclick="zoomImg('${API+u}')">`
+      + `<span style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:#2e9e5b;color:#fff;font-size:12px;line-height:20px;text-align:center">✓</span></span>`).join('')
     + SHARED.photos.map((f,i)=>
       `<span class="tw"><img src="${URL.createObjectURL(f)}"><button class="x" onclick="delSharedPhoto(${i})">×</button></span>`).join('');
 }
@@ -199,48 +223,34 @@ async function uploadShared(){
   SHARED.photos = [];
   renderShared();
 }
-// 每题状态: photos[File] urls[已上传] result note
+// 每题状态: revealed(答案是否已展开) result note
 let ST={};
-function addPhotos(idx,inp){
-  ST[idx]=ST[idx]||{photos:[],urls:[],result:'',note:''};
-  [...inp.files].forEach(f=>ST[idx].photos.push(f));
-  inp.value='';
-  renderPhotos(idx);
-}
-function renderPhotos(idx){
-  const st=ST[idx]||{photos:[]};
-  document.getElementById('pv_'+idx).innerHTML = st.photos.map((f,i)=>
-    `<span class="tw"><img src="${URL.createObjectURL(f)}"><button class="x" onclick="delPhoto(${idx},${i})">×</button></span>`).join('');
-}
-function delPhoto(idx,i){
-  if(ST[idx].urls.length){ alert('已提交过程照片，不能删除'); return; }
-  ST[idx].photos.splice(i,1); renderPhotos(idx);
-}
 
-// 第2步: 上传过程照片 → 拉取答案/解析 → 显示自评+错误原因
-async function reveal(idx){
-  const st=ST[idx]=ST[idx]||{photos:[],urls:[],result:'',note:''};
-  if(!st.photos.length && !st.urls.length && !SHARED.photos.length && !SHARED.urls.length){
-    alert('请先在上方拍照上传计算过程（多题写在同一张纸上，传一次即可），再提交看答案'); return;
+// 第2步（自动）：公共过程图上传成功后，逐题拉取答案/解析并展开第3、4步
+async function revealAll(){
+  const qs=[...document.querySelectorAll('#items .q')];
+  if(!qs.length) return;
+  const hint=document.getElementById('rvHint');
+  if(!SHARED.photos.length && !SHARED.urls.length){
+    if(hint) hint.textContent='请先拍照上传答案（可多张）';
+    return;
   }
+  if(hint) hint.textContent='正在上传并显示答案…';
+  try{ await uploadShared(); }catch(e){}
+  if(!SHARED.urls.length){ if(hint) hint.textContent='上传失败，请重试'; return; }
+  for(const q of qs){
+    await revealOne(q.dataset.idx);
+  }
+  if(hint) hint.textContent='答案已显示，请完成下面每道题的第3、4步 ✓';
+}
+async function revealOne(idx){
+  const st=ST[idx]=ST[idx]||{revealed:false,result:'',note:''};
+  if(st.revealed) return;
   const eid=document.getElementById('q_'+idx).dataset.eid;
-  const btn=document.getElementById('rvbtn_'+idx);
-  btn.disabled=true; btn.textContent='上传中…';
-  try{
-    await uploadShared();
-    for(const f of st.photos){
-      // 文件名加唯一前缀，避免多学生/多次上传同名文件互相覆盖
-      const uniq = Date.now().toString(36) + Math.random().toString(36).slice(2,7);
-      const fr=await fetch(API+'/api/train/media?sub=drafts&name='+encodeURIComponent(uniq+'_'+(f.name||'photo.jpg')),
-        {method:'POST',headers:{'Authorization':'Bearer '+TOKEN},body:f});
-      const fj=await fr.json();
-      if(fj.ok) st.urls.push(fj.url.replace(API,''));
-    }
-  }catch(err){ btn.disabled=false; btn.textContent='第2步 · 提交并看答案'; alert('上传失败，请重试'); return; }
   const {status,j}=await call('/api/train/errors/'+eid+'/reveal');
   if(status===401){ logout(); return; }
-  if(!j||j.error){ btn.disabled=false; btn.textContent='第2步 · 提交并看答案'; alert((j&&j.error)||'获取答案失败'); return; }
-  btn.textContent='已提交 ✓ 答案见下';
+  if(!j||j.error) return;
+  st.revealed=true;
   const ansImgs=(j.answerImages&&j.answerImages.length)?j.answerImages.map(u=>`<img class="qi" style="cursor:zoom-in" src="${API+u}" onclick="zoomImg('${API+u}')">`).join(''):'';
   document.getElementById('rv_'+idx).innerHTML=`
     ${j.answer?('<div><b>答案：</b>'+j.answer+'</div>'):''}
@@ -273,6 +283,10 @@ function setFb(idx){
   }
 }
 
+// 使用说明（帮助前几次使用的学生）
+function showHelp(){ document.getElementById('helpMask').classList.remove('hidden'); }
+function closeHelp(){ document.getElementById('helpMask').classList.add('hidden'); }
+
 // 点击放大图片
 function zoomImg(url){
   let m=document.getElementById('zoom-mask');
@@ -288,21 +302,23 @@ async function submit(){
   const qs=[...document.querySelectorAll('#items .q')];
   if(!qs.length) return;
   const btn=document.getElementById('submitBtn');
+  const fail = m => { btn.disabled=false; btn.textContent='提交今日练习'; alert(m); };
+  if(!SHARED.photos.length && !SHARED.urls.length){ alert('请先在第1步上传答案照片（所有题目答案写在同一张纸上）'); return; }
   btn.disabled=true; btn.textContent='上传中…';
   try{ await uploadShared(); }
-  catch(e){ btn.disabled=false; btn.textContent='提交今日练习'; alert('过程图上传失败，请重试'); return; }
+  catch(e){ btn.disabled=false; btn.textContent='提交今日练习'; alert('答案照片上传失败，请重试'); return; }
   const shared = SHARED.urls.slice();   // 一张纸写多题：这些图每题都会带上
+  if(!shared.length){ fail('答案照片还没上传成功，请重新上传'); return; }
   const answers=[];
   for(let i=0;i<qs.length;i++){
     const q=qs[i], n=i+1;
     const idx=q.dataset.idx, eid=q.dataset.eid;
-    const st=ST[idx]||{photos:[],urls:[],result:'',note:''};
-    const imgs = shared.concat(st.urls||[]);
-    if(!imgs.length){ alert('第'+n+'题还没上传计算过程，请先完成第1、2步'); btn.disabled=false; btn.textContent='提交今日练习'; return; }
-    if(!st.result){ alert('第'+n+'题还没自评对错，请完成第3步'); btn.disabled=false; btn.textContent='提交今日练习'; return; }
-    if(!(st.note||'').trim()){ alert('第'+n+'题还没写错误原因，请完成第4步'); btn.disabled=false; btn.textContent='提交今日练习'; return; }
+    const st=ST[idx]||{revealed:false,result:'',note:''};
+    if(!st.revealed){ fail('第'+n+'题的答案还没显示，请先在第1步上传答案照片'); return; }
+    if(!st.result){ fail('第'+n+'题还没自评对错，请完成第3步'); return; }
+    if(!(st.note||'').trim()){ fail('第'+n+'题还没写错误原因，请完成第4步'); return; }
     answers.push({errorId:eid, result:st.result,
-                  draftImage:imgs[0]||'', draftImages:imgs,
+                  draftImage:shared[0]||'', draftImages:shared,
                   errorNote:st.note.trim()});
   }
   btn.textContent='提交中…';
