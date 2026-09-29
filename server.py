@@ -780,20 +780,28 @@ def train_heal_task_status(task):
 
 def train_build_daily(student_id, date_str, include_new=True):
     """为某学生生成某天应练的错题卡（到期错题优先, 新课巩固补充, 不足则提前拉取）。
-    每日题量上限 TRAIN_DAILY_MAX（默认 3 道），避免学生负担过重写不完。"""
+    每日题量上限取该学生自定的 dailyCount（默认 TRAIN_DAILY_MAX=3 道），
+    不同学生能力/时间不同，题量也应不同。"""
+    stu, _ = store_get("students", student_id)
+    try:
+        daily_max = int((stu or {}).get("dailyCount", TRAIN_DAILY_MAX) or TRAIN_DAILY_MAX)
+    except Exception:
+        daily_max = TRAIN_DAILY_MAX
+    if daily_max < 1:
+        daily_max = 1
     cards = [c["body"] if isinstance(c, dict) else c for c in
              store_list("trainCards", limit=3000)]
     due = [c for c in cards if c.get("studentId") == student_id
            and c.get("status") == "active" and c.get("nextDueDate", "") <= date_str]
     due.sort(key=lambda c: (c.get("level", 0),
                             -_days_between(c.get("nextDueDate", date_str), date_str)))
-    picked = due[:TRAIN_DAILY_MAX]
+    picked = due[:daily_max]
     picked_ids = {p.get("errorId") for p in picked}
-    if include_new and len(picked) < TRAIN_DAILY_MAX:
+    if include_new and len(picked) < daily_max:
         # 新课巩固：近7天收录且仍 level0 的错题，补足当日名额
         new_errs = [e["body"] for e in store_list("trainErrors", limit=3000)]
         for e in new_errs:
-            if len(picked) >= TRAIN_DAILY_MAX:
+            if len(picked) >= daily_max:
                 break
             if e.get("studentId") != student_id:
                 continue
@@ -802,7 +810,7 @@ def train_build_daily(student_id, date_str, include_new=True):
             if c and c.get("level", 0) == 0 and _days_between(c.get("firstSeen", date_str), date_str) <= 7:
                 if e["id"] not in picked_ids:
                     picked.append(c); picked_ids.add(e["id"])
-    if len(picked) < TRAIN_DAILY_MAX:
+    if len(picked) < daily_max:
         up = [c for c in cards if c.get("studentId") == student_id
               and c.get("status") == "active" and c.get("nextDueDate", "") > date_str
               and _days_between(date_str, c.get("nextDueDate", date_str)) <= 1]
@@ -810,18 +818,24 @@ def train_build_daily(student_id, date_str, include_new=True):
         for c in up:
             if c.get("errorId") not in picked_ids:
                 picked.append(c); picked_ids.add(c.get("errorId"))
-            if len(picked) >= TRAIN_DAILY_MAX:
+            if len(picked) >= daily_max:
                 break
     return picked
 
 
 def train_monthly_sample(student_id, date_str):
-    """每月1号从 month_pool 抽取≤3题(约20%)降级回 active, 混入当天任务。"""
+    """每月1号从 month_pool 抽取≤题量(约20%)降级回 active, 混入当天任务；上限不超过该生每日题数。"""
     cards = [c["body"] for c in store_list("trainCards", limit=3000)]
     pool = [c for c in cards if c.get("studentId") == student_id and c.get("status") == "month_pool"]
     if not pool:
         return []
-    k = min(3, max(1, round(len(pool) * 0.2)))
+    stu, _ = store_get("students", student_id)
+    try:
+        dmax = int((stu or {}).get("dailyCount", TRAIN_DAILY_MAX) or TRAIN_DAILY_MAX)
+    except Exception:
+        dmax = TRAIN_DAILY_MAX
+    cap = max(1, min(3, dmax))
+    k = min(cap, max(1, round(len(pool) * 0.2)))
     import random
     random.seed(student_id + date_str)
     chosen = random.sample(pool, min(k, len(pool)))
@@ -1667,6 +1681,30 @@ class H(BaseHTTPRequestHandler):
             stu["greeting"] = (body.get("greeting") or "").strip()
             store_put("students", sid, stu)
             return send_json(self, {"ok": True, "greeting": stu["greeting"]})
+        if p == "/api/train/student/daily":
+            # 设置某学生每天训练题数（能力/时间不同，题量也应不同）
+            if u.get("role") not in ("admin", "teacher"):
+                return send_json(self, {"error": "无权限"}, 403)
+            body, err = read_body(self)
+            if err:
+                return send_json(self, {"error": err}, 400)
+            sid = body.get("studentId")
+            if not sid:
+                return send_json(self, {"error": "缺少 studentId"}, 400)
+            stu, _ = store_get("students", sid)
+            if not stu:
+                return send_json(self, {"error": "学生不存在"}, 404)
+            try:
+                n = int(body.get("dailyCount", 3))
+            except Exception:
+                n = 3
+            if n < 1:
+                n = 1
+            if n > 20:
+                n = 20
+            stu["dailyCount"] = n
+            store_put("students", sid, stu)
+            return send_json(self, {"ok": True, "dailyCount": n})
         if p == "/api/train/student/purge":
             # 彻底删除某学生及其全部数据（含草稿照片/账号）。仅老师/管理员。
             if u.get("role") not in ("admin", "teacher"):

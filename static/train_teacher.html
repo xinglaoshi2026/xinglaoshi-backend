@@ -305,6 +305,10 @@
   }
   .qb-item:hover{box-shadow:var(--sh2);transform:translateY(-1px)}
   .qb-item img{max-width:100%;border-radius:10px;margin-top:6px}
+  .qb-pick{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--primary);cursor:pointer;margin-bottom:6px}
+  .qb-pick input{width:16px;height:16px;accent-color:var(--primary);cursor:pointer}
+  .qb-batch{position:sticky;bottom:0;display:flex;align-items:center;gap:10px;margin-top:12px;padding:10px 12px;
+    background:var(--surface);border:1px dashed var(--primary);border-radius:12px;font-size:13.5px;box-shadow:var(--sh1)}
   .batch-item{
     display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 12px;
     border:1px solid var(--line2);border-radius:12px;margin-top:8px;background:var(--surface);font-size:13.5px;box-shadow:var(--sh1)
@@ -880,7 +884,7 @@
       <div class="card">
         <div class="tbar">
           <button class="lg" onclick="genTasks()"><svg class="ic"><use href="#i-zap"/></svg>生成今日任务</button>
-          <div class="hint">为全体学生生成今天的练习包（到期错题 + 新课巩固，每天 3 道）。生成后在下面按学生查看。</div>
+          <div class="hint">为全体学生生成今天的练习包（到期错题 + 新课巩固）。每人每天题数在「学生管理」里单独设置（默认 3 道，能力弱/时间少的生可调少）。生成后在下面按学生查看。</div>
         </div>
         <div id="task-msg"></div>
         <div class="row2" style="margin-top:8px">
@@ -1152,11 +1156,13 @@ async function searchQb(){
     const preview = (b.content||'').replace(/media:\/\//g, API+'/api/media/');
     const name = qbKpName[b.kpId]||b.kpId||'';
     box.insertAdjacentHTML('beforeend', `<div class="qb-item">
+      <label class="qb-pick"><input type="checkbox" class="qb-chk" value="${x.id}" onchange="updQbSel()"> 选入</label>
       ${preview}
       <div style="font-size:12px;color:var(--ink3);margin-top:4px">${b.grade||''} · ${b.type||''} · ${b.difficulty||''} · ${b.tags||''} · 知识点:${name}</div>
       <button type="button" class="tint sm" onclick="pickQb('${x.id}')"><svg class="ic"><use href="#i-plus"/></svg>选入此题</button>
     </div>`);
   });
+  box.insertAdjacentHTML('beforeend', `<div class="qb-batch"><span id="qb-sel-n">0</span> 题已勾选　<button type="button" class="tint sm" onclick="pickQbMulti()"><svg class="ic"><use href="#i-plus"/></svg>批量加入错题列表</button></div>`);
 }
 function stripHtml(h){ const d=document.createElement('div'); d.innerHTML=h||''; return (d.textContent||'').trim(); }
 function extractMediaRel(h){
@@ -1180,6 +1186,39 @@ function pickQb(id){
   document.getElementById('qb').classList.add('hidden');
   const msg = document.getElementById('e-msg');
   msg.textContent = '已从题库选入（题图 '+pickedImgs.length+' 张、答案图 '+pickedAnsImgs.length+' 张；答案图学生提交后才可见）'; msg.className='ok';
+}
+function updQbSel(){
+  const n = document.querySelectorAll('#qb-list .qb-chk:checked').length;
+  const el = document.getElementById('qb-sel-n');
+  if(el) el.textContent = n;
+}
+// 题库多选：把勾选的多道题一次性加入「待发错题列表」，无需逐题回顶部重开选题
+function pickQbMulti(){
+  const ids = [...document.querySelectorAll('#qb-list .qb-chk:checked')].map(c=>c.value);
+  if(!ids.length){ const m=document.getElementById('e-msg'); m.textContent='请先勾选要加入的题目'; m.className='err'; return; }
+  let added=0;
+  ids.forEach(id=>{
+    const q = qbCache[id]; if(!q) return;
+    const kpId = q.kpId||'';
+    const entry = {
+      stem: stripHtml(q.content||''),
+      analysis: stripHtml(q.answer||''),
+      kpId: kpId,
+      kpName: (kpId && KP_MAP[kpId]) || '',
+      pickedI: extractMediaRel(q.content||'').slice(),
+      pickedA: extractMediaRel(q.answer||'').slice(),
+      pendS: [], pendA: [], files: []
+    };
+    const sig = batchSig(entry);
+    if(batchErrs.findIndex(b=>batchSig(b)===sig) >= 0) return; // 去重，避免重复加入
+    batchErrs.push(entry); added++;
+  });
+  renderBatch(); updateSaveBtn();
+  document.querySelectorAll('#qb-list .qb-chk:checked').forEach(c=>{ c.checked=false; });
+  updQbSel();
+  const m = document.getElementById('e-msg');
+  m.textContent = '已加入 '+added+' 道错题到待发列表 ✓（可在下方「待发错题列表」查看/移除，最后点「保存全部错题」发给选中的学生）';
+  m.className = 'ok';
 }
 function updatePickedHint(){
   const el = document.getElementById('picked-hint');
@@ -1406,11 +1445,11 @@ function showRules(){
       <li><b>下次应练日期</b>（nextDueDate）</li>
       <li><b>状态</b>：循环中(active) / 已毕业(month_pool)</li>
     </ul>
-    <p style="margin:4px 0"><b>二、每日出题（每天 3 道）</b>：</p>
+    <p style="margin:4px 0"><b>二、每日出题（每人题量不同）</b>：</p>
     <ul style="margin:2px 0 8px 18px;padding:0">
-      <li>到期错题优先（最不会的先练），最多 3 道</li>
-      <li>不足 3 道时补近 7 天新收录的错题</li>
-      <li>仍不足 3 道时提前拉明后天到期的题补足</li>
+      <li>每人每天题数在「学生管理」单独设定（默认 3 道），能力弱/时间少的生可少出</li>
+      <li>不足该生设定题数时，补近 7 天新收录的错题</li>
+      <li>仍不足时，提前拉明后天到期的题补足</li>
     </ul>
     <p style="margin:4px 0"><b>三、做对/做错后的变化</b>：</p>
     <ul style="margin:2px 0 8px 18px;padding:0">
@@ -1495,9 +1534,11 @@ function renderMgmt(){
       <div class="sc-fields">
         <div><label>账号</label><input id="su_${s.id}" placeholder="给学生设一个账号" value="${has||''}"></div>
         <div><label>密码</label><input id="sp_${s.id}" type="password" placeholder="${has?'留空=不修改密码':'设置密码'}"></div>
+        <div><label>每日训练题数</label><input id="sd_${s.id}" type="number" min="1" max="20" value="${s.dailyCount||3}"></div>
       </div>
       <div class="sc-acts">
         <button onclick="setStu('${s.id}')"><svg class="ic"><use href="#i-key"/></svg>保存账号</button>
+        <button type="button" class="tint" onclick="setDaily('${s.id}')"><svg class="ic"><use href="#i-check"/></svg>保存题数</button>
         <button type="button" class="ghost" onclick="viewStuErrors('${s.id}')"><svg class="ic"><use href="#i-list"/></svg>查看错题</button>
         <button type="button" class="danger" onclick="delStudent('${s.id}')" title="彻底删除该生及其错题、作答记录、草稿照片、账号"><svg class="ic"><use href="#i-trash"/></svg>删除</button>
       </div>
@@ -1519,6 +1560,14 @@ async function setGreeting(sid){
   if(status!==200){ msg.style.color='#e5484d'; msg.textContent=(j&&j.error)||'保存失败'; return; }
   msg.style.color='#2e9e5b'; msg.textContent = g? '已保存，学生下次打开就能看到 ✓' : '已清空（学生端将显示默认问候）';
   const s = (window._MGMT.stus||[]).find(x=>x.id===sid); if(s) s.greeting = g;
+}
+async function setDaily(sid){
+  const el = document.getElementById('sd_'+sid);
+  let n = parseInt(el.value,10); if(isNaN(n)||n<1) n=1; if(n>20) n=20;
+  const {status,j} = await call('/api/train/student/daily',{method:'POST',json:{studentId:sid,dailyCount:n}});
+  if(status!==200){ alert((j&&j.error)||'保存失败'); return; }
+  const s = (window._MGMT.stus||[]).find(x=>x.id===sid); if(s) s.dailyCount = n;
+  alert('已保存：该生每天训练 '+n+' 道 ✓（下次「生成今日任务」起生效）');
 }
 // 错题列表：默认折叠，点标题展开/收起
 function toggleErrList(force){
