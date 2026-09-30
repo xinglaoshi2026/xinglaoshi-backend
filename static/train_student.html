@@ -110,60 +110,70 @@
   .field input{padding-left:41px}
 
   /* ---------- 今日概览（渐变 Hero）---------- */
-  .hero-card{
+  /* ---------- 顶部说明条（可打印提示 + 状态） ---------- */
+  .topbar-card{
+    padding:10px 12px;border-radius:14px;margin-bottom:10px;overflow:hidden;
     background:linear-gradient(135deg,var(--hero-from) 0%,var(--hero-to) 100%);
-    border-color:#f0e1cd;padding:18px;overflow:hidden;
+    border-color:#f0e1cd;
   }
-  .hero-card::before{
-    content:"";position:absolute;right:-48px;top:-58px;width:176px;height:176px;border-radius:50%;
+  .topbar-card::before{
+    content:"";position:absolute;right:-30px;top:-38px;width:112px;height:112px;border-radius:50%;
     background:radial-gradient(circle,rgba(224,168,120,.30) 0%,rgba(224,168,120,0) 68%);pointer-events:none
   }
-  .hero-card.done{background:linear-gradient(135deg,#f5faf4 0%,#e8f2e9 100%);border-color:#dae9db}
-  .hero-card.done::before{background:radial-gradient(circle,rgba(109,143,112,.26) 0%,rgba(109,143,112,0) 68%)}
-  .hero{display:flex;align-items:center;gap:16px;position:relative;z-index:1}
-  .ring{
-    flex:0 0 auto;width:72px;height:72px;border-radius:50%;position:relative;
-    display:flex;align-items:center;justify-content:center;
-    background:conic-gradient(from -90deg, var(--brand2) 0%, var(--brand) var(--p,0%), rgba(255,255,255,.62) var(--p,0%));
-    box-shadow:0 7px 18px rgba(196,124,74,.20);
+  .topbar-card.done{background:linear-gradient(135deg,#f5faf4 0%,#e8f2e9 100%);border-color:#dae9db}
+  .topbar-card.done::before{background:radial-gradient(circle,rgba(109,143,112,.26) 0%,rgba(109,143,112,0) 68%)}
+  .tb-note{
+    position:relative;z-index:1;display:flex;align-items:center;gap:7px;
+    font-size:13px;font-weight:650;color:var(--brand3);
   }
-  .ring::after{content:"";position:absolute;inset:6px;background:var(--card);border-radius:50%;
-    box-shadow:inset 0 1px 3px rgba(92,70,48,.06)}
-  .ring-in{position:relative;z-index:1;text-align:center;line-height:1.05}
-  .ring .n{font-size:19px;font-weight:750;color:var(--brand3);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
-  .ring .d{font-size:10.5px;color:var(--ink3);margin-top:2px;font-weight:600}
-  .hero-card.done .ring{background:conic-gradient(from -90deg,#9dbb9e 0%,var(--ok) 100%);box-shadow:0 7px 18px rgba(109,143,112,.20)}
-  .hero-card.done .ring .n{color:var(--ok)}
-  .hero .date{color:var(--ink3);font-size:11.5px;font-weight:700;letter-spacing:.08em;margin-bottom:4px}
-  .hero .t1{font-size:17px;font-weight:700;letter-spacing:.01em;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-  .hero .t2{color:var(--ink2);font-size:13.5px;margin-top:5px}
-  .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:700;letter-spacing:.02em}
+  .tb-note .ic{width:15px;height:15px}
+  .tb-note>span{flex:1;min-width:0}
+  .tb-meta{
+    position:relative;z-index:1;margin-top:6px;font-size:11.5px;color:var(--ink3);font-weight:600;
+    letter-spacing:.02em;display:flex;align-items:center;gap:6px;flex-wrap:wrap
+  }
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.02em}
+  .pill.ok{background:var(--ok-soft);color:var(--ok)}
+  .pill.warn{background:var(--warn-soft);color:var(--warn)}
+  .pill.plain{background:rgba(255,255,255,.72);color:var(--brand3)}
+  #head{margin-bottom:10px}
+
+  /* ---------- 上传后提示 ---------- */
+  .hintbox{
+    border-color:#dae9db;background:linear-gradient(180deg,#f7fbf7,#eff7f0);
+    padding:12px 14px;border-radius:14px;
+  }
+  .hintbox .hb-tt{display:flex;align-items:center;gap:6px;font-size:14px;font-weight:700;color:var(--ok)}
+  .hintbox .hb-tt .ic{width:16px;height:16px}
+  .hintbox .hb-tx{margin-top:5px;font-size:12.5px;line-height:1.65;color:var(--ink2)}
+  .hintbox .hb-tx b{color:var(--brand3)}
   .pill.ok{background:var(--ok-soft);color:var(--ok)}
   .pill.warn{background:var(--warn-soft);color:var(--warn)}
   .pill.plain{background:rgba(255,255,255,.7);color:var(--brand3)}
 
   /* ---------- 步骤标题 ---------- */
-  .stephead{display:flex;align-items:center;gap:11px;margin-bottom:10px}
+  .stephead{display:flex;align-items:center;gap:9px;margin-bottom:8px}
   .stepno{
-    flex:0 0 auto;width:28px;height:28px;border-radius:9px;background:var(--grad);color:#fff;
-    display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:750;
-    box-shadow:0 3px 9px rgba(160,92,49,.24), inset 0 1px 0 rgba(255,255,255,.25);
+    flex:0 0 auto;width:23px;height:23px;border-radius:8px;background:var(--grad);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:750;
+    box-shadow:0 2px 7px rgba(160,92,49,.24), inset 0 1px 0 rgba(255,255,255,.25);
   }
-  .stephead .st{font-size:16px;font-weight:650}
-  .stephead .sd{color:var(--ink3);font-size:12.5px;font-weight:400;margin-top:1px}
+  .stephead .st{font-size:14.5px;font-weight:650}
+  .stephead .sd{color:var(--ink3);font-size:12px;font-weight:400;margin-top:0;margin-left:2px}
   .opt-hint{font-size:12px;font-weight:400;color:var(--ink3);margin-left:4px}
 
-  /* ---------- 上传区 ---------- */
+  /* ---------- 上传区（紧凑窄框） ---------- */
   .drop{
-    border:1.5px dashed var(--line2);border-radius:16px;padding:18px 14px;text-align:center;
-    background:linear-gradient(180deg,#fffefc,#fffaf4);margin-top:6px;
+    border:1.5px dashed var(--line2);border-radius:13px;padding:10px 12px;text-align:center;
+    background:linear-gradient(180deg,#fffefc,#fffaf4);margin-top:4px;
     transition:border-color .2s ease, background .2s ease;
   }
   .drop.has{border-style:solid;border-color:#eddbc5;background:linear-gradient(180deg,#fffdf9,#fdf6ec)}
-  .drop .big{font-size:14.5px;color:var(--ink2);font-weight:600}
-  .pv,.tbs{display:flex;flex-wrap:wrap;gap:9px;margin-top:12px;justify-content:center}
+  .drop .big{font-size:13px;color:var(--ink2);font-weight:600}
+  .pv,.tbs{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;justify-content:center}
+  .pv:empty{display:none}
   .tw{position:relative;display:inline-block}
-  .tw img{width:78px;height:78px;object-fit:cover;border-radius:14px;border:1px solid var(--line);
+  .tw img{width:58px;height:58px;object-fit:cover;border-radius:11px;border:1px solid var(--line);
     display:block;box-shadow:var(--sh1)}
   .tw .x{
     position:absolute;top:-7px;right:-7px;width:23px;height:23px;border-radius:50%;background:var(--err);
@@ -370,31 +380,26 @@
 
     <div class="card" id="head"></div>
 
-    <div class="card" id="printCard" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
-      <div class="hint" style="flex:1;min-width:140px">如果想在纸上写就点击下载按钮</div>
-      <button class="btn2 sm" onclick="downloadTodayQuestions()"><svg class="ic"><use href="#i-printer"/></svg>下载今天的题目</button>
-    </div>
+    <div id="items"></div>
+    <div id="result"></div>
 
     <div class="card" id="sharedCard">
       <div class="stephead">
         <div class="stepno">1</div>
-        <div>
-          <div class="st">上传计算过程</div>
-          <div class="sd">所有题目答案写在同一张纸上，在此上传</div>
-        </div>
+        <div class="st">做完拍照上传</div>
       </div>
       <div class="drop">
-        <div class="big">拍照或从相册选择，可一次多张</div>
-        <div class="hint" style="margin-top:4px">一张纸写不完可以多拍几张，分次上传也行</div>
         <div class="pv" id="shared-pv"></div>
         <input id="shared-ph" type="file" accept="image/*" multiple class="hidden" onchange="addSharedPhotos(this)">
-        <button class="btn3 sm" style="margin-top:12px" onclick="document.getElementById('shared-ph').click()"><svg class="ic"><use href="#i-camera"/></svg>选择 / 拍摄照片</button>
+        <button class="btn3 sm" onclick="document.getElementById('shared-ph').click()"><svg class="ic"><use href="#i-camera"/></svg>拍照 / 选照片</button>
       </div>
       <div id="rvHint" class="statusline"></div>
     </div>
 
-    <div id="items"></div>
-    <div id="result"></div>
+    <div class="card hintbox hidden" id="afterHint">
+      <div class="hb-tt"><svg class="ic"><use href="#i-check"/></svg>照片已上传</div>
+      <div class="hb-tx">下面每道题已显示答案，对照检查自己做得对不对；<b>做错或半对的题，请写下错误原因</b>。都确认好后，点最下方「提交今日练习」。</div>
+    </div>
 
     <div class="card" id="weekCard" style="margin-top:14px">
       <div class="weekhead">
@@ -426,13 +431,14 @@
       <button class="btn3 sm" onclick="closeHelp()"><svg class="ic"><use href="#i-close"/></svg>关闭</button>
     </div>
     <ol>
-      <li><b>第1步</b>：把今天<b>所有题目</b>的答案/计算过程写在<b>同一张纸</b>上，拍好照片后在最上面的框里上传——可以一次选多张，也可以分几次拍照上传。</li>
-      <li><b>第2步</b>：上传成功后，下面每道题会<b>自动显示答案与解析</b>，不用逐题点。</li>
-      <li><b>第3步</b>：对照答案给自己打分：做对了 / 半对 / 做错了。</li>
-      <li><b>第4步</b>：如果自评是<b>半对或做错了</b>，请写下<b>错误原因</b>（必填）；自评<b>做对了</b>可不填。</li>
+      <li><b>第1步</b>：点最上面 <b>打印题目</b>，把题目打印出来（也可以直接看屏幕），把今天<b>所有题目</b>的答案/计算过程写在<b>同一张纸</b>上。</li>
+      <li><b>第2步</b>：翻到题目下面的「<b>做完拍照上传</b>」，拍好照片上传——可以一次选多张，也可以分几次拍照上传。</li>
+      <li><b>第3步</b>：上传成功后，每道题会<b>自动显示答案与解析</b>，不用逐题点。</li>
+      <li><b>第4步</b>：对照答案给自己打分：做对了 / 半对 / 做错了。</li>
+      <li><b>第5步</b>：如果自评是<b>半对或做错了</b>，请写下<b>错误原因</b>（必填）；自评<b>做对了</b>可不填。</li>
       <li>所有题目都填完后，点最下方 <b>提交今日练习</b>。</li>
       <li>做错的题过几天还会再出现；每天只练 <b>3 道</b>，花几分钟就好。</li>
-      <li>想打印题目在纸上写：点 <b>下载今天的题目</b>；完成练习后可点 <b>下载我的错题本</b> 导出全部错题（含答案）。</li>
+      <li>完成练习后可点 <b>下载我的错题本</b> 导出全部错题（含答案）。</li>
     </ol>
   </div>
 </div>
@@ -512,7 +518,7 @@ function fmtDate(ds){
 }
 // 入场动效：卡片错峰上浮
 function animateIn(){
-  const els=[...document.querySelectorAll('#head.card, #printCard, #sharedCard, #items .q')];
+  const els=[...document.querySelectorAll('#head.card, #items .q, #sharedCard, #afterHint')];
   els.forEach((el,i)=>{
     el.classList.remove('rise'); void el.offsetWidth;
     el.style.animationDelay = Math.min(i*45, 420)+'ms';
@@ -527,7 +533,7 @@ async function loadToday(){
   const bb=document.getElementById('bottomBar');
   const hideAll = () => { bb.classList.add('hidden');
     document.getElementById('sharedCard').classList.add('hidden');
-    document.getElementById('printCard').classList.add('hidden'); };
+    document.getElementById('afterHint').classList.add('hidden'); };
   if(!task){
     head.className='card';
     head.innerHTML='<div class="empty"><div class="eic"><svg class="ic"><use href="#i-spark"/></svg></div>'
@@ -541,17 +547,17 @@ async function loadToday(){
   const fin = (tst==='done') || allDone;
   const badge = fin ? '<span class="pill ok">已完成</span>'
     : (tst==='partial' ? '<span class="pill warn">部分完成</span>' : '<span class="pill plain">待完成</span>');
-  const pct = Math.round(((j.total? (j.answered||0)/j.total : 0))*100);
-  head.className='card hero-card'+(fin?' done':'');
-  head.innerHTML='<div class="hero">'
-    +'<div class="ring" style="--p:'+pct+'%"><div class="ring-in">'
-    +'<div class="n">'+(j.answered||0)+'</div><div class="d">/ '+(j.total||0)+'</div>'
-    +'</div></div>'
-    +'<div style="flex:1;min-width:0"><div class="date">'+fmtDate(task.date)+'</div>'
-    +'<div class="t1">今天的练习 '+badge+'</div>'
-    +'<div class="t2">共 '+j.items.length+' 道题 · '
-    + (fin ? '今天已完成' : ('已提交 '+(j.answered||0)+' / '+(j.total||0)))
-    +'</div></div></div>';
+  head.className='card topbar-card'+(fin?' done':'');
+  head.innerHTML='<div class="tb-note">'
+    +'<svg class="ic"><use href="#i-printer"/></svg>'
+    +'<span>题目可以打印出来做，做完拍照上传</span>'
+    +'<button class="btn2 sm" onclick="downloadTodayQuestions()"><svg class="ic"><use href="#i-printer"/></svg>打印题目</button>'
+    +'</div>'
+    +'<div class="tb-meta"><span>'+fmtDate(task.date)+'</span>'
+    +'<span>今天的练习</span>'+badge
+    +'<span>共 '+j.items.length+' 道题</span>'
+    +'<span>'+ (fin ? '今天已完成' : ('已提交 '+(j.answered||0)+' / '+(j.total||0))) +'</span>'
+    +'</div>';
   // 锁定提示：区分「完全没做」和「做了一部分」
   const lockEl = document.getElementById('weekLockTxt');
   if(lockEl){
@@ -568,11 +574,11 @@ async function loadToday(){
     hideAll();
     TASK_DONE=true; updateWeekLock(); requestAnimationFrame(animateIn); return;
   }
-  document.getElementById('printCard').classList.remove('hidden');
   const box=document.getElementById('items');
   if(fin){
     // 今天已全部提交：不再显示填写表单，否则底部"本次已填写 0/3"会和顶部"已完成"矛盾
     document.getElementById('sharedCard').classList.add('hidden');
+    document.getElementById('afterHint').classList.add('hidden');
     bb.classList.add('hidden');
     const sc = (typeof task.score === 'number') ? Math.round(task.score*100) : null;
     box.innerHTML = '<div class="card" style="text-align:center">'
@@ -626,6 +632,13 @@ function renderShared(){
       + `<span class="tick" style="display:flex;align-items:center;justify-content:center"><svg class="ic" style="width:12px;height:12px"><use href="#i-check"/></svg></span></span>`).join('')
     + SHARED.photos.map((f,i)=>
       `<span class="tw"><img src="${URL.createObjectURL(f)}"><button class="x" onclick="delSharedPhoto(${i})">×</button></span>`).join('');
+  // 上传照片后，提示学生核对答案、写错误原因
+  const ah=document.getElementById('afterHint');
+  if(ah){
+    const has=(SHARED.photos.length + SHARED.urls.length) > 0;
+    const card=document.getElementById('sharedCard');
+    ah.classList.toggle('hidden', !(has && card && !card.classList.contains('hidden')));
+  }
 }
 function delSharedPhoto(i){
   if(SHARED.urls.length){ alert('已提交的过程照片不能删除'); return; }
