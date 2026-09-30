@@ -650,25 +650,6 @@ def train_card_id(student_id, error_id):
     return "c_%s_%s" % (student_id, error_id)
 
 
-TRAIN_BANK_KP_NAME = "错题自动收录"
-
-
-def train_default_kp():
-    """错题自动入库使用的知识点节点：找到「错题自动收录」则复用，否则在根下建一个。
-    否则入库的题没有 kpId，在任何知识点节点下都找不到。返回 (kpId, 名称)。"""
-    for k in store_list("knowledgePoints", limit=5000):
-        b = k.get("body") or {}
-        if (b.get("name") or "").strip() == TRAIN_BANK_KP_NAME:
-            return b.get("id"), TRAIN_BANK_KP_NAME
-    kid = "kb_" + uuid.uuid4().hex[:12]
-    store_put("knowledgePoints", kid, {
-        "id": kid, "name": TRAIN_BANK_KP_NAME, "parentId": "",
-        "description": "错题录入时自动收录的题目（可在知识点树里归到别的节点）",
-        "createdAt": now_ms(), "updatedAt": now_ts(),
-    })
-    return kid, TRAIN_BANK_KP_NAME
-
-
 def _bank_mediarel(html):
     """从题库题的 HTML 里取出 media:// 相对路径（去 /api/media/ 前缀便于统一比较）。"""
     return re.findall(r"media://([^\"'\s>]+)", html or "")
@@ -724,11 +705,9 @@ def train_error_to_bank(rec):
     content = (("<p>%s</p>" % stem) if stem else "") + media_html(images)
     ans_html = (("<p>%s</p>" % answer) if answer else "") + media_html(answer_images)
     qid = "q_" + uuid.uuid4().hex[:12]
-    # 归到老师指定的知识点；没指定则挂到「错题自动收录」节点，保证在题库知识点树里能找到
+    # 归到老师指定的知识点；未指定则留空（不再自动挂到「错题自动收录」节点）
     kp_id = rec.get("kpId") or ""
     kp_name = rec.get("knowledgePoint") or ""
-    if not kp_id:
-        kp_id, kp_name = train_default_kp()
     body = {
         "id": qid,
         "content": content,

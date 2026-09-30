@@ -1059,7 +1059,7 @@
             </div>
             <div id="e-student-box"></div>
           </div>
-          <select id="e-kp" class="tk"><option value="">归档知识点（默认）</option></select>
+          <select id="e-kp" class="tk"><option value="">不归档知识点</option></select>
           <button type="button" onclick="document.getElementById('e-imgs').click()"><svg class="ic"><use href="#i-camera"/></svg>题目图片</button>
           <button type="button" onclick="document.getElementById('e-ans-imgs').click()"><svg class="ic"><use href="#i-bulb"/></svg>答案图片</button>
           <button type="button" onclick="toggleQb()"><svg class="ic"><use href="#i-book"/></svg>题库选题</button>
@@ -1481,7 +1481,7 @@ function clearForm(){
   pendingImgs={stem:[], answer:[]}; renderThumbs('stem'); renderThumbs('answer');
   pickedImgs=[]; pickedAnsImgs=[]; updatePickedHint();
 }
-// 知识点下拉：录入错题时归档到「错题自动收录」或指定知识点（决定题库树里的位置）
+// 知识点下拉：录入错题时可归档到指定知识点（决定题库树里的位置）；不选则不入任何知识点
 let KP_MAP = {};
 async function loadKpOptions(){
   const sel = document.getElementById('e-kp'); if(!sel) return;
@@ -1501,7 +1501,7 @@ async function loadKpOptions(){
     });
   })('',0);
   const cur = sel.value;
-  sel.innerHTML = '<option value="">错题自动收录（默认）</option>' + opts.join('');
+  sel.innerHTML = '<option value="">不归档知识点</option>' + opts.join('');
   if(cur && KP_MAP[cur]) sel.value = cur;
 }
 // 一道待发错题的内容指纹：题面文字 + 答案文字 + 题库带入图片路径 + 粘贴/选择图片(名/大小/修改时间)
