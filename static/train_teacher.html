@@ -793,6 +793,91 @@
     .stat b{font-size:20px}
     .sec,#t-errors,#t-tasks,#t-dash,#t-students{scroll-margin-top:64px}
   }
+
+  /* ============================================================
+     2026-09-30 手机端改版：中性商务配色 + 底部导航 + 单页切换 + 文字按钮
+     ============================================================ */
+  :root{
+    --bg:#F5F6F8; --surface:#FFFFFF; --surface2:#F7F8FA;
+    --ink:#1F2430; --ink2:#5B6472; --ink3:#98A1AF;
+    --line:#E8EBF0; --line2:#DCE0E7;
+    --brand:#4F46E5; --brand2:#6366F1; --brand3:#4338CA; --brand-soft:#EEF2FF;
+    --primary:#4F46E5; --gold:#8B93A1;
+    --ok:#2E9E5B; --ok-soft:#EAF6EF;
+    --warn:#B8863F; --warn-soft:#FCF3E6;
+    --err:#DC4C4C; --err-soft:#FDECEC;
+    --sh1:0 1px 2px rgba(16,24,40,.04);
+    --sh2:0 4px 12px rgba(16,24,40,.06);
+    --sh3:0 20px 48px rgba(16,24,40,.16);
+    --ring:0 0 0 3px rgba(79,70,229,.15);
+  }
+  body{background:var(--bg);background-image:none!important;color:var(--ink)}
+
+  /* 隐藏旧顶栏 / 品牌 / 底部工具条 */
+  .app-head{display:none!important}
+  .side-brand{display:none!important}
+  .side-foot{display:none!important}
+  .side-nav .nv-label{display:none!important}
+
+  /* 外壳改单列 */
+  .shell{display:block;min-height:100vh}
+  .main{display:block}
+  .main-inner{padding:14px 14px calc(80px + env(safe-area-inset-bottom));max-width:760px;margin:0 auto}
+
+  /* 原侧栏 → 底部固定导航 */
+  .side{
+    position:fixed!important;left:0;right:0;bottom:0;top:auto!important;
+    width:auto!important;height:auto!important;flex:none!important;
+    display:block;z-index:40;animation:none!important;
+    background:#fff;color:var(--ink);
+    border:0;border-top:1px solid var(--line);
+    box-shadow:0 -1px 0 rgba(16,24,40,.03), 0 -10px 26px rgba(16,24,40,.06);
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  .side-nav{display:flex!important;padding:0!important;overflow:visible!important;flex:none!important}
+  .side-nav a{
+    flex:1;flex-direction:column;gap:3px;justify-content:center;text-align:center;
+    padding:9px 2px!important;margin:0!important;border-radius:0!important;
+    color:var(--ink3)!important;font-size:11px!important;font-weight:500!important;
+    transform:none!important;transition:color .15s!important;
+  }
+  .side-nav a .ic{width:21px;height:21px;opacity:1;stroke-width:1.7}
+  .side-nav a:hover{background:transparent!important;color:var(--ink2)!important}
+  .side-nav a.active{background:transparent!important;color:var(--primary)!important;font-weight:600!important}
+  .side-nav a.active::before{display:none!important}
+  .side-nav a .cnt{display:none!important}
+
+  /* 区块标题：去彩色数字块 */
+  .sec{color:var(--ink)}
+  .sec .no{background:#EDEFF3!important;color:var(--ink2)!important;box-shadow:none!important}
+  .sec .hr{background:var(--line)!important}
+
+  /* 输入控件更素 */
+  input,select,textarea{border-color:var(--line2);background:#fff}
+  select{background-image:none!important;padding-right:11px!important}
+  label{color:var(--ink3)}
+
+  /* 按钮：文字按钮去边框去底色；主按钮仅用主色文字 */
+  button{background:transparent;border:0;box-shadow:none;color:var(--ink);font-weight:600}
+  button:hover{background:rgba(16,24,40,.045);filter:none;box-shadow:none}
+  button:active{background:rgba(16,24,40,.08)}
+  button.ghost,button.tint,button.sm,.seg button,.pillbtn,.qb-acts button{
+    background:transparent!important;border:0!important;box-shadow:none!important;color:var(--ink)
+  }
+  button.ghost:hover,button.tint:hover,.seg button:hover,.pillbtn:hover{background:rgba(16,24,40,.045)!important;color:var(--ink)!important}
+  button.tint{color:var(--primary)!important}
+  button.lg,.savebar button,.tbar button.lg{
+    background:transparent!important;border:0!important;box-shadow:none!important;
+    color:var(--primary)!important;font-weight:650
+  }
+  button.lg:hover,.savebar button:hover{background:rgba(79,70,229,.07)!important}
+  button.danger{background:transparent!important;border:0!important;color:var(--err)!important}
+  button.danger:hover{background:rgba(220,76,76,.08)!important}
+  .seg{border:0!important;background:transparent!important;box-shadow:none!important}
+  .sec .rules-btn{background:transparent!important;border:0!important;box-shadow:none!important;color:var(--ink2)!important}
+  .sec .rules-btn:hover{background:rgba(16,24,40,.045)!important;color:var(--ink)!important;transform:none!important}
+
+  #login{margin-top:14vh}
 </style>
 </head>
 <body>
@@ -955,8 +1040,8 @@
     </div>
 
     <!-- 每日任务 -->
-    <div class="sec" id="sec-tasks"><span><i class="no">2</i>每日任务</span><i class="hr"></i></div>
-    <div id="t-tasks">
+    <div class="sec hidden" id="sec-tasks"><span><i class="no">2</i>每日任务</span><i class="hr"></i></div>
+    <div id="t-tasks" class="hidden">
       <div class="card">
         <div class="tbar">
           <button class="lg" onclick="genTasks()"><svg class="ic"><use href="#i-zap"/></svg>生成今日任务</button>
@@ -971,8 +1056,8 @@
     </div>
 
     <!-- 看板 -->
-    <div class="sec" id="sec-dash"><span><i class="no">3</i>完成看板</span><i class="hr"></i></div>
-    <div id="t-dash">
+    <div class="sec hidden" id="sec-dash"><span><i class="no">3</i>完成看板</span><i class="hr"></i></div>
+    <div id="t-dash" class="hidden">
       <div class="card">
         <div class="row2">
           <div style="flex:0 0 190px"><label>查看日期（最近 7 天）</label><select id="dash-date" onchange="loadDash()"></select></div>
@@ -989,8 +1074,8 @@
     </div>
 
     <!-- 学生管理 -->
-    <div class="sec" id="sec-students"><span><i class="no">4</i>学生管理</span><i class="hr"></i></div>
-    <div id="t-students">
+    <div class="sec hidden" id="sec-students"><span><i class="no">4</i>学生管理</span><i class="hr"></i></div>
+    <div id="t-students" class="hidden">
       <div class="card">
         <div class="row2">
           <div style="flex:0 0 220px"><label>选择学生</label><select id="mgmt-stu" onchange="renderMgmt()"></select></div>
@@ -1037,7 +1122,8 @@ function start(){
   loadStudents();
   loadKpOptions();
   renderTasks(); loadDash(); loadStuMgmt();
-  requestAnimationFrame(()=>{ animateIn(); initScrollSpy(); });
+  goSec('sec-errors');
+  requestAnimationFrame(()=>{ animateIn(); });
 }
 async function autoLogin(){
   try{
@@ -1667,9 +1753,9 @@ async function viewStuErrors(sid){
   const sel = document.getElementById('f-student');
   if(sel){ sel.value = sid; }
   await loadErrors();
+  goSec('sec-errors');
   toggleErrList(true);
-  const sec = document.getElementById('sec-errors');
-  if(sec) sec.scrollIntoView({behavior:'smooth'});
+  window.scrollTo({top:0, behavior:'smooth'});
 }
 async function setStu(sid){
   const username = document.getElementById('su_'+sid).value.trim();
@@ -1916,14 +2002,22 @@ function animateIn(){
   });
 }
 
-// 侧栏导航：平滑定位到区块
+// 底部导航：单页切换（点哪个只显示哪个）
+const PAGES = {
+  'sec-errors':['sec-errors','t-errors'],
+  'sec-tasks':['sec-tasks','t-tasks'],
+  'sec-dash':['sec-dash','t-dash'],
+  'sec-students':['sec-students','t-students'],
+};
 function goSec(id){
-  const el = document.getElementById(id);
-  if(!el) return;
-  const y = el.getBoundingClientRect().top + window.scrollY - 92;
-  window.scrollTo({top:Math.max(0,y), behavior:'smooth'});
+  if(!PAGES[id]) return;
+  Object.keys(PAGES).forEach(k=>PAGES[k].forEach(eid=>{
+    const el = document.getElementById(eid);
+    if(el) el.classList.toggle('hidden', k!==id);
+  }));
   document.querySelectorAll('#side-nav a[data-sec]').forEach(a=>
     a.classList.toggle('active', a.dataset.sec===id));
+  window.scrollTo({top:0, behavior:'smooth'});
 }
 
 // 侧栏高亮跟随滚动
@@ -1947,14 +2041,8 @@ function initScrollSpy(){
 
 // 主题：暖米白 / 暖黑
 function applySkinFromUrl(){
-  const p = new URLSearchParams(location.search);
-  const skin = p.get('skin');
-  if(skin==='sage'||skin==='warm'||skin==='stone') document.body.setAttribute('data-skin', skin);
-  const dark = p.get('dark');
-  if(dark==='1'||dark==='true'){
-    document.body.classList.add('theme-dark');
-    localStorage.setItem('tt_theme','dark');
-  }
+  // 统一中性皮肤：不再根据 URL 切换皮肤
+  document.body.removeAttribute('data-skin');
 }
 function syncThemeBtn(){
   const dark = document.body.classList.contains('theme-dark');
@@ -1966,8 +2054,9 @@ function syncThemeBtn(){
   if(b) b.title = dark ? '切换到浅色' : '切换到深色';
 }
 function initTheme(){
-  const dark = (localStorage.getItem('tt_theme')||'light') === 'dark';
-  document.body.classList.toggle('theme-dark', dark);
+  // 统一浅色中性主题（与手机端其它界面一致），不再跟随历史深色设置
+  document.body.classList.remove('theme-dark');
+  localStorage.setItem('tt_theme','light');
   applySkinFromUrl();
   syncThemeBtn();
 }
@@ -1975,11 +2064,9 @@ function initTheme(){
 window.addEventListener('message', function(e){
   const d = e.data || {};
   if(d.type !== 'wb-theme') return;
-  if(d.skin==='sage'||d.skin==='warm'||d.skin==='stone') document.body.setAttribute('data-skin', d.skin);
-  if(d.dark===true || d.dark===false){
-    document.body.classList.toggle('theme-dark', d.dark);
-    localStorage.setItem('tt_theme', d.dark ? 'dark' : 'light');
-  }
+  // 统一浅色中性主题：忽略父窗口下发的深色/皮肤
+  document.body.classList.remove('theme-dark');
+  document.body.removeAttribute('data-skin');
   syncThemeBtn();
 });
 function toggleTheme(){
