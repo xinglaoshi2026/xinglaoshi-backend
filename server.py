@@ -1868,7 +1868,18 @@ class H(BaseHTTPRequestHandler):
             lim = max(1, min(lim, 5000))
             res = store_list("questions", since=since, q=kw, limit=lim)
             if kp:
-                res = [x for x in res if x["body"].get("kpId") == kp]
+                # 按知识点「子树」过滤：选中某知识点时，连同其所有子孙节点的题目一并返回
+                # （题目常挂在子节点上，如 串联 < 动态分析 < 欧姆定律，只匹配 exact 会搜不到）
+                allkp = store_list("knowledgePoints", limit=5000)
+                kids = {kp}
+                changed = True
+                while changed:
+                    changed = False
+                    for k in allkp:
+                        b = k.get("body") or {}
+                        if b.get("parentId") in kids and b.get("id") and b.get("id") not in kids:
+                            kids.add(b.get("id")); changed = True
+                res = [x for x in res if x["body"].get("kpId") in kids]
             return send_json(self, {"items": res, "count": len(res)})
         if p.startswith("/api/questions/"):
             id = p[len("/api/questions/"):]
