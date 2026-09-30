@@ -669,22 +669,54 @@ def train_default_kp():
     return kid, TRAIN_BANK_KP_NAME
 
 
+def _bank_mediarel(html):
+    """从题库题的 HTML 里取出 media:// 相对路径（去 /api/media/ 前缀便于统一比较）。"""
+    return re.findall(r"media://([^\"'\s>]+)", html or "")
+
+
+def _bank_txt(html):
+    """题库题 HTML 去标签后的纯文字。"""
+    return re.sub(r"<[^>]+>", "", html or "").strip()
+
+
+def _bank_key(stem, images, answer, answer_images):
+    """题目内容指纹：题面文字 + 题图 + 答案文字 + 答案图。
+    图片统一去掉 /api/media/ 前缀，使「错题(带 /api/media/ 前缀)」与「题库题(media:// 相对路径)」可比。"""
+    norm = lambda u: (u or "").replace("/api/media/", "")
+    return hashlib.md5("|".join([
+        (stem or "").strip(),
+        ",".join(sorted(norm(u) for u in (images or []))),
+        (answer or "").strip(),
+        ",".join(sorted(norm(u) for u in (answer_images or []))),
+    ]).encode("utf-8")).hexdigest()
+
+
 def train_error_to_bank(rec):
-    """把一道错题的题目内容同步进题库，按内容哈希去重（同一道题不同学生只存一条题库记录）。
-    返回 (题库题目id, 是否新建)。无内容时返回 (None, 0)。"""
+    """把一道错题的题目内容同步进题库，按内容去重（同一道题只存一条题库记录）。
+    返回 (题库题目id, 是否新建)。无内容时返回 (None, 0)。
+
+    去重要点：既比对错题转入标记(_eHash)，也把题库现有题的实际内容换算成同一指纹比对。
+    否则「从题库选题 → 存为错题」时，原题没有 _eHash，会被误判为新题再存一份（题库翻倍）。
+    """
     stem = rec.get("stem") or ""
     images = rec.get("images") or []
     answer = rec.get("analysis") or ""
     answer_images = rec.get("answerImages") or []
     if not (stem or images or answer or answer_images):
         return None, 0
-    h = hashlib.md5(("|".join([stem] + sorted(images) + sorted(answer_images)))
-                   .encode("utf-8")).hexdigest()
-    # 已存在同题(由错题转入)则直接复用，建立链接
+    key = _bank_key(stem, images, answer, answer_images)
+    # 已存在同题则直接复用，建立链接
     for q in store_list("questions", limit=5000):
         b = q.get("body") or {}
-        if b.get("_eHash") == h:
-            return b.get("id"), 0
+        if b.get("_eHash") == key:
+            return b.get("id") or q.get("id"), 0
+        if _bank_key(_bank_txt(b.get("content")), _bank_mediarel(b.get("content")),
+                     _bank_txt(b.get("answer")), _bank_mediarel(b.get("answer"))) == key:
+            # 命中题库现有题（含切题入库的）：回填标记便于以后快速命中，并复用其 id
+            if b.get("_eHash") != key:
+                b["_eHash"] = key
+                store_put("questions", b.get("id") or q.get("id"), b)
+            return b.get("id") or q.get("id"), 0
     # 构建媒体 HTML：用 media:// 相对路径，供教师端 pickQb 的 extractMediaRel 提取
     def media_html(urls):
         return "".join('<img src="media://%s">' % u.replace("/api/media/", "")
@@ -707,7 +739,7 @@ def train_error_to_bank(rec):
         "source": "错题转入",
         "grade": rec.get("grade") or "",
         "tags": rec.get("tags") or "",
-        "_eHash": h,
+        "_eHash": key,
         "createdAt": now_ms(),
         "updatedAt": now_ts(),
     }
