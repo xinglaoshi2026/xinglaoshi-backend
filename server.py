@@ -417,60 +417,21 @@ def _guess_ct(name, data):
     return "application/octet-stream"
 
 
-def _compress_image(raw, name):
-    """对图片二进制做有损压缩(限制最长边 + JPEG q82)，返回 (bytes, 是否压缩)。
-    非图片 / 压缩后反而更大 / 异常时原样返回。"""
-    try:
-        from PIL import Image, ImageOps
-        import io as _io
-        im = Image.open(_io.BytesIO(raw))
-        try:
-            im = ImageOps.exif_transpose(im)
-        except Exception:
-            pass
-        max_side = int(os.environ.get("IMG_MAX_SIDE", "1600"))
-        w, h = im.size
-        if w > max_side or h > max_side:
-            r = max_side / max(w, h)
-            im = im.resize((max(1, int(w * r)), max(1, int(h * r))), Image.LANCZOS)
-        buf = _io.BytesIO()
-        fmt = (im.format or "JPEG").upper()
-        if fmt == "GIF":
-            return raw, False  # 动图不压缩
-        if fmt == "PNG" and im.mode in ("RGBA", "LA", "P"):
-            im.save(buf, "PNG", optimize=True)  # 含透明通道保留 PNG
-        else:
-            if im.mode != "RGB":
-                im = im.convert("RGB")
-            q = int(os.environ.get("IMG_QUALITY", "82"))
-            im.save(buf, "JPEG", quality=q, optimize=True)
-        out = buf.getvalue()
-        if len(out) < len(raw):
-            return out, True
-        return raw, False
-    except Exception:
-        return raw, False
-
-
 def _put_media(rel, raw, name):
-    """写入媒体：R2 启用则压缩图片后上传对象存储；否则写本地磁盘。
-    返回 (ok, url_or_err, code)。"""
+    """写入媒体：R2 启用则上传对象存储，否则写本地磁盘。
+    图片原样存储（不做缩放/有损压缩），保证题目与截图清晰度。返回 (ok, url_or_err, code)。"""
     ct = _guess_ct(name, raw)
-    is_img = ct.startswith("image/") and not ct.endswith("gif")
-    store = raw
-    if is_img:
-        store, _ = _compress_image(raw, name)
     cl = _r2_client()
     if cl:
         try:
-            cl.put_object(Bucket=_r2_conf()["bucket"], Key=rel, Body=store, ContentType=ct)
+            cl.put_object(Bucket=_r2_conf()["bucket"], Key=rel, Body=raw, ContentType=ct)
             return True, "/api/media/" + rel, 200
         except Exception as e:
             return False, "对象存储上传失败: " + str(e), 500
     fp = _media_disk(rel)
     os.makedirs(os.path.dirname(fp), exist_ok=True)
     with open(fp, "wb") as f:
-        f.write(store)
+        f.write(raw)
     return True, "/api/media/" + rel, 200
 
 
