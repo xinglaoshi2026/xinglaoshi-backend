@@ -942,6 +942,8 @@
   .entry-side button.lg{justify-content:center}
   .entry-side #stu-drop{position:static;left:auto;right:auto;top:auto;margin-top:6px;max-height:240px}
   .entry-side .batch-item{flex-direction:column;align-items:stretch;gap:6px}
+  .entry-side #stu-actions{display:flex;flex-direction:column;gap:8px}
+  .entry-side #clean-msg{font-size:12.5px;color:var(--ink3)}
   .entry-side #e-msg:empty{display:none}
   #batch-box:empty{display:none}
   @media (max-width:900px){
@@ -1140,18 +1142,18 @@
     <div class="sec hidden" id="sec-students"><span><i class="no">4</i>学生管理</span><i class="hr"></i></div>
     <div id="t-students" class="hidden">
       <div class="card">
-        <div class="row2">
-          <div style="flex:0 0 220px"><label>选择学生</label><select id="mgmt-stu" onchange="renderMgmt()"></select></div>
-          <div class="hint" style="flex:1;min-width:240px">给学生设账号后，他用账号登录学生端只能看到自己的练习；下面还能给他写一句鼓励语（显示在学生端最上方）。</div>
+        <div class="entry-layout">
+          <div class="entry-main">
+            <div style="max-width:300px"><select id="mgmt-stu" onchange="renderMgmt()"></select></div>
+            <div id="mgmt-detail" style="margin-top:10px"></div>
+          </div>
+          <aside class="entry-side">
+            <div class="side-title">学生管理</div>
+            <div id="stu-actions"></div>
+            <button id="clean-btn" type="button" onclick="cleanupCloud()"><svg class="ic"><use href="#i-broom"/></svg>清理云端无用图片</button>
+            <div id="clean-msg"></div>
+          </aside>
         </div>
-        <div id="mgmt-detail" style="margin-top:10px"></div>
-      </div>
-      <div class="card">
-        <div class="row2">
-          <button id="clean-btn" type="button" class="ghost" style="flex:0 0 auto" onclick="cleanupCloud()"><svg class="ic"><use href="#i-broom"/></svg>清理云端无用图片</button>
-          <div class="hint" style="flex:1;min-width:240px">删除题目/试卷/错题时，云端已自动清理对应图片；这里可手动清一次历史遗留的无用图片。</div>
-        </div>
-        <div id="clean-msg" style="margin-top:6px"></div>
       </div>
     </div>
     </div>
@@ -1178,15 +1180,21 @@ async function login(){
   if(status===200 && j.token){ TOKEN=j.token; localStorage.setItem('tt_token',TOKEN); start(); }
   else document.getElementById('linfo').textContent = (j&&j.error)||'登录失败';
 }
-function start(){
+async function start(){
   document.getElementById('login').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
   initTheme();
-  loadStudents();
+  await loadStudents();          // 先取到学生，再填充「每日任务 / 完成看板」的学生下拉，避免选不了
   loadKpOptions();
   renderTasks(); loadDash(); loadStuMgmt();
   goSec('sec-errors');
   requestAnimationFrame(()=>{ animateIn(); });
+}
+// loadStudents 完成后刷新「任务 / 看板 / 学生管理」里的学生下拉
+async function refreshStuSelects(){
+  fillStuSelect('task-stu'); renderTaskStu();
+  fillStuSelect('dash-stu'); renderDashStu();
+  fillStuSelect('mgmt-stu'); renderMgmt();
 }
 async function autoLogin(){
   try{
@@ -1201,14 +1209,17 @@ async function loadStudents(){
   const {j} = await call('/api/train/students');
   const box = document.getElementById('e-student-box');
   const fsel = document.getElementById('f-student');
-  window._STU_MAP = window._STU_MAP||{};
+  window._STU_MAP = {};
+  if(box) box.innerHTML = '';
+  if(fsel) fsel.innerHTML = '<option value="">全部学生</option>';
   (j?j.items:[]).forEach(s=>{
     const name = s.name||s.username||s.id;
     window._STU_MAP[s.id]=name;
-    box.insertAdjacentHTML('beforeend',`<label class="chk"><input type="checkbox" value="${s.id}"> ${name}</label>`);
-    fsel.insertAdjacentHTML('beforeend',`<option value="${s.id}">${name}</option>`);
+    if(box) box.insertAdjacentHTML('beforeend',`<label class="chk"><input type="checkbox" value="${s.id}"> ${name}</label>`);
+    if(fsel) fsel.insertAdjacentHTML('beforeend',`<option value="${s.id}">${name}</option>`);
   });
   loadErrors();
+  refreshStuSelects();   // 学生变化后同步刷新「任务/看板/学生管理」的下拉
 }
 function selAllStu(on){
   document.querySelectorAll('#e-student-box input').forEach(c=>c.checked=on);
@@ -1720,54 +1731,54 @@ async function loadStuMgmt(){
     call('/api/train/student/accounts'),
     call('/api/train/errors')
   ]);
-  const accMap = {};
-  (acc?acc.items:[]).forEach(a=>accMap[a.studentId]=a.username);
+  const accMap = {}, accPw = {};
+  (acc?acc.items:[]).forEach(a=>{ accMap[a.studentId]=a.username; if(a.password) accPw[a.studentId]=a.password; });
   // 统计每位学生的错题数（服务端每生一条记录：studentId；兼容旧 studentIds 数组）
   const errCount = {};
   (errs?errs.items:[]).forEach(e=>{
     if(e.studentId) errCount[e.studentId]=(errCount[e.studentId]||0)+1;
     (e.studentIds||[]).forEach(id=>{ errCount[id]=(errCount[id]||0)+1; });
   });
-  window._MGMT = {stus:(stus?stus.items:[]), accMap, errCount};
+  window._MGMT = {stus:(stus?stus.items:[]), accMap, accPw, errCount};
   fillStuSelect('mgmt-stu');
   renderMgmt();
 }
 function renderMgmt(){
-  const sid = document.getElementById('mgmt-stu').value;
   const box = document.getElementById('mgmt-detail');
-  if(!sid){ box.innerHTML=''; return; }
-  const s = (window._MGMT.stus).find(x=>x.id===sid);
-  if(!s){ box.innerHTML=''; return; }
+  const acts = document.getElementById('stu-actions');
+  const clear = () => { if(box) box.innerHTML=''; if(acts) acts.innerHTML=''; };
+  if(!window._MGMT){ clear(); return; }
+  const sidEl = document.getElementById('mgmt-stu');
+  const sid = sidEl ? sidEl.value : '';
+  if(!sid){ clear(); return; }
+  const s = (window._MGMT.stus||[]).find(x=>x.id===sid);
+  if(!s){ clear(); return; }
   const name = s.name||s.username||s.id;
   const has = window._MGMT.accMap[s.id];
+  const pw = (window._MGMT.accPw||{})[s.id] || '';   // 已保存的密码（明文，供老师查看）
   const cnt = window._MGMT.errCount[s.id]||0;
   box.innerHTML=`<div class="stu-card">
-    <div class="sc-top">
-      <div class="sc-info">
-        <b>${name}</b>
-        <div class="dt-sub" style="color:${has?'var(--ok)':'var(--ink3)'}">${has?('已设账号 '+has):'未设账号'}</div>
-        <span class="pill m">错题 ${cnt} 道</span>
-      </div>
-      <div class="sc-fields">
-        <div><label>账号</label><input id="su_${s.id}" placeholder="给学生设一个账号" value="${has||''}"></div>
-        <div><label>密码</label><input id="sp_${s.id}" type="password" placeholder="${has?'留空=不修改密码':'设置密码'}"></div>
-        <div><label>每日训练题数</label><input id="sd_${s.id}" type="number" min="1" max="20" value="${s.dailyCount||3}"></div>
-      </div>
-      <div class="sc-acts">
-        <button onclick="setStu('${s.id}')"><svg class="ic"><use href="#i-key"/></svg>保存账号</button>
-        <button type="button" class="tint" onclick="setDaily('${s.id}')"><svg class="ic"><use href="#i-check"/></svg>保存题数</button>
-        <button type="button" class="ghost" onclick="viewStuErrors('${s.id}')"><svg class="ic"><use href="#i-list"/></svg>查看错题</button>
-        <button type="button" class="danger" onclick="delStudent('${s.id}')" title="彻底删除该生及其错题、作答记录、草稿照片、账号"><svg class="ic"><use href="#i-trash"/></svg>删除</button>
-      </div>
+    <div class="sc-info">
+      <b>${name}</b>
+      <div class="dt-sub" style="color:${has?'var(--ok)':'var(--ink3)'}">${has?('账号 '+has):'未设账号'}</div>
+      <span class="pill m">错题 ${cnt} 道</span>
+    </div>
+    <div class="sc-fields">
+      <div><label>账号</label><input id="su_${s.id}" value="${(has||'').replace(/"/g,'&quot;')}"></div>
+      <div><label>密码</label><input id="sp_${s.id}" type="text" value="${(pw||'').replace(/"/g,'&quot;')}"></div>
+      <div><label>每日训练题数</label><input id="sd_${s.id}" type="number" min="1" max="20" value="${s.dailyCount||3}"></div>
     </div>
     <div class="sc-greet">
-      <label><svg class="ic-inline"><use href="#i-chat"/></svg> 给这位学生写的鼓励语（学生登录后显示在最上方；留空则显示「你好，姓名」）</label>
-      <div class="grow">
-        <textarea id="sg_${s.id}" rows="2" style="flex:1;min-width:180px" placeholder="如：张家泽，昨天的错题今天再练一遍，你一定行！">${(s.greeting||'').replace(/</g,'&lt;')}</textarea>
-        <button type="button" class="tint" onclick="setGreeting('${s.id}')"><svg class="ic"><use href="#i-check"/></svg>保存鼓励语</button>
-        <span id="sgmsg_${s.id}"></span>
-      </div>
+      <label>鼓励语</label>
+      <textarea id="sg_${s.id}" rows="2">${(s.greeting||'').replace(/</g,'&lt;')}</textarea>
+      <span id="sgmsg_${s.id}"></span>
     </div></div>`;
+  if(acts) acts.innerHTML =
+    `<button type="button" onclick="setStu('${s.id}')"><svg class="ic"><use href="#i-key"/></svg>保存账号密码</button>`+
+    `<button type="button" onclick="setDaily('${s.id}')"><svg class="ic"><use href="#i-check"/></svg>保存题数</button>`+
+    `<button type="button" onclick="setGreeting('${s.id}')"><svg class="ic"><use href="#i-check"/></svg>保存鼓励语</button>`+
+    `<button type="button" onclick="viewStuErrors('${s.id}')"><svg class="ic"><use href="#i-list"/></svg>查看错题</button>`+
+    `<button type="button" class="danger" onclick="delStudent('${s.id}')"><svg class="ic"><use href="#i-trash"/></svg>删除学生</button>`;
 }
 async function setGreeting(sid){
   const el = document.getElementById('sg_'+sid);

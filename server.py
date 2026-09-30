@@ -1561,7 +1561,12 @@ class H(BaseHTTPRequestHandler):
             cx = db()
             rows = cx.execute("SELECT student_id, username FROM users WHERE role='student' AND student_id IS NOT NULL").fetchall()
             cx.close()
-            return send_json(self, {"items": [{"studentId": r["student_id"], "username": r["username"]} for r in rows]})
+            out = []
+            for r in rows:
+                stu, _ = store_get("students", r["student_id"])
+                out.append({"studentId": r["student_id"], "username": r["username"],
+                            "password": (stu or {}).get("spw", "")})   # 供老师查看（本系统仅老师使用）
+            return send_json(self, {"items": out})
         return None
 
     def _train_route_post(self, p, q):
@@ -1636,6 +1641,14 @@ class H(BaseHTTPRequestHandler):
             else:
                 add_user(cx, username, pw, role="student", student_id=sid)
             cx.commit(); cx.close()
+            # 同时把明文密码记到学生档案 spw，便于老师在「学生管理」里查看
+            try:
+                stu, _ = store_get("students", sid)
+                if stu:
+                    stu["spw"] = pw
+                    store_put("students", sid, stu)
+            except Exception:
+                pass
             return send_json(self, {"ok": True})
         if p == "/api/train/student/greeting":
             # 老师给某学生写鼓励语 → 学生端顶部显示（留空则显示默认「你好，姓名」）
