@@ -1882,7 +1882,12 @@ class H(BaseHTTPRequestHandler):
             since = q.get("since", [None])[0]
             kw = q.get("q", [None])[0]
             kp = q.get("kpId", [None])[0]
-            res = store_list("questions", since=since, q=kw, limit=200)
+            try:
+                lim = int(q.get("limit", ["200"])[0])
+            except Exception:
+                lim = 200
+            lim = max(1, min(lim, 5000))
+            res = store_list("questions", since=since, q=kw, limit=lim)
             if kp:
                 res = [x for x in res if x["body"].get("kpId") == kp]
             return send_json(self, {"items": res, "count": len(res)})
