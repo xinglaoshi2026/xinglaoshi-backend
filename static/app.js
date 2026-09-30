@@ -843,13 +843,20 @@
   }
   function switchMain(m) {
     mainTab = m;
-    ["questions", "schedule", "students", "settings"].forEach(id =>
+    ["questions", "schedule", "students", "train", "settings"].forEach(id =>
       $("#view-" + id).classList.toggle("hidden", id !== m));
     document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.main === m));
     if (m === "questions") qSub(qSubPane);
     else if (m === "schedule") schedSub(schedSubPane);
     else if (m === "students") renderStudents();
     else if (m === "settings") renderSettings();
+    else if (m === "train") loadTrain();
+  }
+  // 错题训练：首次进入时按需加载内嵌老师端训练台（带时间戳避开 WebView 缓存），之后保留页面状态
+  function loadTrain(){
+    const f = document.getElementById("trainFrame");
+    if(!f) return;
+    if(f.dataset.loaded !== "1"){ f.src = "/train?v=" + Date.now(); f.dataset.loaded = "1"; }
   }
   function qSub(s) {
     qSubPane = s;
