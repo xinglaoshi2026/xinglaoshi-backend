@@ -878,6 +878,53 @@
   .sec .rules-btn:hover{background:rgba(16,24,40,.045)!important;color:var(--ink)!important;transform:none!important}
 
   #login{margin-top:14vh}
+
+  /* ===== 2026-09-30 再次精简：固定保存条 / 输入框内选图 / 按钮排整齐 / 去虚线框 ===== */
+  /* 输入框 + 内嵌「选图/拍照」相机按钮（点框内相机即可选手机照片或截图） */
+  .imgbox{position:relative}
+  .imgbox textarea{padding-bottom:40px}
+  .imgbox .ins-img{
+    position:absolute;right:8px;bottom:8px;width:40px;height:40px;border-radius:10px;
+    display:inline-flex;align-items:center;justify-content:center;padding:0;
+    background:var(--brand-soft);color:var(--brand);
+  }
+  .imgbox .ins-img .ic{width:20px;height:20px}
+  .imgbox .ins-img:hover{background:var(--brand);color:#fff}
+  .qa-cols{gap:12px}
+
+  /* 工具条：按钮规整排布（去掉说明文字后不再需要字段块/分隔线） */
+  .toolbar{position:relative;flex-wrap:wrap;gap:8px;padding:12px}
+  .toolbar>button,.toolbar>.tk,.toolbar>select{flex:1 1 auto}
+  .toolbar .tk{min-width:150px}
+  .tb-fields,.tb-sep,.tb-tools,.seg{display:none!important}
+
+  /* 题库筛选行排整齐 */
+  .qb-filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .qb-filters select{flex:1 1 150px}
+  .qb-filters input{flex:1 1 170px}
+  .qb-filters button{flex:0 0 auto}
+
+  /* 题库多选：去掉虚线大框，单行排布 */
+  .qb-batch{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:10px;padding:0;border:0;background:none;box-shadow:none}
+  .qb-batch .qb-cnt{color:var(--ink3);font-size:12.5px;white-space:nowrap}
+  .qb-batch .qb-cnt b{color:var(--brand3);font-variant-numeric:tabular-nums}
+
+  /* 保存条：固定在底部导航之上，不用再滚到底 */
+  .savebar{
+    position:fixed;left:0;right:0;z-index:30;
+    bottom:calc(56px + env(safe-area-inset-bottom));
+    margin:0;border-radius:0;border:0;border-top:1px solid var(--line);
+    background:rgba(255,255,255,.97);backdrop-filter:blur(8px);
+    box-shadow:0 -8px 24px rgba(16,24,40,.07);
+    padding:10px 14px;display:flex;justify-content:center;
+  }
+  .savebar .hint{display:none}
+  .savebar button{width:100%;max-width:760px}
+  /* 给固定保存条 + 底部导航留空间 */
+  .main-inner{padding-bottom:calc(132px + env(safe-area-inset-bottom))}
+
+  /* 去掉遗留说明文字 */
+  #picked-hint{display:none!important}
 </style>
 </head>
 <body>
@@ -958,66 +1005,54 @@
     <div class="sec" id="sec-errors"><span><i class="no">1</i>错题录入</span><i class="hr"></i><button type="button" class="rules-btn" onclick="showRules()"><svg class="ic"><use href="#i-help"/></svg>训练规则</button></div>
     <div id="t-errors">
       <div class="card">
-        <!-- 1) 题面 / 答案 放最上面 -->
+        <!-- 1) 题面 / 答案：点框内相机按钮即可选图/拍照，也可直接输入文字 -->
         <div class="qa-cols">
           <div>
-            <label>题面 <span class="hint">（文字；手机可点下方「题目图片」拍照/选图，电脑可 Ctrl+V 粘贴）</span></label>
-            <textarea id="e-stem" rows="4" placeholder="输入题目文字；或点下方「题目图片」拍照/选图"></textarea>
+            <div class="imgbox">
+              <textarea id="e-stem" rows="4" placeholder="题面文字（可留空，点右下相机选图/拍照）"></textarea>
+              <button type="button" class="ins-img" title="选图/拍照" onclick="document.getElementById('e-imgs').click()"><svg class="ic"><use href="#i-camera"/></svg></button>
+            </div>
             <div class="thumbs" id="stem-thumbs"></div>
             <input id="e-imgs" type="file" accept="image/*" multiple class="hidden">
           </div>
           <div>
-            <label>答案 / 解析 <span class="hint">（文字；手机可点下方「答案图片」拍照/选图，电脑可 Ctrl+V 粘贴）</span></label>
-            <textarea id="e-analysis" rows="4" placeholder="输入解析文字；或点下方「答案图片」拍照/选图"></textarea>
+            <div class="imgbox">
+              <textarea id="e-analysis" rows="4" placeholder="答案/解析文字（可留空，点右下相机选图/拍照）"></textarea>
+              <button type="button" class="ins-img" title="选图/拍照" onclick="document.getElementById('e-ans-imgs').click()"><svg class="ic"><use href="#i-bulb"/></svg></button>
+            </div>
             <div class="thumbs" id="answer-thumbs"></div>
             <input id="e-ans-imgs" type="file" accept="image/*" multiple class="hidden">
           </div>
         </div>
-        <!-- 2) 归档信息 + 操作按钮（一行解决） -->
+        <!-- 2) 选择学生 / 归档知识点 / 操作按钮：只留按钮与输入 -->
         <div class="toolbar">
-          <div class="tb-fields">
-            <div class="fld">
-              <label>选择学生 <span class="hint">（可多选）</span></label>
-              <button type="button" class="ghost" id="stu-drop-btn" onclick="toggleStuDrop()"><svg class="ic"><use href="#i-users"/></svg><span id="stu-drop-txt">选择学生（已选 0 人）</span></button>
-              <div id="stu-drop" class="hidden">
-                <div class="drop-acts">
-                  <button type="button" class="ghost sm" onclick="selAllStu(true)">全选</button>
-                  <button type="button" class="ghost sm" onclick="selAllStu(false)">清空</button>
-                </div>
-                <div id="e-student-box"></div>
-              </div>
+          <button type="button" class="ghost" id="stu-drop-btn" onclick="toggleStuDrop()"><svg class="ic"><use href="#i-users"/></svg><span id="stu-drop-txt">选择学生（0）</span></button>
+          <div id="stu-drop" class="hidden">
+            <div class="drop-acts">
+              <button type="button" class="ghost sm" onclick="selAllStu(true)">全选</button>
+              <button type="button" class="ghost sm" onclick="selAllStu(false)">清空</button>
             </div>
-            <div class="fld">
-              <label><svg class="ic-inline"><use href="#i-tag"/></svg> 归档知识点 <span class="hint">（可选）</span></label>
-              <select id="e-kp"><option value="">错题自动收录（默认）</option></select>
-            </div>
+            <div id="e-student-box"></div>
           </div>
-          <div class="tb-sep"></div>
-          <div class="tb-tools">
-            <div class="seg">
-              <button type="button" onclick="document.getElementById('e-imgs').click()"><svg class="ic"><use href="#i-camera"/></svg>题目图片</button>
-              <button type="button" onclick="document.getElementById('e-ans-imgs').click()"><svg class="ic"><use href="#i-bulb"/></svg>答案图片</button>
-              <button type="button" onclick="toggleQb()"><svg class="ic"><use href="#i-book"/></svg>题库选题</button>
-            </div>
-            <button type="button" class="tint" onclick="addBatch()"><svg class="ic"><use href="#i-plus"/></svg>加入待发列表</button>
-          </div>
+          <select id="e-kp" class="tk"><option value="">归档知识点（默认）</option></select>
+          <button type="button" onclick="document.getElementById('e-imgs').click()"><svg class="ic"><use href="#i-camera"/></svg>题目图片</button>
+          <button type="button" onclick="document.getElementById('e-ans-imgs').click()"><svg class="ic"><use href="#i-bulb"/></svg>答案图片</button>
+          <button type="button" onclick="toggleQb()"><svg class="ic"><use href="#i-book"/></svg>题库选题</button>
+          <button type="button" class="tint" onclick="addBatch()"><svg class="ic"><use href="#i-plus"/></svg>加入待发列表</button>
         </div>
         <input id="e-files" type="file" multiple class="hidden">
         <div id="picked-hint" class="ok hidden"></div>
         <div id="qb" class="qb hidden">
-          <div class="row">
-            <div><label>知识点</label><select id="qb-kp"><option value="">全部知识点</option></select></div>
-            <div><label>关键字（题面/标签/来源）</label><input id="qb-q" placeholder="如：牛二、动量"></div>
-          </div>
-          <div class="qb-acts">
-            <button type="button" class="tint sm" onclick="searchQb()"><svg class="ic"><use href="#i-search"/></svg>搜索题库</button>
+          <div class="qb-filters">
+            <select id="qb-kp"><option value="">全部知识点</option></select>
+            <input id="qb-q" placeholder="搜索题面 / 标签 / 来源">
+            <button type="button" class="tint sm" onclick="searchQb()"><svg class="ic"><use href="#i-search"/></svg>搜索</button>
           </div>
           <div id="qb-list"></div>
         </div>
         <div id="batch-box"></div>
-        <!-- 3) 保存条 -->
+        <!-- 3) 保存条：固定在底部，免去滚到底 -->
         <div class="savebar">
-          <div class="hint">保存后自动进入「从题库选题目」，按题目内容去重（同一道题只存一份），可一键复用给做过同题的其他学生。</div>
           <button class="lg" onclick="saveBatch()"><svg class="ic"><use href="#i-save"/></svg>保存全部错题<span class="bn" id="batch-n">0</span></button>
         </div>
         <div id="e-msg"></div>
@@ -1026,7 +1061,7 @@
       <div class="card">
         <div class="collapse-head" id="errlist-head" onclick="toggleErrList()">
           <span class="tt">错题列表</span>
-          <span class="pill" id="errlist-cnt">—</span><span class="hint">点开可筛选 / 查看 / 导出</span>
+          <span class="pill" id="errlist-cnt">—</span>
           <span class="chev" id="errlist-chev">▸</span>
         </div>
         <div id="errlist-body" class="hidden" style="margin-top:10px">
@@ -1159,7 +1194,7 @@ function toggleStuDrop(){
 function updateStuDropText(){
   const n = document.querySelectorAll('#e-student-box input:checked').length;
   const t = document.getElementById('stu-drop-txt');
-  if(t) t.textContent = n ? ('已选 ' + n + ' 名学生') : '选择学生（已选 0 人）';
+  if(t) t.textContent = n ? ('已选学生（' + n + '）') : '选择学生（0）';
 }
 document.addEventListener('change', e=>{
   if(e.target.closest && e.target.closest('#e-student-box')) updateStuDropText();
@@ -1324,7 +1359,7 @@ async function searchQb(){
       <button type="button" class="tint sm" onclick="pickQb('${x.id}')"><svg class="ic"><use href="#i-plus"/></svg>选入此题</button>
     </div>`);
   });
-  box.insertAdjacentHTML('beforeend', `<div class="qb-batch"><span id="qb-sel-n">0</span> 题已勾选　<button type="button" class="tint sm" onclick="pickQbMulti()"><svg class="ic"><use href="#i-plus"/></svg>加入待发列表</button>　待发列表已有 <b id="qb-batch-n">${batchErrs.length}</b> 道</div>`);
+  box.insertAdjacentHTML('beforeend', `<div class="qb-batch"><button type="button" class="tint sm" onclick="pickQbMulti()"><svg class="ic"><use href="#i-plus"/></svg>加入待发列表</button><span class="qb-cnt">已勾 <b id="qb-sel-n">0</b> · 待发 <b id="qb-batch-n">${batchErrs.length}</b></span></div>`);
 }
 function stripHtml(h){ const d=document.createElement('div'); d.innerHTML=h||''; return (d.textContent||'').trim(); }
 function extractMediaRel(h){
