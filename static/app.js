@@ -1712,6 +1712,23 @@
   window.delExamCatM = delExamCatM;
   window.logout = logout;
 
+  // 接收内嵌「错题训练」iframe 的 Word 下载请求：内嵌页无法直接下载文件，
+  // 训练页会把文件(base64)postMessage 给父窗口，由这里触发保存。
+  window.addEventListener("message", (e) => {
+    const d = e.data || {};
+    if (d.type !== "xls-save-file" || !d.name || !d.b64) return;
+    try {
+      const bin = atob(d.b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const blob = new Blob([bytes], {type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"});
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = d.name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      try { toast("已开始下载：" + d.name); } catch (_) {}
+    } catch (_) {}
+  });
 
   // 全局事件委托：题库卡片（详情/答案/组卷/错题/知识点/图片放大）
   document.getElementById("qList").addEventListener("click", qListClick);
