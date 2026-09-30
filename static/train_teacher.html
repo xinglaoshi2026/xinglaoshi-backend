@@ -1515,7 +1515,16 @@ function renderBatch(){
   updateSaveBtn();
   const qbn = document.getElementById('qb-batch-n'); if(qbn) qbn.textContent = batchErrs.length;
 }
-function delBatch(i){ batchErrs.splice(i,1); renderBatch(); }
+function delBatch(i){
+  batchErrs.splice(i,1);
+  renderBatch();
+  // 同步更新/清空状态提示（避免删完后仍显示旧的成功提示）
+  const m = document.getElementById('e-msg');
+  if(m){
+    if(batchErrs.length){ m.textContent='待发列表还有 '+batchErrs.length+' 道，选好后点「保存全部错题」'; m.className='ok'; }
+    else { m.textContent=''; m.className=''; }
+  }
+}
 function updateSaveBtn(){ document.getElementById('batch-n').textContent = batchErrs.length; }
 async function saveBatch(){
   const msg = document.getElementById('e-msg'); msg.textContent='';
