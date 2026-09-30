@@ -1162,7 +1162,7 @@ async function searchQb(){
       <button type="button" class="tint sm" onclick="pickQb('${x.id}')"><svg class="ic"><use href="#i-plus"/></svg>选入此题</button>
     </div>`);
   });
-  box.insertAdjacentHTML('beforeend', `<div class="qb-batch"><span id="qb-sel-n">0</span> 题已勾选　<button type="button" class="tint sm" onclick="pickQbMulti()"><svg class="ic"><use href="#i-plus"/></svg>批量加入错题列表</button></div>`);
+  box.insertAdjacentHTML('beforeend', `<div class="qb-batch"><span id="qb-sel-n">0</span> 题已勾选　<button type="button" class="tint sm" onclick="pickQbMulti()"><svg class="ic"><use href="#i-plus"/></svg>加入待发列表</button>　待发列表已有 <b id="qb-batch-n">${batchErrs.length}</b> 道</div>`);
 }
 function stripHtml(h){ const d=document.createElement('div'); d.innerHTML=h||''; return (d.textContent||'').trim(); }
 function extractMediaRel(h){
@@ -1196,11 +1196,13 @@ function updQbSel(){
 function pickQbMulti(){
   const ids = [...document.querySelectorAll('#qb-list .qb-chk:checked')].map(c=>c.value);
   if(!ids.length){ const m=document.getElementById('e-msg'); m.textContent='请先勾选要加入的题目'; m.className='err'; return; }
-  let added=0;
+  let added=0, skipped=0;
   ids.forEach(id=>{
     const q = qbCache[id]; if(!q) return;
+    if(batchErrs.some(b=>b.srcId===id)){ skipped++; return; } // 按题库题号去重：同一道题不重复加入
     const kpId = q.kpId||'';
-    const entry = {
+    batchErrs.push({
+      srcId: id,
       stem: stripHtml(q.content||''),
       analysis: stripHtml(q.answer||''),
       kpId: kpId,
@@ -1208,16 +1210,21 @@ function pickQbMulti(){
       pickedI: extractMediaRel(q.content||'').slice(),
       pickedA: extractMediaRel(q.answer||'').slice(),
       pendS: [], pendA: [], files: []
-    };
-    const sig = batchSig(entry);
-    if(batchErrs.findIndex(b=>batchSig(b)===sig) >= 0) return; // 去重，避免重复加入
-    batchErrs.push(entry); added++;
+    });
+    added++;
   });
   renderBatch(); updateSaveBtn();
-  document.querySelectorAll('#qb-list .qb-chk:checked').forEach(c=>{ c.checked=false; });
+  // 已成功加入的清掉勾选；保留未成功的（已在待发列表里的重复题）勾选，便于用户核对
+  ids.forEach(id=>{
+    if(batchErrs.some(b=>b.srcId===id)){
+      const c=document.querySelector(`#qb-list .qb-chk[value="${id}"]`); if(c) c.checked=false;
+    }
+  });
   updQbSel();
+  const qbn=document.getElementById('qb-batch-n'); if(qbn) qbn.textContent=batchErrs.length;
   const m = document.getElementById('e-msg');
-  m.textContent = '已加入 '+added+' 道错题到待发列表 ✓（可在下方「待发错题列表」查看/移除，最后点「保存全部错题」发给选中的学生）';
+  m.textContent = '已加入 '+added+' 道到下方「待发列表」（当前共 '+batchErrs.length+' 道）'+(skipped?('，另有 '+skipped+' 道已在列表中、跳过'):'')
+    +'。可继续勾选别的题加入，全部选好后点「保存全部错题」发给选中的学生。';
   m.className = 'ok';
 }
 function updatePickedHint(){
@@ -1307,6 +1314,7 @@ function renderBatch(){
     </div>`);
   });
   updateSaveBtn();
+  const qbn = document.getElementById('qb-batch-n'); if(qbn) qbn.textContent = batchErrs.length;
 }
 function delBatch(i){ batchErrs.splice(i,1); renderBatch(); }
 function updateSaveBtn(){ document.getElementById('batch-n').textContent = batchErrs.length; }
