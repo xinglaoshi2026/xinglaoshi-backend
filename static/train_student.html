@@ -190,17 +190,17 @@
   .statusline .ic{width:15px;height:15px}
   .statusline.warn{color:var(--warn)}
 
-  /* ---------- 题目卡 ---------- */
+  /* ---------- 题目卡（弱化标签，突出题目） ---------- */
   .q{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
-     padding:17px;margin-bottom:14px;box-shadow:var(--sh1)}
-  .qhead{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:11px}
+     padding:14px 15px;margin-bottom:12px;box-shadow:var(--sh1)}
+  .qhead{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:6px}
   .qno{
-    flex:0 0 auto;min-width:32px;height:28px;padding:0 10px;border-radius:10px;background:var(--grad);
-    color:#fff;font-size:13.5px;font-weight:750;display:inline-flex;align-items:center;justify-content:center;
-    box-shadow:0 3px 9px rgba(160,92,49,.22);
+    flex:0 0 auto;height:21px;padding:0 9px;border-radius:7px;
+    background:var(--brand-soft);color:var(--brand3);
+    font-size:12px;font-weight:750;display:inline-flex;align-items:center;justify-content:center;
   }
-  .kchip{background:var(--brand-soft);color:var(--brand3);font-size:12px;padding:4px 10px;border-radius:999px;font-weight:650}
-  .qbody{font-size:16px;line-height:1.8;color:var(--ink);word-break:break-word}
+  .kchip{background:var(--brand-soft);color:var(--brand3);font-size:11.5px;padding:3px 9px;border-radius:999px;font-weight:650}
+  .qbody{font-size:18px;line-height:1.75;color:var(--ink);word-break:break-word;font-weight:500;letter-spacing:.005em}
   .qbody img,.qi{max-width:100%;border-radius:12px;display:block}
   img.qi{width:100%;margin-top:9px;cursor:zoom-in;border:1px solid var(--line);border-radius:14px}
   .filetag{
@@ -209,24 +209,28 @@
     margin:9px 8px 0 0;text-decoration:none;font-weight:600
   }
 
-  /* ---------- 答案块 ---------- */
+  /* ---------- 答案块（放大答案，弱化标签） ---------- */
   .ansbox{
     background:linear-gradient(180deg,#fdf5ec,#faeedf);border:1px solid #f2e3d0;
-    border-radius:16px;padding:14px 15px 14px 17px;margin-top:13px;position:relative;overflow:hidden
+    border-radius:14px;padding:11px 13px 12px 15px;margin-top:11px;position:relative;overflow:hidden
   }
   .ansbox::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3.5px;
     background:linear-gradient(180deg,var(--brand2),var(--brand))}
-  .ansbox .lb{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--brand3);
-    font-weight:750;letter-spacing:.05em;margin-bottom:6px}
-  .ansbox .lb .ic{width:14px;height:14px}
-  .ansbox .txt{color:var(--ink);font-size:15.5px}
-  .ansbox .ana{color:var(--ink2);margin-top:8px;font-size:15px;line-height:1.75}
+  .ansbox .lb{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--brand3);
+    font-weight:700;letter-spacing:.04em;margin-bottom:3px;opacity:.85}
+  .ansbox .lb .ic{width:12px;height:12px}
+  .ansbox .txt{color:var(--ink);font-size:18px;font-weight:600;line-height:1.6;word-break:break-word}
+  .ansbox .ana{color:var(--ink2);margin-top:5px;font-size:16px;line-height:1.7;word-break:break-word}
 
-  /* ---------- 第3步 自评 ---------- */
-  .step3{margin-top:15px}
-  .seg{display:flex;gap:9px;margin-top:9px}
+  /* ---------- 第3步 自评（标题紧凑，空间让给题目与答案） ---------- */
+  .step3{margin-top:12px}
+  .step3 .stephead{margin-bottom:7px;gap:7px}
+  .step3 .stepno{width:19px;height:19px;border-radius:6px;font-size:11px;box-shadow:none}
+  .step3 .stephead .st{font-size:13.5px}
+  .step3 .opt-hint{font-size:11.5px}
+  .seg{display:flex;gap:9px;margin-top:8px}
   .seg button{
-    flex:1;width:auto;padding:12px 0;font-size:14.5px;font-weight:700;border-radius:14px;
+    flex:1;width:auto;padding:11px 0;font-size:14px;font-weight:700;border-radius:13px;
     background:#fff;color:var(--ink2);border:1.5px solid var(--line2);box-shadow:none;gap:5px;
   }
   .seg button .ic{width:17px;height:17px}
@@ -694,7 +698,7 @@ async function revealOne(idx){
       ${ansImgs?('<div class="tbs">'+ansImgs+'</div>'):''}
     </div>
     <div class="step3">
-      <div class="stephead"><div class="stepno">3</div><div class="st" style="font-size:14.5px">对照答案，给自己打分</div></div>
+      <div class="stephead"><div class="stepno">3</div><div class="st">对照答案，给自己打分</div></div>
       <div class="seg">
         <button type="button" data-v="self_right" onclick="setSelf(${idx},'self_right')"><svg class="ic"><use href="#i-check"/></svg>做对了</button>
         <button type="button" data-v="half" onclick="setSelf(${idx},'half')"><svg class="ic"><use href="#i-minus"/></svg>半对</button>
@@ -702,7 +706,7 @@ async function revealOne(idx){
       </div>
     </div>
     <div class="step3" id="step4_${idx}">
-      <div class="stephead"><div class="stepno">4</div><div class="st" style="font-size:14.5px">这道题错在哪<span class="opt-hint">（半对/做错必填 · 做对可不填）</span></div></div>
+      <div class="stephead"><div class="stepno">4</div><div class="st">这道题错在哪<span class="opt-hint">（半对/做错必填 · 做对可不填）</span></div></div>
       <textarea class="note" id="note_${idx}" rows="2" placeholder="如：公式记错了 / 计算粗心 / 题目没读懂…" oninput="setNote(${idx},this.value)"></textarea>
     </div>`;
   document.getElementById('rv_'+idx).classList.remove('hidden');
