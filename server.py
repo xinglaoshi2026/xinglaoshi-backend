@@ -855,6 +855,11 @@ def train_generate_tasks(date_str=None):
         # 保留已有完成状态(若当天已做过则不全覆盖)
         old, _ = store_get("trainTasks", tid)
         if old and old.get("status") in ("done", "partial"):
+            # 学生若已在「自动任务」上作答过，则把该任务收编为正式任务，避免作答记录被隐藏
+            if not old.get("generated"):
+                old["generated"] = True
+                old["updatedAt"] = now_ms()
+                store_put("trainTasks", tid, old)
             continue
         store_put("trainTasks", tid, task)
         made += 1
