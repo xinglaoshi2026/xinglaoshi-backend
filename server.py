@@ -850,6 +850,7 @@ def train_generate_tasks(date_str=None):
         tid = "t_%s_%s" % (sid, date_str)
         task = {"id": tid, "studentId": sid, "date": date_str,
                 "errorIds": err_ids, "status": "pending",
+                "generated": True,   # 仅老师点「生成今日任务」才算正式任务，学生端据此放行
                 "score": None, "finishedAt": None, "updatedAt": now_ms()}
         # 保留已有完成状态(若当天已做过则不全覆盖)
         old, _ = store_get("trainTasks", tid)
@@ -861,14 +862,13 @@ def train_generate_tasks(date_str=None):
 
 
 def train_student_today(student_id, date_str=None):
-    """返回某学生当天的任务(含错题明细), 若不存在则即时生成。"""
+    """返回某学生当天的任务(含错题明细)。
+    只有老师点了「生成今日任务」后才存在任务；未生成前学生端应显示"今天还没有练习"，
+    不能看到刚录入、尚未进入当日任务的错题。"""
     date_str = date_str or _date_today()
     tid = "t_%s_%s" % (student_id, date_str)
     task, _ = store_get("trainTasks", tid)
-    if not task:
-        train_generate_tasks(date_str)
-        task, _ = store_get("trainTasks", tid)
-    if not task:
+    if not task or not task.get("generated"):
         return {"task": None, "items": []}
     train_heal_task_status(task)   # 旧数据自愈：答完却没记成 done 的纠正过来
     # 已答/总题数一并下发，学生端据此判断"今天是否已全部完成"（不单纯依赖 status 字段）
@@ -960,8 +960,10 @@ def train_dashboard(date_str=None):
     """老师看板数据：指定日期(默认今天)任务概况 + 每生掌握进度。"""
     students = [s["body"] for s in store_list("students", limit=2000)]
     today = date_str or _date_today()
+    only_gen = (today == _date_today())   # 当天视图只认老师正式生成的任务，屏蔽学生端触发的残留任务
     tasks_today = [t["body"] for t in store_list("trainTasks", limit=4000)
-                   if t["body"].get("date") == today]
+                   if t["body"].get("date") == today
+                   and (t["body"].get("generated") or not only_gen)]
     # 只有「全部题目都提交过」(done) 才算今日完成；partial=只提交了一部分
     done = sum(1 for t in tasks_today if t.get("status") == "done")
     cards = [c["body"] for c in store_list("trainCards", limit=6000)]
@@ -1527,6 +1529,9 @@ class H(BaseHTTPRequestHandler):
                 items = [t for t in items if t.get("studentId") == eff_sid]
             if d:
                 items = [t for t in items if t.get("date") == d]
+            # 当天任务列表只展示老师正式生成的任务，屏蔽学生端触发的残留任务
+            if d == _date_today():
+                items = [t for t in items if t.get("generated")]
             return send_json(self, {"items": items, "count": len(items)})
         if p.startswith("/api/train/tasks/") and p.endswith("/logs"):
             # 老师查看某学生某天任务的逐题作答(自评/错误原因/过程照片)
