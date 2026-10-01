@@ -1845,6 +1845,7 @@ async function genTasks(){
   const {j} = await call('/api/train/tasks/generate',{method:'POST'});
   document.getElementById('task-msg').textContent = (j&&j.students!=null)? ('已为 '+j.students+' 名学生生成 '+j.date+' 任务 ✓'):'生成失败';
   renderTasks();
+  loadDash();   // 生成后同步刷新看板，否则「查看学生」仍显示生成前的"无任务"
 }
 const STMAP={pending:'待完成',partial:'部分完成',done:'已完成',none:'无任务'};
 function todayStr(d){ d=d||new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
@@ -2076,6 +2077,9 @@ function goSec(id){
   document.querySelectorAll('#side-nav a[data-sec]').forEach(a=>
     a.classList.toggle('active', a.dataset.sec===id));
   window.scrollTo({top:0, behavior:'smooth'});
+  // 切到「每日任务 / 完成看板」时重新拉取，避免显示进入页面时的陈旧状态
+  if(id==='sec-tasks') renderTasks();
+  else if(id==='sec-dash') loadDash();
 }
 
 // 侧栏高亮跟随滚动
