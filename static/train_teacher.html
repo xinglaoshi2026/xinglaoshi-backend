@@ -226,6 +226,16 @@
   .detail .dt-main b{font-size:14.5px;letter-spacing:.01em}
   .detail .dt-sub{color:var(--ink3);font-size:12.5px}
   .detail .dt-acts{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+  /* 已阅 / 评语 */
+  .detail .dt-rv{display:flex;gap:5px;align-items:flex-start;font-size:12.5px;color:var(--ok);margin-top:3px}
+  .detail .dt-rv .ic{width:12.5px;height:12.5px;margin-top:3px;flex:0 0 auto}
+  .detail .dt-rv .rv-tx{color:var(--ink2);white-space:pre-wrap;word-break:break-word}
+  .detail .dt-rv.no{color:var(--ink3)}
+  .dt-rv-pill{display:inline-flex;align-items:center;gap:4px;padding:1px 7px;border-radius:999px;
+    font-size:11.5px;font-weight:700;background:var(--ok-soft);color:var(--ok)}
+  .rv-ta{width:100%;border:1px solid var(--line2);border-radius:12px;padding:10px 12px;font:inherit;
+    font-size:14px;line-height:1.7;color:var(--ink);background:var(--surface);resize:vertical;min-height:110px}
+  .rv-ta:focus{outline:0;border-color:var(--brand2);box-shadow:var(--ring)}
   /* ---------- 批量待发列表 ---------- */
   .batch-item{
     display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 12px;
@@ -1881,12 +1891,63 @@ function renderTaskStu(){
   if(!t){ box.innerHTML='<p style="color:var(--ink3)">该生今天没有任务（可点上方「生成今日任务」）。</p>'; return; }
   box.innerHTML=`<div class="detail">
     <div class="dt-main"><b>${t.studentName||stuName(t.studentId)}</b> · 共${(t.errorIds||[]).length} 题
-      <div class="dt-sub">${STMAP[t.status]||t.status}${t.score!=null?('　正确率 '+(t.score*100).toFixed(0)+'%'):''}</div></div>
+      <div class="dt-sub">${STMAP[t.status]||t.status}${t.score!=null?('　正确率 '+(t.score*100).toFixed(0)+'%'):''}</div>
+      ${reviewLineHtml(t)}</div>
     <div class="dt-acts">
       <button class="tint sm" onclick="downloadStuErrors('${t.studentId}','${t.date}',true)" title="打印给学生做，不含答案"><svg class="ic"><use href="#i-printer"/></svg>下载题目</button>
       <button class="ghost sm" onclick="downloadStuErrors('${t.studentId}','${t.date}')" title="含答案与解析，老师用"><svg class="ic"><use href="#i-download"/></svg>含答案</button>
       <button class="ghost sm" onclick="viewTaskLogs('${t.id}')"><svg class="ic"><use href="#i-eye"/></svg>查看作答</button>
+      ${(t.status==='done'||t.status==='partial')
+        ? `<button class="${t.reviewed?'ghost':''} sm" onclick="openReview('${t.id}')" title="标记已阅并写评语，学生下次打开就能看到"><svg class="ic"><use href="#i-check"/></svg>${t.reviewed?'修改评语':'已阅并评语'}</button>`
+        : `<span class="dt-sub">学生提交后可「已阅」</span>`}
     </div></div>`;
+}
+/* ===== 已阅 / 评语 ===== */
+function escHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function reviewLineHtml(t){
+  const c = (t.reviewComment||'').trim();
+  if(t.reviewed){
+    return '<div class="dt-rv"><svg class="ic"><use href="#i-check"/></svg><span><b>已阅</b>'
+      + (c ? '<span class="rv-tx">　'+escHtml(c)+'</span>'
+           : '<span class="rv-tx" style="color:var(--ink3)">　（未写评语）</span>')
+      + '</span></div>';
+  }
+  return '<div class="dt-rv no"><svg class="ic"><use href="#i-chat"/></svg><span>尚未阅</span></div>';
+}
+// 打开「已阅 / 评语」弹窗
+async function openReview(tid){
+  let t = (window._TASKS||[]).find(x=>x.id===tid);
+  if(!t){
+    try{ const {j}=await call('/api/train/tasks'); t=((j&&j.items)||[]).find(x=>x.id===tid); }catch(e){}
+  }
+  t = t || {};
+  const who = t.studentName || stuName(t.studentId) || '该学生';
+  const cancelBtn = t.reviewed
+    ? '<button class="ghost" onclick="saveReview(\''+tid+'\', false)">取消已阅</button>' : '';
+  showModalHtml('<div class="modal-box" style="max-width:520px">'
+    + '<div class="modal-head"><b>已阅 · 写给'+escHtml(who)+'的评语</b>'
+    + '<button class="ghost icon sm" onclick="closeModal()" title="关闭"><svg class="ic"><use href="#i-close"/></svg></button></div>'
+    + '<p style="color:var(--ink2);font-size:13px;margin:2px 0 10px">'
+    + escHtml(t.date||'')+' · 学生下次打开练习时就能看到；<b>第二天在他提交新练习之前也一直可见</b>。评语可留空，只标记「已阅」。</p>'
+    + '<textarea id="rv-text" class="rv-ta" placeholder="例如：这次单位换算错的少了，第2题的受力分析再画仔细些。">'+escHtml(t.reviewComment||'')+'</textarea>'
+    + '<div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end;flex-wrap:wrap">'
+    + '<button class="ghost" onclick="closeModal()">取消</button>' + cancelBtn
+    + '<button onclick="saveReview(\''+tid+'\', true)"><svg class="ic"><use href="#i-check"/></svg>保存并已阅</button>'
+    + '</div></div>');
+}
+async function saveReview(tid, reviewed){
+  const el = document.getElementById('rv-text');
+  const comment = el ? el.value : '';
+  const {status,j} = await call('/api/train/tasks/review',
+    {method:'POST', body: JSON.stringify({taskId: tid, comment: comment, reviewed: reviewed})});
+  if(status!==200 || !j || !j.ok){ toastMsg((j&&j.error)||'保存失败，请重试'); return; }
+  const at = j.task ? j.task.reviewedAt : Date.now();
+  (window._TASKS||[]).forEach(x=>{ if(x.id===tid){ x.reviewed=reviewed; x.reviewComment=comment; x.reviewedAt=at; } });
+  (window._DASH||[]).forEach(x=>{ if(x.todayTaskId===tid){ x.todayReviewed=reviewed; x.todayReviewComment=comment; } });
+  closeModal();
+  renderTaskStu();
+  renderDashStu();
+  toastMsg(reviewed ? '已标记已阅，学生下次打开就能看到' : '已取消已阅', true);
 }
 // 轻提示（右下角气泡，避免用 alert 打断）
 function toastMsg(text, ok){
@@ -2006,12 +2067,18 @@ function renderDashStu(){
   const s = (window._DASH||[]).find(x=>x.id===sid);
   if(!s){ box.innerHTML='<p style="color:var(--ink3)">该日期下没有此学生的数据。</p>'; return; }
   const score = s.todayScore!=null?(s.todayScore*100).toFixed(0)+'%':'-';
-  const tid = 't_'+s.id+'_'+(window._DASH_DATE||todayStr());
+  const tid = s.todayTaskId || ('t_'+s.id+'_'+(window._DASH_DATE||todayStr()));
+  const hasTask = s.todayStatus && s.todayStatus!=='none';
+  const submitted = (s.todayStatus==='done' || s.todayStatus==='partial');
   box.innerHTML=`<div class="detail">
     <div class="dt-main"><b>${s.name||s.id}</b>
       <div class="dt-sub">循环中 ${s.active} · 已毕业 ${s.mastered} · 新收录 ${s.new}</div>
-      <div class="dt-sub">当日：${STMAP[s.todayStatus]||s.todayStatus||'无任务'}　正确率 ${score}</div></div>
-    ${s.todayStatus&&s.todayStatus!=='none'?`<div class="dt-acts"><button class="ghost sm" onclick="viewTaskLogs('${tid}')"><svg class="ic"><use href="#i-eye"/></svg>查看作答</button></div>`:''}
+      <div class="dt-sub">当日：${STMAP[s.todayStatus]||s.todayStatus||'无任务'}　正确率 ${score}</div>
+      ${hasTask?reviewLineHtml({reviewed:s.todayReviewed, reviewComment:s.todayReviewComment}):''}</div>
+    ${hasTask?`<div class="dt-acts">
+      <button class="ghost sm" onclick="viewTaskLogs('${tid}')"><svg class="ic"><use href="#i-eye"/></svg>查看作答</button>
+      ${submitted?`<button class="${s.todayReviewed?'ghost':''} sm" onclick="openReview('${tid}')" title="标记已阅并写评语，学生下次打开就能看到"><svg class="ic"><use href="#i-check"/></svg>${s.todayReviewed?'修改评语':'已阅并评语'}</button>`:''}
+    </div>`:''}
   </div>`;
 }
 function stat(v,l){return `<div class="stat"><b>${v}</b>${l}</div>`;}

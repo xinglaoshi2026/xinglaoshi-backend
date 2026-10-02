@@ -138,6 +138,18 @@
   .pill.plain{background:rgba(255,255,255,.72);color:var(--brand3)}
   #head{margin-bottom:10px}
 
+  /* ---------- 老师已阅 / 评语（简洁商务） ---------- */
+  #reviewCard{padding:14px 16px;border-left:3px solid var(--ok);margin-bottom:12px}
+  #reviewCard .rv-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  #reviewCard .rv-tag{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;
+    letter-spacing:.07em;color:var(--ok)}
+  #reviewCard .rv-tag .ic{width:14px;height:14px}
+  #reviewCard .rv-date{font-size:11.5px;color:var(--ink3);letter-spacing:.02em}
+  #reviewCard .rv-text{margin-top:8px;font-size:15.5px;line-height:1.72;color:var(--ink);
+    white-space:pre-wrap;word-break:break-word}
+  #reviewCard .rv-text.muted{color:var(--ink3);font-size:14px}
+  #reviewCard .rv-note{margin-top:7px;font-size:12px;color:var(--ink3);letter-spacing:.01em}
+
   /* ---------- 上传后提示 ---------- */
   .hintbox{
     border-color:#dae9db;background:linear-gradient(180deg,#f7fbf7,#eff7f0);
@@ -393,6 +405,8 @@
 
     <div class="card" id="head"></div>
 
+    <div class="card reviewcard hidden" id="reviewCard"></div>
+
     <div id="items"></div>
     <div id="result"></div>
 
@@ -529,6 +543,32 @@ function fmtDate(ds){
   const wd = ['日','一','二','三','四','五','六'][d.getDay()];
   return (d.getMonth()+1)+'月'+d.getDate()+'日 · 星期'+wd;
 }
+function fmtShortDate(ds){
+  if(!ds) return '';
+  const d = new Date(ds.replace(/-/g,'/'));
+  if(isNaN(d.getTime())) return ds;
+  return (d.getMonth()+1)+'月'+d.getDate()+'日';
+}
+function escHtml(s){
+  return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+/* 老师已阅 / 评语卡片（简洁商务）：
+   今天已被老师阅过 → 显示今天的；今天还没提交完 → 显示上一次（前一天）的评语。 */
+function renderReview(rv){
+  const el = document.getElementById('reviewCard');
+  if(!el) return;
+  if(!rv){ el.classList.add('hidden'); el.innerHTML=''; el.dataset.today='0'; return; }
+  const c = (rv.comment||'').trim();
+  el.dataset.today = rv.isToday ? '1' : '0';
+  el.classList.remove('hidden');
+  el.innerHTML = '<div class="rv-top">'
+    + '<span class="rv-tag"><svg class="ic"><use href="#i-check"/></svg>老师已阅</span>'
+    + '<span class="rv-date">'+escHtml(fmtShortDate(rv.date)||(rv.isToday?'今天':''))+'</span>'
+    + '</div>'
+    + (c ? '<div class="rv-text">'+escHtml(c)+'</div>'
+         : '<div class="rv-text muted">老师已经看过这次练习。</div>')
+    + (rv.isToday ? '' : '<div class="rv-note">这是上一次练习的评语，今天提交前都还能看到。</div>');
+}
 // 入场动效：卡片错峰上浮
 function animateIn(){
   const els=[...document.querySelectorAll('#head.card, #items .q, #sharedCard, #afterHint')];
@@ -541,6 +581,7 @@ function animateIn(){
 async function loadToday(){
   const {status,j}=await call('/api/train/today');
   if(status===401){ logout(); return; }
+  renderReview(j && j.review);
   const task=j.task;
   const head=document.getElementById('head');
   const bb=document.getElementById('bottomBar');

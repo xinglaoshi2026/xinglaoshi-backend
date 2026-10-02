@@ -866,6 +866,39 @@ def train_generate_tasks(date_str=None):
     return {"ok": True, "date": date_str, "students": made}
 
 
+def train_reviewed_tasks(student_id):
+    """该学生被老师「已阅」过的任务，按日期倒序。"""
+    out = []
+    for t in store_list("trainTasks", limit=8000):
+        b = t.get("body") or {}
+        if b.get("studentId") == student_id and b.get("reviewed"):
+            out.append(b)
+    out.sort(key=lambda x: (x.get("date") or ""), reverse=True)
+    return out
+
+
+def _review_payload(task, is_today):
+    return {"date": task.get("date") or "",
+            "comment": (task.get("reviewComment") or "").strip(),
+            "reviewedAt": task.get("reviewedAt"),
+            "isToday": bool(is_today)}
+
+
+def train_pick_review(student_id, date_str, finished=False, today=None):
+    """学生端该显示哪条评语：
+    - 今天的任务已被老师阅过 → 显示今天的（不论是否提交完）；
+    - 今天还没全部提交（含今天没有任务）→ 显示最近一次已阅，即"前一天的评语"；
+    - 今天已全部提交、老师还没阅今天的 → 不显示旧评语（避免和"已完成"混淆）。"""
+    if today and today.get("reviewed"):
+        return _review_payload(today, True)
+    if finished:
+        return None
+    for t in train_reviewed_tasks(student_id):
+        if (t.get("date") or "") < date_str:
+            return _review_payload(t, False)
+    return None
+
+
 def train_student_today(student_id, date_str=None):
     """返回某学生当天的任务(含错题明细)。
     只有老师点了「生成今日任务」后才存在任务；未生成前学生端应显示"今天还没有练习"，
@@ -874,12 +907,15 @@ def train_student_today(student_id, date_str=None):
     tid = "t_%s_%s" % (student_id, date_str)
     task, _ = store_get("trainTasks", tid)
     if not task or not task.get("generated"):
-        return {"task": None, "items": []}
+        # 今天还没生成任务：把最近一次的评语继续带出来（新的一天提交前仍能看到）
+        return {"task": None, "items": [],
+                "review": train_pick_review(student_id, date_str)}
     train_heal_task_status(task)   # 旧数据自愈：答完却没记成 done 的纠正过来
     # 已答/总题数一并下发，学生端据此判断"今天是否已全部完成"（不单纯依赖 status 字段）
     need = set(task.get("errorIds") or [])
     done_ids = train_answered_ids(task.get("id"))
     answered_n = len(need & done_ids)
+    finished = bool(need) and need <= done_ids
     items = []
     for eid in task.get("errorIds", []):
         e, _ = store_get("trainErrors", eid)
@@ -890,7 +926,8 @@ def train_student_today(student_id, date_str=None):
         pub["answered"] = eid in done_ids   # 今天这题是否已交过（中途退出再进来时无需重填）
         items.append(pub)
     return {"task": task, "items": items,
-            "answered": answered_n, "total": len(need)}
+            "answered": answered_n, "total": len(need),
+            "review": train_pick_review(student_id, date_str, finished=finished, today=task)}
 
 
 def train_submit(student_id, date_str, answers):
@@ -983,7 +1020,10 @@ def train_dashboard(date_str=None):
         per_student.append({"id": sid, "name": s.get("name") or s.get("username") or "",
                             "active": active, "mastered": mastered, "new": new0,
                             "todayStatus": t.get("status") if t else "none",
-                            "todayScore": t.get("score") if t else None})
+                            "todayScore": t.get("score") if t else None,
+                            "todayReviewed": bool(t.get("reviewed")) if t else False,
+                            "todayReviewComment": (t.get("reviewComment") or "") if t else "",
+                            "todayTaskId": t.get("id") if t else None})
     return {"todayDate": today, "studentsTotal": len(students),
             "tasksToday": len(tasks_today), "doneToday": done,
             "perStudent": per_student}
@@ -1600,6 +1640,30 @@ class H(BaseHTTPRequestHandler):
             if not sid:
                 return send_json(self, {"error": "缺少 studentId"}, 400)
             return send_json(self, train_submit(sid, body.get("date"), body.get("answers") or []))
+        # 老师「已阅」+ 评语（学生端下次打开即可看到；第二天提交新练习前也一直可见）
+        if p == "/api/train/tasks/review":
+            if is_student:
+                return send_json(self, {"error": "无权限"}, 403)
+            body, err = read_body(self)
+            if err:
+                return send_json(self, {"error": err}, 400)
+            tid = (body.get("taskId") or "").strip()
+            if not tid:
+                return send_json(self, {"error": "缺少 taskId"}, 400)
+            task, _ = store_get("trainTasks", tid)
+            if not task:
+                return send_json(self, {"error": "任务不存在"}, 404)
+            reviewed = body.get("reviewed")
+            reviewed = True if reviewed is None else bool(reviewed)
+            task["reviewed"] = reviewed
+            task["reviewComment"] = (body.get("comment") or "").strip()[:2000]
+            task["reviewedAt"] = now_ms() if reviewed else None
+            task["reviewedBy"] = (u.get("name") or u.get("username") or "") if reviewed else ""
+            task["updatedAt"] = now_ms()
+            store_put("trainTasks", tid, task)
+            return send_json(self, {"ok": True, "task": {
+                "id": tid, "reviewed": reviewed, "reviewComment": task["reviewComment"],
+                "reviewedAt": task["reviewedAt"]}})
         # 学生上传草稿/错题图片(需登录; 仅允许图片, 防任意文件上传滥用)
         if p == "/api/train/media":
             sid = _eff_sid((q.get("studentId", [None])[0] or "").strip())
