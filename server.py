@@ -1953,9 +1953,10 @@ class H(BaseHTTPRequestHandler):
             self.send_response(404); self.send_cors(); self.end_headers(); return
         if p == "/api/health":
             # 运维诊断: 云端容器磁盘容量/余量(决定能否容纳全部媒体图)
-            # 需要登录：否则会向匿名访客暴露服务器数据目录与磁盘信息
-            if not user_of(get_token(self)):
-                return send_json(self, {"error": "未登录"}, 401)
+            # 运维诊断：仅老师/管理员可见（学生也不需要），否则泄露数据目录与磁盘信息
+            _hu = user_of(get_token(self))
+            if not _hu or _hu.get("role") not in ("admin", "teacher"):
+                return send_json(self, {"error": "无权限"}, 403)
             try:
                 du = shutil.disk_usage(os.path.dirname(MEDIA_DIR) or ".")
                 n = 0
