@@ -1614,6 +1614,12 @@ class H(BaseHTTPRequestHandler):
             e, _ = store_get("trainErrors", eid)
             if not e:
                 return send_json(self, {"error": "错题不存在"}, 404)
+            # 归属校验：学生只能看「自己名下（有自己错题卡）」的答案，避免猜到/拿到
+            # 别人的 errorId 就套走答案。老师/管理员不受限。
+            if is_student:
+                c, _ = store_get("trainCards", train_card_id(eff_sid, eid))
+                if not c:
+                    return send_json(self, {"error": "无权限"}, 403)
             return send_json(self, {"errorId": eid,
                                     "answer": e.get("answer") or "",
                                     "analysis": e.get("analysis") or "",
