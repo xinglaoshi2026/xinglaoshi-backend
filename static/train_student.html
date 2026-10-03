@@ -25,7 +25,7 @@
   html{-webkit-text-size-adjust:100%}
   body{
     margin:0;background:var(--bg);color:var(--ink);font-size:16px;line-height:1.65;
-    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    font-family:-apple-system,BlinkMacSystemFont,"MiSans","HarmonyOS Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
     -webkit-font-smoothing:antialiased;letter-spacing:.005em;
     background-image:radial-gradient(700px 360px at 50% -130px,#fff4e6 0%,rgba(255,244,230,0) 70%);
     background-attachment:fixed;
@@ -202,28 +202,35 @@
   .statusline .ic{width:15px;height:15px}
   .statusline.warn{color:var(--warn)}
 
-  /* ---------- 题目卡（弱化标签，突出题目） ---------- */
+  /* ---------- 题目卡（题号轻量、来源标签弱化、题图才是主角） ---------- */
   .q{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
-     padding:14px 15px;margin-bottom:12px;box-shadow:var(--sh1)}
-  .qhead{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:8px}
+     padding:13px 14px;margin-bottom:12px;box-shadow:var(--sh1)}
+  .qhead{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:7px}
   .qno{
-    flex:0 0 auto;height:22px;padding:0 10px;border-radius:8px;
-    background:var(--brand-soft);color:var(--brand3);
-    font-size:12.5px;font-weight:750;display:inline-flex;align-items:center;justify-content:center;
+    flex:0 0 auto;height:20px;padding:0 8px;border-radius:7px;
+    background:transparent;border:1px solid var(--line2);color:var(--ink2);
+    font-size:11.5px;font-weight:650;letter-spacing:.04em;
+    display:inline-flex;align-items:center;justify-content:center;
   }
-  .kchip{background:var(--brand-soft);color:var(--brand3);font-size:11.5px;padding:3px 9px;border-radius:999px;font-weight:650}
+  .kchip{background:var(--brand-soft);color:var(--brand3);font-size:11px;padding:2.5px 8px;border-radius:999px;font-weight:600;letter-spacing:.02em}
   .qbody{font-size:18px;line-height:1.75;color:var(--ink);word-break:break-word;font-weight:500;letter-spacing:.005em}
-  /* 题面主体：最大最重的一块，衬底 + 左侧主色条 + 轻投影，一眼锁定题目 */
+  /* 题面主体：回归正常文字量级（题目本身=图片才是主角），轻衬底 + 细左条 */
   .q .qbody{
-    font-size:22px;line-height:1.62;font-weight:700;color:#0f131a;letter-spacing:.005em;
-    background:linear-gradient(180deg,#fffbf5,#f8f0e4);
-    border:1px solid #f1e5d4;border-left:5px solid var(--brand);
-    border-radius:14px;padding:14px 16px;
-    box-shadow:0 3px 14px rgba(160,92,49,.07);
+    font-size:16px;line-height:1.75;font-weight:500;color:var(--ink);letter-spacing:.005em;
+    background:#fdfaf5;border:1px solid var(--line);border-left:3px solid var(--brand2);
+    border-radius:12px;padding:10px 13px;
   }
   .q .qbody:empty{display:none}
+  /* 短来源标签（如「选择题 J2-K6-T3·例3」）：弱化成小灰签，不抢题目视觉 */
+  .srcline{
+    display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    font-size:12px;font-weight:600;color:var(--ink3);letter-spacing:.04em;
+    background:rgba(255,255,255,.65);border:1px solid var(--line);
+    border-radius:8px;padding:3px 9px;margin-bottom:8px;
+  }
   .qbody img,.qi{max-width:100%;border-radius:12px;display:block}
-  img.qi{width:100%;margin-top:9px;cursor:zoom-in;border:1px solid var(--line);border-radius:14px}
+  img.qi{width:100%;margin-top:10px;cursor:zoom-in;border:1px solid var(--line);border-radius:14px;
+    box-shadow:var(--sh1)}
   .filetag{
     display:inline-flex;align-items:center;gap:5px;background:#fff;color:var(--brand3);
     border:1px solid var(--line2);border-radius:10px;padding:6px 11px;font-size:13px;
@@ -569,6 +576,22 @@ function fmtShortDate(ds){
 function escHtml(s){
   return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+/* 题干若只是「来源标签」（如「选择题 J2-K6-T3·例3」「【例3】(2024·…)」这类短标注），
+   弱化成小灰签，不再用大号加粗渲染——题目本身（图片/正文）才是主角。 */
+function isSrcLabel(s){
+  s=(s||'').trim();
+  if(!s || s.length>30) return false;
+  if(/[。！？!?；;]/.test(s)) return false;          // 含句读 = 真题面，不当标签
+  return /^(选择题|单选题|多选题|填空题|判断题|解答题|计算题|实验题|作图题|简答题|综合题|应用题|例题|练习题|真题|专题|题型)/.test(s)
+      || /^第?\d+\s*题$/.test(s)
+      || /^[（(【\[〕\]）\s]*看图[作答读图完成]*[）)】\]s]*$/.test(s);
+}
+function stemHtml(s, hasImg){
+  s=(s||'').trim();
+  if(!s) return hasImg?'':'<div class="srcline">（看图作答）</div>';
+  if(isSrcLabel(s)) return '<div class="srcline" title="'+escHtml(s)+'">'+escHtml(s)+'</div>';
+  return '<div class="qbody">'+escHtml(s)+'</div>';
+}
 /* 老师已阅 / 评语卡片（简洁商务）：
    今天已被老师阅过 → 显示今天的；今天还没提交完 → 显示上一次（前一天）的评语。 */
 function renderReview(rv){
@@ -679,7 +702,7 @@ async function loadToday(){
     }).join(' ') : '';
     box.insertAdjacentHTML('beforeend',`<div class="q" id="q_${idx}" data-idx="${idx}" data-eid="${e.id}" data-answered="${e.answered?1:0}">
       <div class="qhead"><div class="qno">第${idx+1}题</div>${e.knowledgePoint?('<span class="kchip">'+e.knowledgePoint+'</span>'):''}${e.answered?('<span class="pill ok">今天已交</span>'):''}</div>
-      <div class="qbody">${escHtml(e.stem||(imgs.length?'':'（看图作答）'))}</div>${imgHtml}
+      ${stemHtml(e.stem,imgs.length)}${imgHtml}
       ${files?('<div style="margin-top:8px">'+files+'</div>'):''}
       <div id="rv_${idx}" class="rv hidden"></div>
       <div id="fb_${idx}" class="fb"></div>
@@ -937,7 +960,7 @@ async function loadWeek(){
     }).join(' ') : '';
     return `<div class="wq">
       <div class="wmeta"><span>${i+1}</span><span>${e.wrongDate||''}</span>${e.knowledgePoint?('<span class="kchip" style="margin-left:2px">'+e.knowledgePoint+'</span>'):''}</div>
-      <div class="qbody">${escHtml(e.stem||'')}${(!e.stem&&!imgs.length)?'（看图）':''}</div>${imgs}
+      ${stemHtml(e.stem,imgs.length)}${imgs}
       ${files?('<div style="margin-top:8px">'+files+'</div>'):''}
       <button class="btn3 sm" style="margin-top:10px" onclick="const d=document.getElementById('wans_${i}'); d.classList.toggle('hidden'); this.textContent=d.classList.contains('hidden')?'看解析':'收起解析'">看解析</button>
       <div id="wans_${i}" class="hidden"><div class="ansbox"><div class="lb">答案与解析</div>
