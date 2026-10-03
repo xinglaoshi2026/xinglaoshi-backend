@@ -80,8 +80,21 @@
   // 媒体文件访问地址：补上后端 base 与登录 token。
   // <img>/<a> 标签无法自动带 Authorization 头，必须放到 URL 上，否则云端媒体接口返回 401，
   // 导致手机端看不到题目/答案图片（电脑端用本地文件故正常）。
+  // 图片签名：图片接口需要「限时票据」，登录后领一张拼到 <img src> 上（24 小时有效）。
+  // 票据不是登录 token，泄露影响有界；过期后重新进页面/切回前台会自动续。
+  let MT = "";
+  async function loadMediaTicket() {
+    try {
+      const r = await api("GET", "/api/media/ticket");
+      MT = (r && r.tk) ? ("e=" + encodeURIComponent(r.exp) + "&tk=" + encodeURIComponent(r.tk)) : "";
+    } catch (e) { MT = ""; }
+  }
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) loadMediaTicket();
+  });
   function mediaUrl(p) {
     const base = localStorage.getItem(LS_BASE) || "";
+    if (MT) return base + "/api/media/" + p + (p.indexOf("?") >= 0 ? "&" : "?") + MT;
     const t = token || "";
     return base + "/api/media/" + p + (t ? "?token=" + encodeURIComponent(t) : "");
   }
@@ -255,6 +268,7 @@
   async function enterMain() {
     $("#loginView").classList.add("hidden"); $("#mainView").classList.remove("hidden");
     $("#qList").innerHTML = '<div class="center">正在同步数据…</div>';
+    await loadMediaTicket();   // 先领图片签名票据，后面渲染的图片才带签名
     await loadPull(true);
     switchMain("questions");
     startAutoSync(); // 启动自动同步（手机端改动无需手动下拉刷新）

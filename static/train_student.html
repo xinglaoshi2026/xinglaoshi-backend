@@ -483,6 +483,22 @@ async function call(p, opts={}){
   return {status:r.status, j};
 }
 
+// 图片签名：图片接口需要限时票据，登录后领一张拼到 <img src> 上（24 小时有效）
+let MT = '';
+async function loadMediaTicket(){
+  try{
+    const {status,j} = await call('/api/media/ticket');
+    MT = (status===200 && j && j.tk) ? ('e='+encodeURIComponent(j.exp)+'&tk='+encodeURIComponent(j.tk)) : '';
+  }catch(e){ MT=''; }
+}
+// 服务端给的媒体路径(/api/media/xxx) → 带签名的完整地址
+function murl(u){
+  u = (u==null ? '' : String(u));
+  if(!u || /^https?:/i.test(u)) return u;
+  return API + u + (u.indexOf('?')>=0 ? '&' : '?') + MT;
+}
+document.addEventListener('visibilitychange', function(){ if(!document.hidden) loadMediaTicket(); });
+
 function show(ok){
   document.getElementById('login').classList.toggle('hidden', ok);
   document.getElementById('main').classList.toggle('hidden', !ok);
@@ -500,6 +516,7 @@ async function doLogin(){
   localStorage.setItem('tt_token', TOKEN);
   show(true);
   setMe(null);
+  await loadMediaTicket();     // 先领图片签名票据，再加载今日任务（图片才带签名）
   try{
     const r = await call('/api/train/students');
     if(r.status===200 && r.j && r.j.items && r.j.items[0]) setMe(r.j.items[0]);
@@ -655,10 +672,10 @@ async function loadToday(){
   box.innerHTML=''; ST={};
   j.items.forEach((e,idx)=>{
     const imgs = (e.images&&e.images.length)?e.images:(e.image?[e.image]:[]);
-    const imgHtml = imgs.map(u=>`<img class="qi" src="${API+u}" onclick="zoomImg('${API+u}')">`).join('');
+    const imgHtml = imgs.map(u=>`<img class="qi" src="${murl(u)}" onclick="zoomImg('${murl(u)}')">`).join('');
     const files = (e.files&&e.files.length)? e.files.map(f=>{
       const fu = (typeof f==='string')?f:(f.url||''); const fn=(typeof f==='string')?'附件':(f.name||'附件');
-      return `<a class="filetag" href="${API+fu}" target="_blank" rel="noopener">附件 · ${fn}</a>`;
+      return `<a class="filetag" href="${murl(fu)}" target="_blank" rel="noopener">附件 · ${fn}</a>`;
     }).join(' ') : '';
     box.insertAdjacentHTML('beforeend',`<div class="q" id="q_${idx}" data-idx="${idx}" data-eid="${e.id}" data-answered="${e.answered?1:0}">
       <div class="qhead"><div class="qno">第${idx+1}题</div>${e.knowledgePoint?('<span class="kchip">'+e.knowledgePoint+'</span>'):''}${e.answered?('<span class="pill ok">今天已交</span>'):''}</div>
@@ -682,7 +699,7 @@ function addSharedPhotos(inp){
 }
 function renderShared(){
   document.getElementById('shared-pv').innerHTML =
-    SHARED.urls.map(u=>`<span class="tw"><img src="${API+u}" onclick="zoomImg('${API+u}')">`
+    SHARED.urls.map(u=>`<span class="tw"><img src="${murl(u)}" onclick="zoomImg('${murl(u)}')">`
       + `<span class="tick" style="display:flex;align-items:center;justify-content:center"><svg class="ic" style="width:12px;height:12px"><use href="#i-check"/></svg></span></span>`).join('')
     + SHARED.photos.map((f,i)=>
       `<span class="tw"><img src="${URL.createObjectURL(f)}"><button class="x" onclick="delSharedPhoto(${i})">×</button></span>`).join('');
@@ -739,7 +756,7 @@ async function revealOne(idx){
   if(status===401){ logout(); return; }
   if(!j||j.error) return;
   st.revealed=true;
-  const ansImgs=(j.answerImages&&j.answerImages.length)?j.answerImages.map(u=>`<img class="qi" src="${API+u}" onclick="zoomImg('${API+u}')">`).join(''):'';
+  const ansImgs=(j.answerImages&&j.answerImages.length)?j.answerImages.map(u=>`<img class="qi" src="${murl(u)}" onclick="zoomImg('${murl(u)}')">`).join(''):'';
   document.getElementById('rv_'+idx).innerHTML=`
     <div class="ansbox">
       <div class="lb"><svg class="ic"><use href="#i-bulb"/></svg>答案与解析</div>
@@ -852,7 +869,7 @@ async function submit(){
   let h='<div class="score"><div class="big">'+j.right+' / '+j.total+'</div><div class="lb">本次自评做对 '+j.right+' 道，继续加油</div></div>';
   (j.results||[]).forEach((r,i)=>{
     const ok=r.result==='right'||r.result==='self_right';
-    const ansImgs=(r.answerImages&&r.answerImages.length)?r.answerImages.map(u=>`<img class="qi" src="${API+u}" onclick="zoomImg('${API+u}')">`).join(''):'';
+    const ansImgs=(r.answerImages&&r.answerImages.length)?r.answerImages.map(u=>`<img class="qi" src="${murl(u)}" onclick="zoomImg('${murl(u)}')">`).join(''):'';
     h+=`<div class="rescard"><div class="qi"><svg class="ic" style="width:15px;height:15px;color:${ok?'var(--ok)':'var(--err)'}"><use href="#i-${ok?'check':'x'}"/></svg>第${i+1}题 · <b style="color:${ok?'var(--ok)':'var(--err)'}">${ok?'做对了':'做错了'}</b></div>
       <div style="color:var(--ink2);margin-top:4px">${r.analysis||'（无解析）'}</div>${ansImgs?('<div>'+ansImgs+'</div>'):''}</div>`;
   });
@@ -911,12 +928,12 @@ async function loadWeek(){
   if(!recent.length){ box.innerHTML = '<div class="hint" style="padding:8px 0">最近一周还没有错题记录</div>'; return; }
   box.innerHTML = recent.map((e,i)=>{
     const imgs = ((e.images&&e.images.length)?e.images:(e.image?[e.image]:[]))
-      .map(u=>`<img class="qi" src="${API+u}" onclick="zoomImg('${API+u}')">`).join('');
+      .map(u=>`<img class="qi" src="${murl(u)}" onclick="zoomImg('${murl(u)}')">`).join('');
     const ansImgs = (e.answerImages&&e.answerImages.length)
-      ? e.answerImages.map(u=>`<img class="qi" src="${API+u}" onclick="zoomImg('${API+u}')">`).join('') : '';
+      ? e.answerImages.map(u=>`<img class="qi" src="${murl(u)}" onclick="zoomImg('${murl(u)}')">`).join('') : '';
     const files = (e.files&&e.files.length)? e.files.map(f=>{
       const fu=(typeof f==='string')?f:(f.url||''); const fn=(typeof f==='string')?'附件':(f.name||'附件');
-      return `<a class="filetag" href="${API+fu}" target="_blank" rel="noopener">附件 · ${fn}</a>`;
+      return `<a class="filetag" href="${murl(fu)}" target="_blank" rel="noopener">附件 · ${fn}</a>`;
     }).join(' ') : '';
     return `<div class="wq">
       <div class="wmeta"><span>${i+1}</span><span>${e.wrongDate||''}</span>${e.knowledgePoint?('<span class="kchip" style="margin-left:2px">'+e.knowledgePoint+'</span>'):''}</div>
@@ -971,12 +988,14 @@ async function downloadErrors(){
 // 启动时若有 token 尝试直接进入(后端会校验有效性)
 if(TOKEN){
   show(true);
-  call('/api/train/students').then(({status,j})=>{
+  (async()=>{
+    await loadMediaTicket();
+    const {status,j} = await call('/api/train/students');
     if(status===401){ logout(); return; }
     const me = (j && j.items && j.items[0]) || null;
     setMe(me);
     loadToday().then(updateWeekLock);
-  });
+  })();
 }
 </script>
 </body>

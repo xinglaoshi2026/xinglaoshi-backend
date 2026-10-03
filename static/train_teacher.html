@@ -1182,6 +1182,21 @@ function esc(s){
   return (s==null?'':String(s)).replace(/[&<>"']/g, c => (
     {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+// 图片签名：图片接口需要「限时票据」，登录后领一张拼到 <img src> 上（有效期 24 小时）
+let MT = '';
+async function loadMediaTicket(){
+  try {
+    const {status,j} = await call('/api/media/ticket');
+    MT = (status===200 && j && j.tk) ? ('e=' + encodeURIComponent(j.exp) + '&tk=' + encodeURIComponent(j.tk)) : '';
+  } catch(e){ MT = ''; }
+}
+// 服务端给的媒体路径(/api/media/xxx) → 带签名的完整地址
+function murl(u){
+  u = (u==null ? '' : String(u));
+  if(!u || /^https?:/i.test(u)) return u;
+  return API + u + (u.indexOf('?')>=0 ? '&' : '?') + MT;
+}
+document.addEventListener('visibilitychange', function(){ if(!document.hidden) loadMediaTicket(); });
 
 async function call(path, opts={}) {
   opts.headers = opts.headers || {};
@@ -1206,6 +1221,7 @@ async function start(){
   document.getElementById('login').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
   initTheme();
+  await loadMediaTicket();       // 先领图片签名票据，之后渲染的图片才带签名
   await loadStudents();          // 先取到学生，再填充「每日任务 / 完成看板」的学生下拉，避免选不了
   loadKpOptions();
   renderTasks(); loadDash(); loadStuMgmt();
@@ -1445,7 +1461,7 @@ async function searchQb(){
   if(!items.length){ box.innerHTML='<p class="err">题库里没有匹配的题目</p>'; return; }
   items.forEach(x=>{
     const b = x.body||{}; qbCache[x.id]=b;
-    const preview = (b.content||'').replace(/media:\/\//g, API+'/api/media/');
+    const preview = (b.content||'').replace(/media:\/\/([^"'\s>]+)/g, (m,rel)=>murl('/api/media/'+rel));
     const name = qbKpName[b.kpId]||b.kpId||'';
     box.insertAdjacentHTML('beforeend', `<div class="qb-item">
       ${preview}
@@ -1648,10 +1664,10 @@ async function loadErrors(){
   (j?j.items:[]).forEach(e=>{
     const imgs = (e.images&&e.images.length)?e.images:(e.image?[e.image]:[]);
     // 题图缩略图全部展示，点击放大
-    const ri = imgs.length ? (zoomReg.push(imgs.map(u=>API+u))-1) : -1;
-    const img = imgs.map((u,k)=>`<img class="thumb" src="${esc(API+u)}" onclick="zoomList(${ri},${k})">`).join('');
+    const ri = imgs.length ? (zoomReg.push(imgs.map(u=>murl(u)))-1) : -1;
+    const img = imgs.map((u,k)=>`<img class="thumb" src="${esc(murl(u))}" onclick="zoomList(${ri},${k})">`).join('');
     const files = (e.files&&e.files.length)?(' <span class="pill m">'+e.files.length+'附件</span>'):'';
-    const ai = (e.answerImages&&e.answerImages.length) ? (zoomReg.push(e.answerImages.map(u=>API+u))-1) : -1;
+    const ai = (e.answerImages&&e.answerImages.length) ? (zoomReg.push(e.answerImages.map(u=>murl(u)))-1) : -1;
     const ans = ai>=0?` <button class="pillbtn" onclick="zoomList(${ai},0)"><svg class="ic"><use href="#i-photo-stack"/></svg>答案图 <b>${e.answerImages.length}</b> 张</button>`:'';
     const n = counts[e.id]||0;
     box.insertAdjacentHTML('beforeend',`<div class="err-row">
@@ -1698,7 +1714,7 @@ function zoomDrafts(urlsJson){
     box.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;z-index:120;cursor:zoom-out';
     box.onclick=function(){ box.style.display='none'; };
     document.body.appendChild(box); }
-  const draw=()=>{ box.innerHTML='<div style="text-align:center"><img src="'+API+urls[i]+'" style="max-width:92%;max-height:80%;border-radius:10px">'+
+  const draw=()=>{ box.innerHTML='<div style="text-align:center"><img src="'+murl(urls[i])+'" style="max-width:92%;max-height:80%;border-radius:10px">'+
     '<div style="color:#fff;margin-top:10px;display:flex;gap:8px;align-items:center;justify-content:center">'
     +'<span style="opacity:.75;font-variant-numeric:tabular-nums">'+(i+1)+'/'+urls.length+'</span>'
     +'<button class="ghost icon sm" onclick="event.stopPropagation();zprev()" title="上一张"><svg class="ic"><use href="#i-left"/></svg></button>'
@@ -1787,8 +1803,9 @@ async function loadStuMgmt(){
     call('/api/train/student/accounts'),
     call('/api/train/errors')
   ]);
-  const accMap = {}, accPw = {};
-  (acc?acc.items:[]).forEach(a=>{ accMap[a.studentId]=a.username; if(a.password) accPw[a.studentId]=a.password; });
+  // 服务端不再返回明文密码（只存哈希）：只拿账号名 + 是否已设密码
+  const accMap = {}, accHasPw = {};
+  (acc?acc.items:[]).forEach(a=>{ accMap[a.studentId]=a.username; accHasPw[a.studentId]=!!a.hasPassword; });
   // 统计每位学生的错题数（服务端每生一条记录：studentId；兼容旧 studentIds 数组）
   const errCount = {};
   (errs?errs.items:[]).forEach(e=>{
@@ -1800,7 +1817,7 @@ async function loadStuMgmt(){
   // 进入「学生管理」时会重新拉，若只靠 loadStudents 建的 _STU_MAP 就会是旧名单）。
   window._STU_MAP = {};
   list.forEach(s=>{ window._STU_MAP[s.id] = s.name||s.username||s.id; });
-  window._MGMT = {stus:list, accMap, accPw, errCount};
+  window._MGMT = {stus:list, accMap, accHasPw, errCount};
   fillStuSelect('mgmt-stu');
   renderMgmt();
 }
@@ -1816,7 +1833,7 @@ function renderMgmt(){
   if(!s){ clear(); return; }
   const name = s.name||s.username||s.id;
   const has = window._MGMT.accMap[s.id];
-  const pw = (window._MGMT.accPw||{})[s.id] || '';   // 已保存的密码（明文，供老师查看）
+  const hasPw = !!(window._MGMT.accHasPw||{})[s.id];
   const cnt = window._MGMT.errCount[s.id]||0;
   box.innerHTML=`<div class="stu-card">
     <div class="sc-info">
@@ -1826,7 +1843,10 @@ function renderMgmt(){
     </div>
     <div class="sc-fields">
       <div><label>账号</label><input id="su_${s.id}" value="${(has||'').replace(/"/g,'&quot;')}"></div>
-      <div><label>密码</label><input id="sp_${s.id}" type="text" value="${(pw||'').replace(/"/g,'&quot;')}"></div>
+      <div><label>密码</label><div style="display:flex;align-items:center;height:34px">
+        <span class="pill ${hasPw?'ok':''}" style="white-space:nowrap">${hasPw?'已设置（不可查看）':'未设置'}</span>
+        <button type="button" class="tint sm" style="margin-left:6px" onclick="resetStuPw('${s.id}')" title="生成一个新密码（只显示这一次，请转给学生）">🎲 重置密码</button>
+      </div></div>
       <div><label>每日训练题数</label><input id="sd_${s.id}" type="number" min="1" max="20" value="${s.dailyCount||3}"></div>
     </div>
     <div class="sc-greet">
@@ -1883,15 +1903,44 @@ async function viewStuErrors(sid){
 }
 async function setStu(sid){
   const username = document.getElementById('su_'+sid).value.trim();
-  const password = document.getElementById('sp_'+sid).value;
   if(!username){ alert('请填写账号'); return; }
-  if(!password){ alert('请填写密码（首次设置或修改都需填）'); return; }
-  const {status,j} = await call('/api/train/student/account',{method:'POST',json:{studentId:sid,username,password}});
+  // 只保存账号名；密码不再明文保存，用「重置密码」生成
+  const {status,j} = await call('/api/train/student/account',{method:'POST',json:{studentId:sid,username}});
   if(status!==200){ alert((j&&j.error)||'保存失败'); return; }
-  alert('已保存账号 ✓');
+  toastMsg('账号已保存 ✓（密码请用「重置密码」生成）', true);
   await loadStuMgmt();
   document.getElementById('mgmt-stu').value = sid;
   renderMgmt();
+}
+// 重置密码：服务端生成一个新密码，只在这里显示一次，请老师转给学生
+window._LASTPW = null;
+async function resetStuPw(sid){
+  const name = (window._STU_MAP&&window._STU_MAP[sid]) || sid;
+  if(!confirm('给「'+name+'」生成一个新的登录密码？\n\n· 新密码只显示这一次，请立刻记下或转给学生\n· 旧密码立即失效')) return;
+  const {status,j} = await call('/api/train/student/reset_password',{method:'POST',json:{studentId:sid}});
+  if(status!==200 || !j || !j.ok){ alert((j&&j.error)||'重置失败'); return; }
+  window._LASTPW = {u:j.username, p:j.password, n:name};
+  showModalHtml(`<div class="modal-box" style="max-width:400px">
+    <div class="modal-head"><b>新密码已生成</b>
+      <button class="ghost icon sm" onclick="closeModal()" title="关闭"><svg class="ic"><use href="#i-close"/></svg></button></div>
+    <p style="margin:6px 0">学生 <b>${esc(name)}</b> 的新登录信息（<span style="color:#e5484d">只显示这一次</span>，请立刻记下/转发）：</p>
+    <div style="background:#f4f6f9;border-radius:10px;padding:12px 14px;font-size:16px;line-height:1.9">
+      账号：<b>${esc(j.username)}</b><br>密码：<b style="letter-spacing:2px">${esc(j.password)}</b>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="lg" style="flex:1" onclick="copyStuPw()">复制账号密码</button>
+      <button class="ghost" onclick="closeModal()">关闭</button>
+    </div></div>`);
+  await loadStuMgmt();
+  document.getElementById('mgmt-stu').value = sid;
+  renderMgmt();
+}
+function copyStuPw(){
+  const L = window._LASTPW; if(!L) return;
+  const t = '账号：' + L.u + '\n密码：' + L.p;
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(()=>toastMsg('已复制 ✓', true), ()=>alert(t));
+  } else alert(t);
 }
 async function delStudent(sid){
   const name = (window._STU_MAP&&window._STU_MAP[sid]) || sid;

@@ -458,6 +458,49 @@ def _put_media(rel, raw, name):
     return True, "/api/media/" + rel, 200
 
 
+# ---------------- 媒体访问签名 ----------------
+# 页面用 <img src> 展示图片，浏览器不会带 Authorization 头，所以图片接口过去是
+# 完全公开的（只要知道路径就能看图）。这里改为「签名链接」：
+#   客户端登录后取一张限时票据(?tk=&e=)，图片 URL 带上它才能读。
+# 票据只用于读图、到期自动失效、且不是登录 token，即使出现在日志/截图里影响也有界。
+MEDIA_TTL = int(os.environ.get("MEDIA_TTL", "86400"))   # 票据有效期(秒)，默认 24h
+
+
+def _media_secret():
+    """取（或首次生成）媒体签名密钥，存 meta 表，重启不失效。"""
+    cx = db()
+    try:
+        r = cx.execute("SELECT v FROM meta WHERE k='media_secret'").fetchone()
+        if r and r["v"]:
+            return r["v"]
+        s = secrets.token_hex(32)
+        cx.execute("INSERT OR REPLACE INTO meta(k,v) VALUES('media_secret',?)", (s,))
+        cx.commit()
+        return s
+    finally:
+        cx.close()
+
+
+def _media_sign(exp):
+    return hashlib.sha256((_media_secret() + "|" + str(exp)).encode("utf-8")).hexdigest()[:40]
+
+
+def media_ticket():
+    """签发图片访问票据。"""
+    exp = int(time.time()) + MEDIA_TTL
+    return {"tk": _media_sign(exp), "exp": exp}
+
+
+def media_ticket_ok(tk, exp):
+    try:
+        e = int(exp)
+    except Exception:
+        return False
+    if e < int(time.time()):
+        return False
+    return secrets.compare_digest(str(tk or ""), _media_sign(e))
+
+
 def _media_url(rel):
     """R2 启用时返回预签名 GET URL(供 302 重定向)；未启用返回 None(走本地)。"""
     cl = _r2_client()
@@ -1688,13 +1731,14 @@ class H(BaseHTTPRequestHandler):
             if u.get("role") not in ("admin", "teacher"):
                 return send_json(self, {"error": "无权限"}, 403)
             cx = db()
-            rows = cx.execute("SELECT student_id, username FROM users WHERE role='student' AND student_id IS NOT NULL").fetchall()
+            rows = cx.execute("SELECT student_id, username, pw_hash FROM users "
+                              "WHERE role='student' AND student_id IS NOT NULL").fetchall()
             cx.close()
             out = []
             for r in rows:
-                stu, _ = store_get("students", r["student_id"])
+                # 不再回传明文密码（密码只以哈希形式存在 users.pw_hash 里）。
                 out.append({"studentId": r["student_id"], "username": r["username"],
-                            "password": (stu or {}).get("spw", "")})   # 供老师查看（本系统仅老师使用）
+                            "hasPassword": bool(r["pw_hash"])})
             return send_json(self, {"items": out})
         return None
 
@@ -1778,8 +1822,8 @@ class H(BaseHTTPRequestHandler):
             sid = body.get("studentId")
             username = (body.get("username") or "").strip()
             pw = body.get("password") or ""
-            if not sid or not username or not pw:
-                return send_json(self, {"error": "缺少 studentId / username / password"}, 400)
+            if not sid or not username:
+                return send_json(self, {"error": "缺少 studentId / username"}, 400)
             cx = db()
             # 该学生是否已存在账号
             exist = cx.execute("SELECT * FROM users WHERE student_id=?", (sid,)).fetchone()
@@ -1789,20 +1833,67 @@ class H(BaseHTTPRequestHandler):
                 cx.close()
                 return send_json(self, {"error": "用户名已被其他账号占用"}, 409)
             if exist:
-                cx.execute("UPDATE users SET username=?, pw_hash=?, role='student' WHERE id=?",
-                           (username, pw_hash(pw), exist["id"]))
+                # 密码留空 = 只改账号名，不动密码（密码由「重置密码」生成，库里只存哈希）
+                if pw:
+                    cx.execute("UPDATE users SET username=?, pw_hash=?, role='student' WHERE id=?",
+                               (username, pw_hash(pw), exist["id"]))
+                else:
+                    cx.execute("UPDATE users SET username=?, role='student' WHERE id=?",
+                               (username, exist["id"]))
             else:
+                if not pw:
+                    cx.close()
+                    return send_json(self, {"error": "新建账号需填密码，或直接点「重置密码」自动生成"}, 400)
                 add_user(cx, username, pw, role="student", student_id=sid)
             cx.commit(); cx.close()
-            # 同时把明文密码记到学生档案 spw，便于老师在「学生管理」里查看
+            # 不再保存明文密码：只留 users.pw_hash。老师若要给学生新密码，用「重置密码」。
             try:
                 stu, _ = store_get("students", sid)
                 if stu:
-                    stu["spw"] = pw
+                    stu.pop("spw", None)      # 顺手清掉历史遗留的明文
                     store_put("students", sid, stu)
             except Exception:
                 pass
             return send_json(self, {"ok": True})
+        if p == "/api/train/student/reset_password":
+            # 老师给学生「重置密码」：服务端生成一个易读易报的新密码，设置哈希后
+            # 把明文**只返回这一次**（页面弹给老师，转给学生）；库里不留明文。
+            if u.get("role") not in ("admin", "teacher"):
+                return send_json(self, {"error": "无权限"}, 403)
+            body, err = read_body(self)
+            if err:
+                return send_json(self, {"error": err}, 400)
+            sid = (body.get("studentId") or "").strip()
+            if not sid:
+                return send_json(self, {"error": "缺少 studentId"}, 400)
+            # 避开易混字符 0/O/1/l/I
+            alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+            newpw = "".join(secrets.choice(alphabet) for _ in range(8))
+            cx = db()
+            exist = cx.execute("SELECT id, username FROM users WHERE student_id=?", (sid,)).fetchone()
+            if exist:
+                cx.execute("UPDATE users SET pw_hash=? WHERE id=?", (pw_hash(newpw), exist["id"]))
+                uname = exist["username"]
+            else:
+                # 还没有账号：自动起一个用户名（学生姓名拼音无保障，用 stu+短号）
+                stu, _ = store_get("students", sid)
+                base = re.sub(r"[^A-Za-z0-9_]", "", (sid or ""))[-8:] or uuid.uuid4().hex[:8]
+                uname = "stu" + base
+                n = 1
+                while cx.execute("SELECT id FROM users WHERE username=?", (uname,)).fetchone():
+                    n += 1
+                    uname = "stu" + base + str(n)
+                add_user(cx, uname, newpw, role="student", student_id=sid)
+            cx.commit(); cx.close()
+            try:
+                stu, _ = store_get("students", sid)
+                if stu:
+                    stu.pop("spw", None)
+                    store_put("students", sid, stu)
+            except Exception:
+                pass
+            # 明文仅在此响应中出现一次，不落库
+            return send_json(self, {"ok": True, "username": uname, "password": newpw})
         if p == "/api/train/student/greeting":
             # 老师给某学生写鼓励语 → 学生端顶部显示（留空则显示默认「你好，姓名」）
             if u.get("role") not in ("admin", "teacher"):
@@ -1943,7 +2034,17 @@ class H(BaseHTTPRequestHandler):
             if fp.startswith(os.path.join(BASE, "static")):
                 return send_file(self, fp)
             self.send_response(403); self.send_cors(); self.end_headers(); return
+        if p == "/api/media/ticket":
+            # 登录后领取图片访问票据（客户端把它拼到 <img src> 的查询串上）
+            if not user_of(get_token(self)):
+                return send_json(self, {"error": "未登录"}, 401)
+            return send_json(self, media_ticket())
         if p.startswith("/api/media/"):
+            # 图片需要「有效票据(?tk=&e=)」或登录态；否则 401 —— 防止外站/匿名直接抓图。
+            q = self.query
+            _signed = media_ticket_ok(q.get("tk", [None])[0], q.get("e", [None])[0])
+            if not (_signed or user_of(get_token(self))):
+                return send_json(self, {"error": "图片需要签名"}, 401)
             # URL 路径已是 percent-encoded, 先解码回原始(可能含中文)再查盘,
             # 否则 _media_disk 的 urlquote 会二次编码导致 404。
             rel = urlunquote(p[len("/api/media/"):])
@@ -2415,10 +2516,28 @@ def _free_disk_if_needed():
         pass
 
 
+def purge_plaintext_student_pw():
+    """一次性清理：历史上 students.spw 存了学生明文密码，现已改为只存哈希。
+    启动时把残留的 spw 删掉（顺带 bump 时间戳，让本地端也会同步删除）。"""
+    n = 0
+    try:
+        for s in store_list("students", limit=5000):
+            b = s.get("body") or {}
+            if b.get("spw"):
+                b.pop("spw", None)
+                store_put("students", s["id"], b)
+                n += 1
+    except Exception as e:
+        print("[security] 清理明文密码失败:", e)
+    if n:
+        print("[security] 已清理 %d 条历史明文学生密码(spw)" % n)
+
+
 def main():
     _free_disk_if_needed()
     init_db()
     migrate_ts()
+    purge_plaintext_student_pw()
     _disk_watchdog()  # 后台自动清理孤儿媒体, 防云端盘被撑满
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), H)
     print(f"[server] 云端同步后端已启动: http://0.0.0.0:{PORT}  (数据目录 {DATA_DIR})")
