@@ -1749,7 +1749,12 @@ async function loadStuMgmt(){
     if(e.studentId) errCount[e.studentId]=(errCount[e.studentId]||0)+1;
     (e.studentIds||[]).forEach(id=>{ errCount[id]=(errCount[id]||0)+1; });
   });
-  window._MGMT = {stus:(stus?stus.items:[]), accMap, accPw, errCount};
+  const list = (stus?stus.items:[])||[];
+  // 学生名单以这里拉到的为准：不依赖 loadStudents() 先跑过（新加的学生在别处新增，
+  // 进入「学生管理」时会重新拉，若只靠 loadStudents 建的 _STU_MAP 就会是旧名单）。
+  window._STU_MAP = {};
+  list.forEach(s=>{ window._STU_MAP[s.id] = s.name||s.username||s.id; });
+  window._MGMT = {stus:list, accMap, accPw, errCount};
   fillStuSelect('mgmt-stu');
   renderMgmt();
 }
@@ -1878,9 +1883,11 @@ async function cleanupCloud(){
 }
 function fillStuSelect(selId){
   const sel = document.getElementById(selId);
+  const prev = sel.value;   // 重建前记住已选学生：重新拉名单时不把详情面板清空
   sel.innerHTML = '<option value="">请选择学生</option>';
   const map = window._STU_MAP||{};
   Object.keys(map).forEach(sid=>sel.insertAdjacentHTML('beforeend',`<option value="${sid}">${map[sid]}</option>`));
+  if(prev && map[prev]) sel.value = prev;
 }
 async function renderTasks(){
   const {j} = await call('/api/train/tasks?date='+todayStr());
@@ -2149,9 +2156,11 @@ function goSec(id){
   document.querySelectorAll('#side-nav a[data-sec]').forEach(a=>
     a.classList.toggle('active', a.dataset.sec===id));
   window.scrollTo({top:0, behavior:'smooth'});
-  // 切到「每日任务 / 完成看板」时重新拉取，避免显示进入页面时的陈旧状态
+  // 切到「每日任务 / 完成看板 / 学生管理」时重新拉取，避免显示进入页面时的陈旧状态
+  // （学生管理尤其重要：学生在别处新增后，不重拉就一直看不到新学生）
   if(id==='sec-tasks') renderTasks();
   else if(id==='sec-dash') loadDash();
+  else if(id==='sec-students') loadStuMgmt();
 }
 
 // 侧栏高亮跟随滚动
