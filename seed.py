@@ -102,7 +102,7 @@ def main():
     ap.add_argument("--url", help="云端后端地址（远程模式）")
     ap.add_argument("--token", help="已有 token（远程模式，可选）")
     ap.add_argument("--login", default="admin")
-    ap.add_argument("--password", default="admin123")
+    ap.add_argument("--password", default="", help="云端登录密码（不再内置默认口令，需显式提供）")
     ap.add_argument("--no-media", action="store_true")
     args = ap.parse_args()
 

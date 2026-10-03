@@ -1278,6 +1278,8 @@ def login_throttle(key, ok):
         if ok:
             _LOGIN_FAILS.pop(key, None)
             return 0
+        if len(_LOGIN_FAILS) > 5000:      # 兜底：防止异常来源把内存撑大
+            _LOGIN_FAILS.clear()
         ent = _LOGIN_FAILS.get(key)
         if not ent or now - ent[1] > _LOGIN_WINDOW:
             _LOGIN_FAILS[key] = [1, now]
@@ -2104,14 +2106,16 @@ class H(BaseHTTPRequestHandler):
             body, err = read_body(self)
             if err: return send_json(self, {"error": err}, 400)
             uname = (body.get("username", "") or "")[:64]
-            peer = self.client_address[0] if self.client_address else "?"
+            # 限速按「用户名」计数（不掺来源 IP：云端在反代后面，client_address 可能每次不同，
+            # 掺进去会导致计数永远不累计，限速形同虚设）
+            tkey = uname.strip().lower() or "-"
             r = auth_user(uname, body.get("password", ""))
             if not r:
-                left = login_throttle(uname + "|" + peer, False)
+                left = login_throttle(tkey, False)
                 if left:
                     return send_json(self, {"error": "失败次数过多，请 %d 秒后再试" % left}, 429)
                 return send_json(self, {"error": "用户名或密码错误"}, 401)
-            login_throttle(uname + "|" + peer, True)
+            login_throttle(tkey, True)
             tok = new_session(r["id"])
             return send_json(self, {"token": tok, "user": {"username": r["username"], "role": r["role"], "studentId": r["student_id"]}})
         if p == "/api/auth/password":
