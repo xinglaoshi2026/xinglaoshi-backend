@@ -16,7 +16,7 @@
 数据模型（业务字段保持与桌面端 data.json 一致，整条以 JSON 存于 store 表）：
   store(module, id, body, updated_at)
 """
-import os, sys, json, sqlite3, hashlib, secrets, time, uuid, mimetypes, re, io, zipfile, struct, shutil
+import os, sys, json, sqlite3, hashlib, secrets, time, uuid, mimetypes, re, io, zipfile, struct, shutil, threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote as urlquote, unquote as urlunquote
 from datetime import datetime, timezone
@@ -66,11 +66,13 @@ def init_db():
     except Exception:
         pass
     cx.commit()
-    # 初始化：若没有任何用户，创建默认管理员（用户名 admin / 密码 admin123），仅首次
+    # 初始化：若没有任何用户，创建管理员。密码用环境变量 ADMIN_PASSWORD，未设则随机生成并打印
+    # （不再使用 admin/admin123 这类默认弱口令 —— 那等于把后台公开）
     cur = cx.execute("SELECT COUNT(*) c FROM users")
     if cur.fetchone()["c"] == 0:
-        add_user(cx, "admin", "admin123", "admin")
-        print("[init] 已创建默认管理员 admin / admin123 （请登录后修改密码）")
+        _pw = os.environ.get("ADMIN_PASSWORD") or secrets.token_urlsafe(9)
+        add_user(cx, "admin", _pw, "admin")
+        print("[init] 已创建管理员 admin / %s （请尽快登录后修改密码）" % _pw)
     cx.commit()
     cx.close()
 
@@ -1262,6 +1264,30 @@ def auth_user(username, pw):
     return r
 
 
+# ---- 登录防爆破：同一「用户名+来源IP」90 秒内失败满 5 次，锁到窗口结束 ----
+_LOGIN_FAILS = {}          # key -> [失败次数, 窗口起始时间]
+_LOGIN_LOCK = threading.Lock()
+_LOGIN_WINDOW = 90
+_LOGIN_MAX = 5
+
+
+def login_throttle(key, ok):
+    """记录一次登录结果；返回还需等待的秒数（0 表示放行）。"""
+    now = time.time()
+    with _LOGIN_LOCK:
+        if ok:
+            _LOGIN_FAILS.pop(key, None)
+            return 0
+        ent = _LOGIN_FAILS.get(key)
+        if not ent or now - ent[1] > _LOGIN_WINDOW:
+            _LOGIN_FAILS[key] = [1, now]
+            return 0
+        ent[0] += 1
+        if ent[0] >= _LOGIN_MAX:
+            return max(1, int(_LOGIN_WINDOW - (now - ent[1])))
+        return 0
+
+
 def new_session(user_id):
     token = secrets.token_hex(24)
     exp = now_ts() + 60 * 60 * 24 * 30  # 30 天
@@ -1897,6 +1923,9 @@ class H(BaseHTTPRequestHandler):
             self.send_response(404); self.send_cors(); self.end_headers(); return
         if p == "/api/health":
             # 运维诊断: 云端容器磁盘容量/余量(决定能否容纳全部媒体图)
+            # 需要登录：否则会向匿名访客暴露服务器数据目录与磁盘信息
+            if not user_of(get_token(self)):
+                return send_json(self, {"error": "未登录"}, 401)
             try:
                 du = shutil.disk_usage(os.path.dirname(MEDIA_DIR) or ".")
                 n = 0
@@ -1911,6 +1940,8 @@ class H(BaseHTTPRequestHandler):
                 return send_json(self, {"ok": False, "error": str(e)}, 500)
         m = re.match(r"^/api/papers/([^/]+)/docx$", p)
         if m:
+            if not user_of(get_token(self)):
+                return send_json(self, {"error": "未登录"}, 401)
             paper, _ = store_get("papers", m.group(1))
             if not paper:
                 self.send_response(404); self.send_cors(); self.end_headers(); return
@@ -1931,9 +1962,19 @@ class H(BaseHTTPRequestHandler):
 
     def api_get(self, p):
         q = self.query
+        # ===== 统一鉴权闸门 =====
+        # 除登录接口外，所有数据接口都必须带有效 token。此前只有 /api/train/* 查了权限，
+        # 其余（/api/sync/pull、/api/students、/api/questions …）匿名就能全量拉取，
+        # 等于把整库（含学生与家长手机号、收费记录）公开在公网上。此处统一收口。
+        u = user_of(get_token(self))
+        if not u:
+            return send_json(self, {"error": "未登录"}, 401)
         if p == "/api/me":
-            u = user_of(get_token(self))
-            return send_json(self, u or {"error": "未登录"}, 401 if not u else 200)
+            return send_json(self, u)
+        # 学生角色只能走训练接口（/api/train/* 在 _train_route_get 里单独鉴权并强制只看自己），
+        # 不允许读取通用题库/学生名册/同步等数据。
+        if u.get("role") == "student":
+            return send_json(self, {"error": "无权限"}, 403)
         if p == "/api/knowledgePoints":
             return send_json(self, store_list("knowledgePoints", limit=2000))
         if p == "/api/questions":
@@ -2062,10 +2103,36 @@ class H(BaseHTTPRequestHandler):
         if p == "/api/auth/login":
             body, err = read_body(self)
             if err: return send_json(self, {"error": err}, 400)
-            r = auth_user(body.get("username", ""), body.get("password", ""))
-            if not r: return send_json(self, {"error": "用户名或密码错误"}, 401)
+            uname = (body.get("username", "") or "")[:64]
+            peer = self.client_address[0] if self.client_address else "?"
+            r = auth_user(uname, body.get("password", ""))
+            if not r:
+                left = login_throttle(uname + "|" + peer, False)
+                if left:
+                    return send_json(self, {"error": "失败次数过多，请 %d 秒后再试" % left}, 429)
+                return send_json(self, {"error": "用户名或密码错误"}, 401)
+            login_throttle(uname + "|" + peer, True)
             tok = new_session(r["id"])
             return send_json(self, {"token": tok, "user": {"username": r["username"], "role": r["role"], "studentId": r["student_id"]}})
+        if p == "/api/auth/password":
+            # 自助修改密码（老师/学生各自改自己的）；需登录 + 校验原密码
+            uu = user_of(get_token(self))
+            if not uu:
+                return send_json(self, {"error": "未登录"}, 401)
+            body, err = read_body(self)
+            if err: return send_json(self, {"error": err}, 400)
+            old = body.get("oldPassword") or ""
+            new = body.get("newPassword") or ""
+            if len(new) < 8:
+                return send_json(self, {"error": "新密码至少 8 位"}, 400)
+            cx = db()
+            row = cx.execute("SELECT pw_hash FROM users WHERE id=?", (uu["user_id"],)).fetchone()
+            if not row or row["pw_hash"] != pw_hash(old):
+                cx.close()
+                return send_json(self, {"error": "原密码不正确"}, 400)
+            cx.execute("UPDATE users SET pw_hash=? WHERE id=?", (pw_hash(new), uu["user_id"]))
+            cx.commit(); cx.close()
+            return send_json(self, {"ok": True})
         # 以下需登录
         u = user_of(get_token(self))
         if not u: return send_json(self, {"error": "未登录"}, 401)

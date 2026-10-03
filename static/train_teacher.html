@@ -1000,8 +1000,8 @@
   <div id="login" class="card hidden">
     <h3>登录</h3>
     <div class="row">
-      <div><label>用户名</label><input id="u" value="admin"></div>
-      <div><label>密码</label><input id="pw" type="password" value="admin123"></div>
+      <div><label>用户名</label><input id="u" value="admin" autocomplete="username"></div>
+      <div><label>密码</label><input id="pw" type="password" autocomplete="current-password" placeholder="请输入密码"></div>
     </div>
     <button class="lg" style="width:100%" onclick="login()">登录</button>
     <div id="linfo" class="err"></div>
@@ -1026,6 +1026,8 @@
       <div class="side-foot">
         <button type="button" id="theme-btn" onclick="toggleTheme()" title="切换浅色 / 深色"><svg class="ic" id="theme-ic"><use href="#i-moon"/></svg><span class="lf" id="theme-lb">深色</span></button>
         <button type="button" id="focus-btn" onclick="toggleFocus()" title="只留录入区，减少干扰（Esc 退出）"><svg class="ic"><use href="#i-focus"/></svg><span class="lf">聚焦</span></button>
+        <button type="button" onclick="openPwModal()" title="修改我的登录密码"><svg class="ic"><use href="#i-key"/></svg><span class="lf">改密</span></button>
+        <button type="button" onclick="logout()" title="退出登录"><svg class="ic"><use href="#i-close"/></svg><span class="lf">退出</span></button>
       </div>
     </aside>
     <main class="main">
@@ -1187,7 +1189,11 @@ function qs(s){return document.querySelector(s).value;}
 
 async function login(){
   const {status,j} = await call('/api/auth/login',{method:'POST',json:{username:qs('#u'),password:qs('#pw')}});
-  if(status===200 && j.token){ TOKEN=j.token; localStorage.setItem('tt_token',TOKEN); start(); }
+  if(status===200 && j.token){
+    const role = j.user && j.user.role;
+    if(role==='student'){ document.getElementById('linfo').textContent='这是教师端，请用老师账号登录'; return; }
+    TOKEN=j.token; localStorage.setItem('tt_token',TOKEN); start();
+  }
   else document.getElementById('linfo').textContent = (j&&j.error)||'登录失败';
 }
 async function start(){
@@ -1207,12 +1213,46 @@ async function refreshStuSelects(){
   fillStuSelect('mgmt-stu'); renderMgmt();
 }
 async function autoLogin(){
-  try{
-    const {status,j} = await call('/api/auth/login',{method:'POST',json:{username:'admin',password:'admin123'}});
-    if(status===200 && j.token){ TOKEN=j.token; localStorage.setItem('tt_token',TOKEN); }
-  }catch(e){}
-  if(TOKEN){ start(); }
-  else { document.getElementById('login').classList.remove('hidden'); }
+  // 只校验「已保存的 token」是否仍有效；**不再内置默认账号密码自动登录**
+  // （否则任何人打开 /train 就自动获得老师权限，等于后台完全公开）。
+  if(TOKEN){
+    try{
+      const {status,j} = await call('/api/me');
+      if(status===200 && j && (j.role==='admin'||j.role==='teacher')){ start(); return; }
+    }catch(e){}
+    TOKEN=''; localStorage.removeItem('tt_token');
+  }
+  document.getElementById('login').classList.remove('hidden');
+}
+function logout(){
+  if(!confirm('退出登录？下次进入需要重新输入密码。')) return;
+  TOKEN=''; localStorage.removeItem('tt_token');
+  location.reload();
+}
+function openPwModal(){
+  showModalHtml(`<div class="modal-box" style="max-width:380px">
+    <div class="modal-head"><b>修改登录密码</b>
+      <button class="ghost icon sm" onclick="closeModal()" title="关闭"><svg class="ic"><use href="#i-close"/></svg></button></div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:6px">
+      <div><label>原密码</label><input id="pw_old" type="password" autocomplete="current-password"></div>
+      <div><label>新密码（至少 8 位）</label><input id="pw_new" type="password" autocomplete="new-password"></div>
+      <div><label>再输一次新密码</label><input id="pw_new2" type="password" autocomplete="new-password"></div>
+      <div id="pw_msg" class="err"></div>
+      <button class="lg" style="width:100%" onclick="savePw()">保存</button>
+    </div></div>`);
+}
+async function savePw(){
+  const oldP=(document.getElementById('pw_old').value||'');
+  const n1=(document.getElementById('pw_new').value||'');
+  const n2=(document.getElementById('pw_new2').value||'');
+  const msg=document.getElementById('pw_msg');
+  const bad=(t)=>{ msg.style.color='#e5484d'; msg.textContent=t; };
+  if(n1.length<8){ bad('新密码至少 8 位'); return; }
+  if(n1!==n2){ bad('两次输入的新密码不一致'); return; }
+  const {status,j} = await call('/api/auth/password',{method:'POST',json:{oldPassword:oldP,newPassword:n1}});
+  if(status!==200){ bad((j&&j.error)||'保存失败'); return; }
+  closeModal();
+  toastMsg('密码已修改，请记牢 ✓', true);
 }
 function switchTab(t){}
 async function loadStudents(){
