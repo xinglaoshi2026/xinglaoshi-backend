@@ -1805,7 +1805,12 @@ async function setDaily(sid){
   const {status,j} = await call('/api/train/student/daily',{method:'POST',json:{studentId:sid,dailyCount:n}});
   if(status!==200){ alert((j&&j.error)||'保存失败'); return; }
   const s = (window._MGMT.stus||[]).find(x=>x.id===sid); if(s) s.dailyCount = n;
-  alert('已保存：该生每天训练 '+n+' 道 ✓（下次「生成今日任务」起生效）');
+  if(el) el.value = n;
+  // 服务端已按新题数重建「今天」的任务 → 刷新任务/看板，立刻能看到新题数
+  try { renderTasks(); loadDash(); } catch(e){}
+  const rb = (j && j.rebuilt!=null) ? j.rebuilt : null;
+  alert('已保存：该生每天训练 '+n+' 道 ✓'
+        + (rb!=null ? ('\n今天已生成的任务已同步为 '+rb+' 道。') : '\n（今天还没生成任务，或学生已作答，将在下次「生成今日任务」时生效）'));
 }
 // 错题列表：默认折叠，点标题展开/收起
 function toggleErrList(force){

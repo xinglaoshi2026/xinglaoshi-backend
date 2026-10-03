@@ -819,6 +819,45 @@ def train_monthly_sample(student_id, date_str):
     return chosen
 
 
+def train_task_error_ids(student_id, date_str):
+    """算出某学生某天应练的错题 id 列表（去重 + 剔除已删错题）。
+    生成任务与「改每天题数后立即重建」共用同一套逻辑，保证口径一致。"""
+    cards = train_build_daily(student_id, date_str)
+    # 去重：同一题被重复收录多条(相同题面+相同图片)时只出一次；
+    # 已被删除的错题卡片也在此处自动剔除。
+    err_ids = []
+    seen_keys = set()
+    for c in cards:
+        eid = c.get("errorId")
+        e, _ = store_get("trainErrors", eid)
+        if not e:
+            continue
+        key = ((e.get("stem") or ""), tuple(e.get("images") or []),
+               tuple(e.get("answerImages") or []))
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        err_ids.append(eid)
+    return err_ids
+
+
+def train_rebuild_today_task(student_id, date_str=None):
+    """按学生当前的 dailyCount 重建「今天」的任务题单。
+    只在今天已生成正式任务、且学生还没作答(done/partial)时才重建，避免抹掉作答记录。
+    返回重建后的题数；未重建返回 None。"""
+    date_str = date_str or _date_today()
+    tid = "t_%s_%s" % (student_id, date_str)
+    task, _ = store_get("trainTasks", tid)
+    if not task or not task.get("generated"):
+        return None
+    if task.get("status") in ("done", "partial"):
+        return None      # 已作答：保留原题单，避免把已交的题换掉
+    task["errorIds"] = train_task_error_ids(student_id, date_str)
+    task["updatedAt"] = now_ms()
+    store_put("trainTasks", tid, task)
+    return len(task["errorIds"])
+
+
 def train_generate_tasks(date_str=None):
     """为全体学生生成某天任务包(覆盖式)。返回生成统计。"""
     date_str = date_str or _date_today()
@@ -831,22 +870,7 @@ def train_generate_tasks(date_str=None):
         sid = s.get("id")
         if not sid:
             continue
-        cards = train_build_daily(sid, date_str)
-        # 去重：同一题被重复收录多条(相同题面+相同图片)时只出一次；
-        # 已被删除的错题卡片也在此处自动剔除。
-        err_ids = []
-        seen_keys = set()
-        for c in cards:
-            eid = c.get("errorId")
-            e, _ = store_get("trainErrors", eid)
-            if not e:
-                continue
-            key = ((e.get("stem") or ""), tuple(e.get("images") or []),
-                   tuple(e.get("answerImages") or []))
-            if key in seen_keys:
-                continue
-            seen_keys.add(key)
-            err_ids.append(eid)
+        err_ids = train_task_error_ids(sid, date_str)
         tid = "t_%s_%s" % (sid, date_str)
         task = {"id": tid, "studentId": sid, "date": date_str,
                 "errorIds": err_ids, "status": "pending",
@@ -1763,7 +1787,14 @@ class H(BaseHTTPRequestHandler):
                 n = 20
             stu["dailyCount"] = n
             store_put("students", sid, stu)
-            return send_json(self, {"ok": True, "dailyCount": n})
+            # 立刻按新题数重建「今天」的任务（学生还没作答时）——改完当场生效，
+            # 不用再等下一次「生成今日任务」。
+            rebuilt = None
+            try:
+                rebuilt = train_rebuild_today_task(sid)
+            except Exception as _e:
+                print('rebuild today task failed:', _e)
+            return send_json(self, {"ok": True, "dailyCount": n, "rebuilt": rebuilt})
         if p == "/api/train/student/purge":
             # 彻底删除某学生及其全部数据（含草稿照片/账号）。仅老师/管理员。
             if u.get("role") not in ("admin", "teacher"):
