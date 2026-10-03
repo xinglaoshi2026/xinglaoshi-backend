@@ -662,7 +662,7 @@ async function loadToday(){
     }).join(' ') : '';
     box.insertAdjacentHTML('beforeend',`<div class="q" id="q_${idx}" data-idx="${idx}" data-eid="${e.id}" data-answered="${e.answered?1:0}">
       <div class="qhead"><div class="qno">第${idx+1}题</div>${e.knowledgePoint?('<span class="kchip">'+e.knowledgePoint+'</span>'):''}${e.answered?('<span class="pill ok">今天已交</span>'):''}</div>
-      <div class="qbody">${(e.stem||(imgs.length?'':'（看图作答）'))}</div>${imgHtml}
+      <div class="qbody">${escHtml(e.stem||(imgs.length?'':'（看图作答）'))}</div>${imgHtml}
       ${files?('<div style="margin-top:8px">'+files+'</div>'):''}
       <div id="rv_${idx}" class="rv hidden"></div>
       <div id="fb_${idx}" class="fb"></div>
@@ -920,7 +920,7 @@ async function loadWeek(){
     }).join(' ') : '';
     return `<div class="wq">
       <div class="wmeta"><span>${i+1}</span><span>${e.wrongDate||''}</span>${e.knowledgePoint?('<span class="kchip" style="margin-left:2px">'+e.knowledgePoint+'</span>'):''}</div>
-      <div class="qbody">${(e.stem||'')}${(!e.stem&&!imgs.length)?'（看图）':''}</div>${imgs}
+      <div class="qbody">${escHtml(e.stem||'')}${(!e.stem&&!imgs.length)?'（看图）':''}</div>${imgs}
       ${files?('<div style="margin-top:8px">'+files+'</div>'):''}
       <button class="btn3 sm" style="margin-top:10px" onclick="const d=document.getElementById('wans_${i}'); d.classList.toggle('hidden'); this.textContent=d.classList.contains('hidden')?'看解析':'收起解析'">看解析</button>
       <div id="wans_${i}" class="hidden"><div class="ansbox"><div class="lb">答案与解析</div>

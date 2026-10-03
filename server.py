@@ -206,6 +206,19 @@ def _disk_rel(rel):
     return "/".join(safe)
 
 
+def _sanitize_media_rel(rel):
+    """归一化媒体逻辑路径：统一斜杠、去掉空段与 . / .. 段，返回不会越界的相对路径。
+    用于写入侧（上传），避免 sub/name 里带 ../ 造成任意文件写入（路径穿越）。"""
+    rel = (rel or "").replace("\\", "/")
+    parts = []
+    for seg in rel.split("/"):
+        seg = seg.strip()
+        if not seg or seg in (".", ".."):
+            continue
+        parts.append(seg)
+    return "/".join(parts)
+
+
 def _media_disk(rel):
     """逻辑媒体路径 -> 磁盘绝对路径(见 _disk_rel 的编码/超长处理说明)。"""
     return os.path.normpath(os.path.join(MEDIA_DIR, _disk_rel(rel)))
@@ -422,6 +435,9 @@ def _guess_ct(name, data):
 def _put_media(rel, raw, name):
     """写入媒体：R2 启用则上传对象存储，否则写本地磁盘。
     图片原样存储（不做缩放/有损压缩），保证题目与截图清晰度。返回 (ok, url_or_err, code)。"""
+    rel = _sanitize_media_rel(rel)
+    if not rel:
+        return False, "非法媒体路径", 400
     ct = _guess_ct(name, raw)
     cl = _r2_client()
     if cl:
@@ -431,6 +447,11 @@ def _put_media(rel, raw, name):
         except Exception as e:
             return False, "对象存储上传失败: " + str(e), 500
     fp = _media_disk(rel)
+    # 越界保护：归一化后必须仍在 MEDIA_DIR 内（防 ../ 穿越写任意位置）
+    base = os.path.abspath(MEDIA_DIR)
+    afp = os.path.abspath(fp)
+    if not (afp == base or afp.startswith(base + os.sep)):
+        return False, "非法媒体路径", 400
     os.makedirs(os.path.dirname(fp), exist_ok=True)
     with open(fp, "wb") as f:
         f.write(raw)
@@ -1836,6 +1857,11 @@ class H(BaseHTTPRequestHandler):
             r = purge_student_data(sid)
             return send_json(self, r)
         if p == "/api/train/errors":
+            # 只有老师/管理员能建错题：错题会写进错题库、并自动进「题库」，
+            # 学生端只读自己的题（学生页面也不调用本接口）。放开会导致学生
+            # 往题库/老师界面注入任意内容（存储型 XSS + 数据污染）。
+            if u.get("role") not in ("admin", "teacher"):
+                return send_json(self, {"error": "无权限"}, 403)
             body, err = read_body(self)
             if err:
                 return send_json(self, {"error": err}, 400)
@@ -1854,9 +1880,11 @@ class H(BaseHTTPRequestHandler):
             kbId, bank_new = train_error_to_bank(shared)
             if kbId:
                 shared["kbId"] = kbId
+            _raw_id = body.get("id")
+            _ok_id = isinstance(_raw_id, str) and bool(re.fullmatch(r"[A-Za-z0-9_\-]{1,64}", _raw_id))
             ids = []
             for sid in sids:
-                eid = body.get("id") or ("te_" + uuid.uuid4().hex[:12])
+                eid = _raw_id if _ok_id else ("te_" + uuid.uuid4().hex[:12])
                 rec = dict(shared)
                 rec["id"] = eid
                 rec["studentId"] = sid
@@ -2068,14 +2096,15 @@ class H(BaseHTTPRequestHandler):
         p = self.path_only
         q = self.query
         if p == "/api/admin/cleanup_orphans":
+            # 运维接口（会删除未被引用的媒体文件）：仅管理员
             u = user_of(get_token(self))
-            if not u:
-                return send_json(self, {"error": "未登录"}, 401)
+            if not u or u.get("role") != "admin":
+                return send_json(self, {"error": "仅管理员可执行"}, 403)
             return self._cleanup_orphan_media()
         if p == "/api/admin/migrate_media_to_r2":
             u = user_of(get_token(self))
-            if not u:
-                return send_json(self, {"error": "未登录"}, 401)
+            if not u or u.get("role") != "admin":
+                return send_json(self, {"error": "仅管理员可执行"}, 403)
             r = _migrate_media_to_r2()
             if not r.get("ok"):
                 return send_json(self, r, 400)
@@ -2137,9 +2166,13 @@ class H(BaseHTTPRequestHandler):
             cx.execute("UPDATE users SET pw_hash=? WHERE id=?", (pw_hash(new), uu["user_id"]))
             cx.commit(); cx.close()
             return send_json(self, {"ok": True})
-        # 以下需登录
+        # 以下需登录，且仅老师/管理员可写通用数据。
+        # 学生 token 只能走 /api/train/*（在 _train_route_post 里单独鉴权、强制只看自己），
+        # 否则学生可伪造请求删改任何学生/题目/收费记录。
         u = user_of(get_token(self))
         if not u: return send_json(self, {"error": "未登录"}, 401)
+        if u.get("role") not in ("admin", "teacher"):
+            return send_json(self, {"error": "无权限"}, 403)
         if p == "/api/questions":
             body, err = read_body(self)
             if err: return send_json(self, {"error": err}, 400)
@@ -2230,6 +2263,10 @@ class H(BaseHTTPRequestHandler):
             # 放入 media/<module>/<id>/... 由前端在路径里指定；
             # 用 URL 编码后的 ASCII 路径落盘，规避部分文件系统不支持中文文件名的问题。
             sub = q.get("sub", ["others"])[0]
+            # sub 只允许「字母数字/下划线/短横/斜杠」，且由 _put_media 再去掉 .. 段，防路径穿越
+            sub = re.sub(r"[^A-Za-z0-9_\-/]", "", sub).strip("/")
+            if not sub:
+                sub = "others"
             rel = f"{sub}/{name}"
             # 磁盘空间保护：本地回退模式剩余不足时拒绝写入, 避免撑爆数据盘导致
             # sync.db(WAL)写入失败而整体宕机；R2 模式媒体不落本地盘, 不受此限。
@@ -2269,6 +2306,8 @@ class H(BaseHTTPRequestHandler):
         p = self.path_only
         u = user_of(get_token(self))
         if not u: return send_json(self, {"error": "未登录"}, 401)
+        if u.get("role") not in ("admin", "teacher"):
+            return send_json(self, {"error": "无权限"}, 403)
         if p.startswith("/api/questions/"):
             id = p[len("/api/questions/"):]
             body, err = read_body(self)
@@ -2313,6 +2352,8 @@ class H(BaseHTTPRequestHandler):
         p = self.path_only
         u = user_of(get_token(self))
         if not u: return send_json(self, {"error": "未登录"}, 401)
+        if u.get("role") not in ("admin", "teacher"):
+            return send_json(self, {"error": "无权限"}, 403)
         for prefix, mod in (("/api/questions/", "questions"), ("/api/papers/", "papers"),
                             ("/api/exams/", "exams"), ("/api/students/", "students"),
                             ("/api/schedule/", "schedule"), ("/api/records/", "records"),

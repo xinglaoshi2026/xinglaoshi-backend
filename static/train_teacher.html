@@ -1176,6 +1176,12 @@
 <script>
 const API = location.origin;
 let TOKEN = localStorage.getItem('tt_token') || '';
+// HTML 转义：所有「来自服务端/学生提交」的文本，塞进 innerHTML 前必须过这里，
+// 否则学生可把 <img src=x onerror=...> 写进错题题面，在老师浏览器里执行 → 偷走老师 token。
+function esc(s){
+  return (s==null?'':String(s)).replace(/[&<>"']/g, c => (
+    {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 
 async function call(path, opts={}) {
   opts.headers = opts.headers || {};
@@ -1265,8 +1271,8 @@ async function loadStudents(){
   (j?j.items:[]).forEach(s=>{
     const name = s.name||s.username||s.id;
     window._STU_MAP[s.id]=name;
-    if(box) box.insertAdjacentHTML('beforeend',`<label class="chk"><input type="checkbox" value="${s.id}"> ${name}</label>`);
-    if(fsel) fsel.insertAdjacentHTML('beforeend',`<option value="${s.id}">${name}</option>`);
+    if(box) box.insertAdjacentHTML('beforeend',`<label class="chk"><input type="checkbox" value="${esc(s.id)}"> ${esc(name)}</label>`);
+    if(fsel) fsel.insertAdjacentHTML('beforeend',`<option value="${esc(s.id)}">${esc(name)}</option>`);
   });
   loadErrors();
   refreshStuSelects();   // 学生变化后同步刷新「任务/看板/学生管理」的下拉
@@ -1643,7 +1649,7 @@ async function loadErrors(){
     const imgs = (e.images&&e.images.length)?e.images:(e.image?[e.image]:[]);
     // 题图缩略图全部展示，点击放大
     const ri = imgs.length ? (zoomReg.push(imgs.map(u=>API+u))-1) : -1;
-    const img = imgs.map((u,k)=>`<img class="thumb" src="${API+u}" onclick="zoomList(${ri},${k})">`).join('');
+    const img = imgs.map((u,k)=>`<img class="thumb" src="${esc(API+u)}" onclick="zoomList(${ri},${k})">`).join('');
     const files = (e.files&&e.files.length)?(' <span class="pill m">'+e.files.length+'附件</span>'):'';
     const ai = (e.answerImages&&e.answerImages.length) ? (zoomReg.push(e.answerImages.map(u=>API+u))-1) : -1;
     const ans = ai>=0?` <button class="pillbtn" onclick="zoomList(${ai},0)"><svg class="ic"><use href="#i-photo-stack"/></svg>答案图 <b>${e.answerImages.length}</b> 张</button>`:'';
@@ -1651,9 +1657,9 @@ async function loadErrors(){
     box.insertAdjacentHTML('beforeend',`<div class="err-row">
       ${img?('<div class="er-thumb">'+img+'</div>'):''}
       <div class="er-main">
-        <div class="er-line1">${e.knowledgePoint?('<b>'+e.knowledgePoint+'</b>'):'<b>错题</b>'}${e.errorReason?('<span class="pill">'+e.errorReason+'</span>'):''}${e.source?('<span class="pill m">'+e.source+'</span>'):''}${files}${ans}</div>
-        <div class="er-line2">${e.studentName||e.studentId} · ${e.wrongDate||''}</div>
-        <div class="er-stem">${(e.stem||'（图片题）')}</div>
+        <div class="er-line1">${e.knowledgePoint?('<b>'+esc(e.knowledgePoint)+'</b>'):'<b>错题</b>'}${e.errorReason?('<span class="pill">'+esc(e.errorReason)+'</span>'):''}${e.source?('<span class="pill m">'+esc(e.source)+'</span>'):''}${files}${ans}</div>
+        <div class="er-line2">${esc(e.studentName||e.studentId)} · ${esc(e.wrongDate||'')}</div>
+        <div class="er-stem">${esc(e.stem||'（图片题）')}</div>
       </div>
       <div class="er-actions">
         <button class="pillbtn" onclick="showPractices('${e.id}')"><svg class="ic"><use href="#i-chart"/></svg>练习 <b>${n}</b> 次</button>
@@ -1814,8 +1820,8 @@ function renderMgmt(){
   const cnt = window._MGMT.errCount[s.id]||0;
   box.innerHTML=`<div class="stu-card">
     <div class="sc-info">
-      <b>${name}</b>
-      <div class="dt-sub" style="color:${has?'var(--ok)':'var(--ink3)'}">${has?('账号 '+has):'未设账号'}</div>
+      <b>${esc(name)}</b>
+      <div class="dt-sub" style="color:${has?'var(--ok)':'var(--ink3)'}">${has?('账号 '+esc(has)):'未设账号'}</div>
       <span class="pill m">错题 ${cnt} 道</span>
     </div>
     <div class="sc-fields">
@@ -1942,7 +1948,7 @@ function renderTaskStu(){
   const t = (window._TASKS||[]).find(x=>x.studentId===sid);
   if(!t){ box.innerHTML='<p style="color:var(--ink3)">该生今天没有任务（可点上方「生成今日任务」）。</p>'; return; }
   box.innerHTML=`<div class="detail">
-    <div class="dt-main"><b>${t.studentName||stuName(t.studentId)}</b> · 共${(t.errorIds||[]).length} 题
+    <div class="dt-main"><b>${esc(t.studentName||stuName(t.studentId))}</b> · 共${(t.errorIds||[]).length} 题
       <div class="dt-sub">${STMAP[t.status]||t.status}${t.score!=null?('　正确率 '+(t.score*100).toFixed(0)+'%'):''}</div>
       ${reviewLineHtml(t)}</div>
     <div class="dt-acts">
