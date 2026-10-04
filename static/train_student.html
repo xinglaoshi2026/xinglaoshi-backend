@@ -231,6 +231,21 @@
   .qbody img,.qi{max-width:100%;border-radius:12px;display:block}
   img.qi{width:100%;margin-top:10px;cursor:zoom-in;border:1px solid var(--line);border-radius:14px;
     box-shadow:var(--sh1)}
+
+  /* 图片查看器（相册式：双指缩放 · 双击缩放 · 单指拖动 · 旋转/竖图自动转横向） */
+  #zoom-mask{position:fixed;inset:0;background:rgba(24,20,17,.95);z-index:120;display:flex;
+    align-items:center;justify-content:center;overflow:hidden;touch-action:none;
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+  #zoom-mask .zm-stage{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none}
+  #zoom-mask .zm-img{display:block;border-radius:10px;transform-origin:center center;will-change:transform;
+    box-shadow:0 12px 44px rgba(0,0,0,.55);-webkit-user-drag:none;pointer-events:auto}
+  #zoom-mask .zm-bar{position:absolute;top:calc(env(safe-area-inset-top,0px) + 10px);left:0;right:0;
+    display:flex;justify-content:center;gap:8px;z-index:3}
+  #zoom-mask .zm-btn{background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.3);
+    border-radius:999px;padding:7px 15px;font-size:13px;font-weight:600;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+  #zoom-mask .zm-btn:active{background:rgba(255,255,255,.32)}
+  #zoom-mask .zm-hint{position:absolute;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);left:0;right:0;
+    text-align:center;color:rgba(255,255,255,.62);font-size:12px;z-index:3;pointer-events:none}
   .filetag{
     display:inline-flex;align-items:center;gap:5px;background:#fff;color:var(--brand3);
     border:1px solid var(--line2);border-radius:10px;padding:6px 11px;font-size:13px;
@@ -847,15 +862,148 @@ function updateProgress(){
 function showHelp(){ document.getElementById('helpMask').classList.remove('hidden'); }
 function closeHelp(){ document.getElementById('helpMask').classList.add('hidden'); }
 
-// 点击放大图片
+/* ================= 图片查看器（相册式） =================
+   点图放大 · 双指缩放 · 双击缩放 · 单指拖动 · 旋转（竖图自动转横向）
+   纯前端，无需改后端；所有题目图片/答案图片/上传照片共用。 */
+const ZV = { scale:1, tx:0, ty:0, rot:0, natW:0, natH:0, baseW:0, baseH:0,
+  img:null, stage:null, mask:null, moved:false, panned:false, lastTap:0, _autoDone:false };
+let ZOOM_BOUND = false;
+
 function zoomImg(url){
-  let m=document.getElementById('zoom-mask');
-  if(!m){ m=document.createElement('div'); m.id='zoom-mask';
-    m.style.cssText='position:fixed;inset:0;background:rgba(59,53,45,.86);display:flex;align-items:center;justify-content:center;z-index:120;cursor:zoom-out';
-    m.onclick=function(){ m.style.display='none'; };
-    document.body.appendChild(m); }
-  m.innerHTML='<img src="'+url+'" style="max-width:94%;max-height:88%;border-radius:14px">';
-  m.style.display='flex';
+  ZV.mask = document.getElementById('zoom-mask');
+  if(!ZV.mask){
+    const m=document.createElement('div'); m.id='zoom-mask';
+    m.innerHTML =
+      '<div class="zm-stage"><img class="zm-img" alt="题目图片"></div>'+
+      '<div class="zm-bar">'+
+        '<button class="zm-btn" data-act="rotate">旋转</button>'+
+        '<button class="zm-btn" data-act="reset">还原</button>'+
+        '<button class="zm-btn" data-act="close">关闭</button>'+
+      '</div>'+
+      '<div class="zm-hint">双指放大 · 双击缩放 · 拖动查看</div>';
+    document.body.appendChild(m);
+    ZV.mask = m; ZV.stage = m.querySelector('.zm-stage'); ZV.img = m.querySelector('.zm-img');
+    ZV._autoDone = false;
+    bindZoom(m);
+  }
+  ZV.scale=1; ZV.tx=0; ZV.ty=0; ZV.rot=0; ZV.moved=false; ZV.panned=false;
+  const img = ZV.img;
+  img.style.width=''; img.style.height=''; img.style.transform='';
+  img.onload = ()=>{ ZV._autoDone=false; layoutZoom(true); };
+  img.src = url;
+  if(img.complete && img.naturalWidth){ ZV._autoDone=false; layoutZoom(true); }
+  ZV.mask.style.display='flex';
+}
+
+/* 按当前旋转角度计算「适应屏幕」尺寸 */
+function layoutZoom(autoRotate){
+  const img = ZV.img; if(!img || !img.naturalWidth) return;
+  ZV.natW = img.naturalWidth; ZV.natH = img.naturalHeight;
+  // 竖图（明显高于宽）打开时自动转 90° 为横向，便于阅读
+  if(autoRotate && !ZV._autoDone){
+    ZV._autoDone = true;
+    if(ZV.natH > ZV.natW * 1.12) ZV.rot = 90;
+  }
+  const VW = window.innerWidth, VH = window.innerHeight;
+  const rotated = (ZV.rot % 180) !== 0;
+  const f = rotated ? Math.min(VW / ZV.natH, VH / ZV.natW)
+                    : Math.min(VW / ZV.natW, VH / ZV.natH);
+  ZV.baseW = ZV.natW * f; ZV.baseH = ZV.natH * f;
+  img.style.width = ZV.baseW + 'px';
+  img.style.height = ZV.baseH + 'px';
+  applyZoom();
+}
+function applyZoom(){
+  const img = ZV.img; if(!img) return;
+  img.style.transform = 'translate(' + ZV.tx + 'px,' + ZV.ty + 'px) rotate(' + ZV.rot + 'deg) scale(' + ZV.scale + ')';
+}
+function resetZoom(){ ZV.scale=1; ZV.tx=0; ZV.ty=0; applyZoom(); }
+function rotateZoom(){ ZV.rot=(ZV.rot+90)%360; ZV.scale=1; ZV.tx=0; ZV.ty=0; layoutZoom(false); }
+function closeZoom(){ if(ZV.mask) ZV.mask.style.display='none'; }
+
+function bindZoom(m){
+  if(ZOOM_BOUND) return; ZOOM_BOUND = true;
+  const stage = m.querySelector('.zm-stage');
+  m.querySelector('.zm-bar').addEventListener('click', e=>{
+    const b = e.target.closest('.zm-btn'); if(!b) return;
+    e.stopPropagation();
+    const a = b.dataset.act;
+    if(a==='rotate') rotateZoom();
+    else if(a==='reset') resetZoom();
+    else if(a==='close') closeZoom();
+  });
+  const pts = new Map();
+  let startDist=0, startScale=1, startTx=0, startTy=0, startMid={x:0,y:0};
+  let lastX=0, lastY=0, dragging=false;
+  const dist=(a,b)=>Math.hypot(a.x-b.x, a.y-b.y);
+  const mid=(a,b)=>({x:(a.x+b.x)/2, y:(a.y+b.y)/2});
+
+  stage.addEventListener('pointerdown', e=>{
+    if(e.pointerType==='mouse' && e.button!==0) return;
+    try{ stage.setPointerCapture(e.pointerId); }catch(_){}
+    pts.set(e.pointerId, {x:e.clientX, y:e.clientY});
+    ZV.moved=false; ZV.panned=false;
+    if(pts.size===1){ dragging=true; lastX=e.clientX; lastY=e.clientY; }
+    else if(pts.size===2){
+      dragging=false;
+      const arr=[...pts.values()];
+      startDist=dist(arr[0],arr[1]); startScale=ZV.scale;
+      startMid=mid(arr[0],arr[1]); startTx=ZV.tx; startTy=ZV.ty;
+    }
+  });
+
+  stage.addEventListener('pointermove', e=>{
+    if(!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, {x:e.clientX, y:e.clientY});
+    if(pts.size===2){
+      const arr=[...pts.values()];
+      const d=dist(arr[0],arr[1]);
+      if(startDist>0) ZV.scale=Math.min(8, Math.max(1, startScale*d/startDist));
+      const md=mid(arr[0],arr[1]);
+      ZV.tx=startTx+(md.x-startMid.x); ZV.ty=startTy+(md.y-startMid.y);
+      applyZoom(); ZV.moved=true;
+      if(e.cancelable) e.preventDefault();
+    } else if(pts.size===1 && dragging){
+      const dx=e.clientX-lastX, dy=e.clientY-lastY;
+      lastX=e.clientX; lastY=e.clientY;
+      if(Math.abs(dx)+Math.abs(dy)>4) ZV.moved=true;
+      if(ZV.scale>1.001){ ZV.tx+=dx; ZV.ty+=dy; ZV.panned=true; applyZoom(); }
+      if(e.cancelable) e.preventDefault();
+    }
+  });
+
+  function endPt(e){
+    pts.delete(e.pointerId);
+    if(pts.size<2) startDist=0;
+    if(pts.size===0){
+      dragging=false;
+      const now=Date.now();
+      const isImage = e.target && e.target.classList && e.target.classList.contains('zm-img');
+      if(!ZV.moved){
+        if(now-ZV.lastTap<300){                       // 双击
+          ZV.scale = ZV.scale>1.5 ? 1 : 2.4;
+          if(ZV.scale===1){ ZV.tx=0; ZV.ty=0; }
+          applyZoom(); ZV.lastTap=0; return;
+        }
+        ZV.lastTap=now;                                // 单击
+        if(!isImage && ZV.scale<=1.001) closeZoom();   // 点空白处关闭
+      }
+    }
+  }
+  stage.addEventListener('pointerup', endPt);
+  stage.addEventListener('pointercancel', endPt);
+
+  // 阻止浏览器把双指手势当成页面缩放/滚动
+  stage.addEventListener('touchmove', e=>{ if(e.touches.length>1 && e.cancelable) e.preventDefault(); }, {passive:false});
+  // 桌面滚轮缩放（便于电脑端预览）
+  stage.addEventListener('wheel', e=>{
+    e.preventDefault();
+    ZV.scale=Math.min(8, Math.max(1, ZV.scale*(e.deltaY<0?1.15:1/1.15)));
+    if(ZV.scale<=1.001){ ZV.scale=1; ZV.tx=0; ZV.ty=0; }
+    applyZoom();
+  }, {passive:false});
+  // 尺寸变化（旋转手机/调整窗口）时重排
+  window.addEventListener('resize', ()=>{ if(ZV.mask && ZV.mask.style.display!=='none') layoutZoom(false); });
 }
 
 async function submit(){
