@@ -396,7 +396,7 @@
   .zd-title{color:#fff;font-size:13px;font-weight:600;opacity:.9;text-shadow:0 1px 3px rgba(0,0,0,.5)}
   .zd-close{background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);
     width:36px;height:36px;border-radius:50%;font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center}
-  .zd-stage{position:relative;flex:1;width:100%;min-height:0;display:flex;align-items:center;justify-content:center}
+  .zd-stage{position:relative;flex:1;width:100%;min-height:0;display:flex;align-items:center;justify-content:center;touch-action:none}
   .zd-img{max-width:100%;max-height:100%;object-fit:contain;border-radius:10px;background:#0b0b0b;touch-action:pan-y}
   .zd-nav{position:absolute;top:50%;transform:translateY(-50%);width:46px;height:46px;border-radius:50%;
     background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.32);color:#fff;font-size:26px;
@@ -1734,8 +1734,11 @@ function stuName(sid){ return (window._STU_MAP&&window._STU_MAP[sid])||sid||''; 
    之前只显示一张、且手机上不能滑动，容易被误认为「只有第一张」。 */
 let _ZD = null;
 function zoomDrafts(urlsJson){
-  const urls = (JSON.parse(urlsJson) || []).filter(Boolean);
-  if(!urls.length) return;
+  openPhotoViewer((JSON.parse(urlsJson) || []).filter(Boolean), 0);
+}
+/* 统一的多图查看器：大图 + 左右翻页 + 手机滑动 + 缩略图条（错题图/答案图/作答照片共用） */
+function openPhotoViewer(urls, start){
+  if(!urls || !urls.length) return;
   let ov = document.getElementById('zd-mask');
   if(!ov){
     ov = document.createElement('div'); ov.id='zd-mask'; ov.className='zd-mask';
@@ -1770,7 +1773,7 @@ function zoomDrafts(urlsJson){
       if(Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) zdGo(dx < 0 ? 1 : -1);
     }, {passive:true});
   }
-  _ZD = { urls, i: 0 };
+  _ZD = { urls, i: Math.min(Math.max(0, start|0), urls.length - 1) };
   renderZD();
   ov.style.display = 'flex';
 }
@@ -1782,7 +1785,7 @@ function renderZD(){
   const img = document.getElementById('zd-img');
   if(img) img.src = murl(_ZD.urls[_ZD.i]);
   const t = document.getElementById('zd-title');
-  if(t) t.textContent = '作答照片 · 第 ' + (_ZD.i+1) + ' / ' + _ZD.urls.length + ' 张' + (_ZD.urls.length>1 ? '（左右滑动切换）' : '');
+  if(t) t.textContent = '图片 · 第 ' + (_ZD.i+1) + ' / ' + _ZD.urls.length + ' 张' + (_ZD.urls.length>1 ? '（左右滑动切换）' : '');
   const multi = _ZD.urls.length > 1;
   const p = document.getElementById('zd-prev'), n = document.getElementById('zd-next');
   if(p) p.style.display = multi ? 'flex' : 'none';
@@ -1845,26 +1848,12 @@ function showRules(){
 }
 // ---------- 图片放大查看 ----------
 let zoomReg = [];  // 注册表：zoomReg[i] = 图片URL数组
+// 错题图/答案图查看：与「作答照片」共用同一个相册式查看器（支持左右滑动/缩略图翻页）
 function zoomList(ri, start){
-  const urls = zoomReg[ri]||[]; if(!urls.length) return;
-  window._zi = start||0; window._zurls = urls;
-  showModalHtml('<div class="modal-box" style="text-align:center;max-width:92vw">'
-    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px">'
-    +'<b id="zoom-cnt"></b>'
-    +'<div style="display:flex;gap:6px"><button class="ghost icon sm" onclick="zoomNav(-1)" title="上一张"><svg class="ic"><use href="#i-left"/></svg></button>'
-    +'<button class="ghost icon sm" onclick="zoomNav(1)" title="下一张"><svg class="ic"><use href="#i-right"/></svg></button>'
-    +'<button class="ghost icon sm" onclick="closeModal()" title="关闭"><svg class="ic"><use href="#i-close"/></svg></button></div></div>'
-    +'<div id="zoom-body"></div>');
-  zoomDraw();
+  const urls = (zoomReg[ri] || []).filter(Boolean);
+  if(!urls.length) return;
+  openPhotoViewer(urls, start || 0);
 }
-function zoomDraw(){
-  const i=window._zi, urls=window._zurls;
-  const c=document.getElementById('zoom-cnt'), b=document.getElementById('zoom-body');
-  if(!c||!b) return;
-  c.textContent = '图片 '+(i+1)+' / '+urls.length;
-  b.innerHTML = '<img src="'+urls[i]+'" style="max-width:86vw;max-height:72vh;border-radius:8px">';
-}
-function zoomNav(d){ window._zi=(window._zi+d+window._zurls.length)%window._zurls.length; zoomDraw(); }
 async function delErr(id){
   if(!confirm('确认删除这道错题？（同时清除对应训练卡）')) return;
   await call('/api/train/errors/'+id,{method:'DELETE'}); loadErrors();
