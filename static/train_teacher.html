@@ -1141,6 +1141,7 @@
           <div class="hint" style="flex:1">今日完成人数、提交率、平均正确率等概览</div>
         </div>
         <div class="grid" id="dash-overview" style="margin-top:10px"></div>
+        <div id="dash-submitted" style="margin-top:12px;border-top:1px dashed var(--line2);padding-top:10px"></div>
       </div>
       <div class="card">
         <div class="row2">
@@ -2151,9 +2152,31 @@ async function loadDash(){
   document.getElementById('dash-overview').innerHTML =
     stat(j.studentsTotal,'学生总数')+stat(j.tasksToday,isToday?'今日任务':d+' 任务')+stat(j.doneToday,isToday?'今日完成':'当日完成');
   animateNums('dash-overview');
+  renderDashSubmitted(j.perStudent||[], isToday);
   fillKpis(j, d, isToday);
   fillStuSelect('dash-stu');
   renderDashStu();
+}
+// 看板：已提交/未提交学生名单（点姓名可直达该生详情）
+function renderDashSubmitted(per, isToday){
+  const box = document.getElementById('dash-submitted');
+  if(!box) return;
+  const label = isToday ? '今日' : '当日';
+  const done = per.filter(s=>s.todayStatus==='done');
+  const partial = per.filter(s=>s.todayStatus==='partial');
+  const none = per.filter(s=>!s.todayStatus||s.todayStatus==='none'||s.todayStatus==='pending');
+  const chip = (s,cls,extra)=>`<span class="pill ${cls}" style="cursor:pointer;margin:3px" title="点击查看该生作答" onclick="pickDashStu('${s.id}')">${escHtml(s.name||s.id)}${extra||''}</span>`;
+  const sec = (t,n,body)=>`<div style="margin:4px 0"><b style="font-size:13px">${t}（${n}）</b>${n?('<div style="margin-top:4px">'+body+'</div>'):'<span style="color:var(--ink3);font-size:12px;margin-left:8px">暂无</span>'}</div>`;
+  box.innerHTML =
+    sec(`${label}已完成`, done.length, done.map(s=>chip(s,'ok',s.todayScore!=null?` ${Math.round(s.todayScore*100)}%`:'')).join(''))
+    + sec(`${label}部分完成`, partial.length, partial.map(s=>chip(s,'m')).join(''))
+    + sec(`${label}未提交`, none.length, none.map(s=>chip(s,'')).join(''));
+}
+function pickDashStu(id){
+  const sel = document.getElementById('dash-stu');
+  if(sel){ sel.value = id; renderDashStu(); }
+  const d = document.getElementById('dash-detail');
+  if(d) d.scrollIntoView({behavior:'smooth', block:'center'});
 }
 // 顶部关键指标（页头右侧的小卡片）
 function fillKpis(j, d, isToday){
