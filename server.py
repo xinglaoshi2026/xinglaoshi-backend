@@ -799,6 +799,59 @@ def train_answered_ids(task_id):
     return out
 
 
+def _student_practiced_ids(student_id):
+    """该学生「已经练过」（有作答流水）的错题 id 集合。"""
+    out = set()
+    for l in store_list("trainLogs", limit=20000):
+        b = l.get("body") or {}
+        if b.get("studentId") == student_id and b.get("errorId"):
+            out.add(b["errorId"])
+    return out
+
+
+def _error_in_generated_task(student_id, error_id):
+    """该错题是否已进入该学生某天「已生成」的练习任务（看答案前的归属校验）。"""
+    for tk in store_list("trainTasks", limit=6000):
+        b = tk.get("body") or {}
+        if (b.get("studentId") == student_id and b.get("generated")
+                and error_id in (b.get("errorIds") or [])):
+            return True
+    return False
+
+
+_UPLOADED_CACHE = {}
+
+
+def _student_uploaded_today(student_id, date_str=None):
+    """学生当天是否已上传过作答照片（本地盘或对象存储里有 train/<sid>/drafts/<date>/ 文件）。
+    用于「先上传照片、再看答案」的服务端强制校验。结果缓存 60 秒。"""
+    date_str = date_str or _date_today()
+    key = (student_id, date_str)
+    now = time.time()
+    hit = _UPLOADED_CACHE.get(key)
+    if hit and now - hit[0] < 60:
+        return True
+    ok = False
+    rel = "train/%s/drafts/%s" % (student_id, date_str)
+    try:
+        d = _media_disk(rel)
+        if d and os.path.isdir(d):
+            with os.scandir(d) as it:
+                ok = any(True for _ in it)
+    except Exception:
+        pass
+    if not ok:
+        cl = _r2_client()
+        if cl:
+            try:
+                page = cl.list_objects_v2(Bucket=_r2_conf()["bucket"], Prefix=rel + "/", MaxKeys=1)
+                ok = bool(page.get("Contents"))
+            except Exception:
+                pass
+    if ok:
+        _UPLOADED_CACHE[key] = (now, True)   # 只缓存「已上传」，避免阴性结果把之后的正常放行也挡掉
+    return ok
+
 def train_task_all_answered(task):
     """该任务的题是否全部提交过（按 trainLogs 判断）。"""
     ids = set(task.get("errorIds") or [])
@@ -1027,6 +1080,7 @@ def train_submit(student_id, date_str, answers):
     task, _ = store_get("trainTasks", tid)
     if not task:
         return {"ok": False, "error": "今日任务不存在"}
+    need = set(task.get("errorIds") or [])   # 本任务题单：submit 只接受题单内的题
     # 今天这题是否已经交过（学生中途退出后再进来重做时，不重复记流水/不重复推进卡片等级）
     prev = {}
     for l in store_list("trainLogs", limit=20000):
@@ -1039,6 +1093,10 @@ def train_submit(student_id, date_str, answers):
         eid = a.get("errorId")
         e, _ = store_get("trainErrors", eid)
         if not e:
+            continue
+        # 归属 + 题单范围校验：只接受「本学生名下、且在今天任务题单里」的错题，
+        # 防止学生构造 errorId 把别人的错题「提交」到自己名下（否则可借自动建卡再套答案）。
+        if (e.get("studentId") or "") != student_id or eid not in need:
             continue
         result = a.get("result")  # right/half/wrong/self_right/self_wrong
         qans = (e.get("answer") or "").strip()
@@ -1073,7 +1131,6 @@ def train_submit(student_id, date_str, answers):
                         "answerImages": e.get("answerImages") or [],
                         "stem": e.get("stem") or ""})
     # 分数/状态按该任务的全部流水重算（含本次与今天之前已交的题）
-    need = set(task.get("errorIds") or [])
     answered = [prev[e] for e in need if e in prev]
     total = len(answered)
     right_n = sum(1 for b in answered if b.get("result") in ("right", "self_right"))
@@ -1545,11 +1602,7 @@ class H(BaseHTTPRequestHandler):
             # 学生端「最近一周错题」只列出「自己已经练过」的题：老师刚添加、还没轮到练的题不下发，
             # 免得学生一提交今日练习就提前看到老师添加的全部错题（含答案）。老师/管理员不受限。
             if is_student and eff_sid:
-                practiced = set()
-                for lg in store_list("trainLogs", limit=20000):
-                    b = lg.get("body") or {}
-                    if b.get("studentId") == eff_sid and b.get("errorId"):
-                        practiced.add(b["errorId"])
+                practiced = _student_practiced_ids(eff_sid)
                 items = [e for e in items if e.get("id") in practiced]
             return send_json(self, {"items": items, "count": len(items)})
         if p == "/api/train/errors/export.docx":
@@ -1612,6 +1665,10 @@ class H(BaseHTTPRequestHandler):
             else:
                 errs = [e["body"] for e in store_list("trainErrors", limit=5000)
                         if (e["body"] or {}).get("studentId") == eff_sid]
+                if is_student:
+                    # 与「最近一周错题」口径一致：学生只导出「已练过」的错题（老师导出不受限）
+                    practiced = _student_practiced_ids(eff_sid)
+                    errs = [e for e in errs if e.get("id") in practiced]
             if not errs:
                 return send_json(self, {"error": "还没有错题可以导出"}, 400)
             if date_arg:
@@ -1672,6 +1729,15 @@ class H(BaseHTTPRequestHandler):
                 c, _ = store_get("trainCards", train_card_id(eff_sid, eid))
                 if not c:
                     return send_json(self, {"error": "无权限"}, 403)
+                # ① 必须属于本人
+                if (e.get("studentId") or "") != (eff_sid or ""):
+                    return send_json(self, {"error": "无权限"}, 403)
+                # ② 必须已进入本人「已生成」的练习任务（防止把整个错题库的答案一次性套走）
+                if not _error_in_generated_task(eff_sid, eid):
+                    return send_json(self, {"error": "这道题还没排进你的练习，先完成今日练习"}, 403)
+                # ③ 必须先上传作答照片（先自己做、再对答案）
+                if not _student_uploaded_today(eff_sid):
+                    return send_json(self, {"error": "请先上传作答照片，再看答案"}, 403)
             return send_json(self, {"errorId": eid,
                                     "answer": e.get("answer") or "",
                                     "analysis": e.get("analysis") or "",
@@ -1763,6 +1829,13 @@ class H(BaseHTTPRequestHandler):
         def _eff_sid(param_sid):
             # 学生角色: 只能操作自己(token 中的 student_id), 前端无法伪造
             return (u.get("student_id") if is_student else param_sid)
+
+        def _teacher_only():
+            # 仅老师/管理员可用（学生 token 一律拒绝）——已应答，无需再处理
+            if u.get("role") not in ("admin", "teacher"):
+                send_json(self, {"error": "无权限"}, 403)
+                return False
+            return True
 
         if p == "/api/train/submit":
             body, err = read_body(self)
@@ -2004,6 +2077,9 @@ class H(BaseHTTPRequestHandler):
             return send_json(self, {"ok": True, "ids": ids,
                                     "count": len(ids), "bankNew": bank_new})
         if p.startswith("/api/train/errors/"):
+            # 删除错题（并同步删卡）——仅老师/管理员，避免学生删库
+            if not _teacher_only():
+                return
             eid = p[len("/api/train/errors/"):]
             store_delete("trainErrors", eid)
             # 同步删卡(若存在)
@@ -2014,9 +2090,15 @@ class H(BaseHTTPRequestHandler):
                     store_delete("trainCards", cid)
             return send_json(self, {"ok": True})
         if p == "/api/train/tasks/generate":
+            # 生成全体任务——仅老师/管理员
+            if not _teacher_only():
+                return
             d = q.get("date", [None])[0]
             return send_json(self, train_generate_tasks(d))
         if p == "/api/train/logs":
+            # 手动登记/改写作答流水（会改卡片等级）——仅老师/管理员
+            if not _teacher_only():
+                return
             body, err = read_body(self)
             if err:
                 return send_json(self, {"error": err}, 400)

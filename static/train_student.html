@@ -707,7 +707,14 @@ async function loadToday(){
   }
   document.getElementById('sharedCard').classList.remove('hidden');
   bb.classList.remove('hidden');
-  SHARED={photos:[],urls:[]}; renderShared();
+  TASK_ID = task.id;
+  // 恢复「已上传、还没提交」的照片（重进页面不用重拍；照片其实已在服务器上）
+  let _restored=[];
+  try{
+    const sv=localStorage.getItem('tt_drafts_'+TASK_ID);
+    if(sv){ const a=JSON.parse(sv); if(Array.isArray(a)) _restored=a.filter(Boolean); }
+  }catch(e){}
+  SHARED={photos:[],urls:_restored}; renderShared();
   box.innerHTML=''; ST={};
   j.items.forEach((e,idx)=>{
     const imgs = (e.images&&e.images.length)?e.images:(e.image?[e.image]:[]);
@@ -729,6 +736,15 @@ async function loadToday(){
 }
 // 公共计算过程（多题写在同一张纸上时只传一次，提交时每题都会带上这些图）
 let SHARED = {photos:[], urls:[]};
+let TASK_ID = '';
+// 把「已上传但还没提交」的照片记在本地：学生中途退出再进来不用重拍
+function persistDrafts(){
+  try{
+    if(!TASK_ID) return;
+    if(SHARED.urls.length) localStorage.setItem('tt_drafts_'+TASK_ID, JSON.stringify(SHARED.urls));
+    else localStorage.removeItem('tt_drafts_'+TASK_ID);
+  }catch(e){}
+}
 function addSharedPhotos(inp){
   const n = inp.files.length;
   [...inp.files].forEach(f=>SHARED.photos.push(f));
@@ -747,9 +763,17 @@ function renderShared(){
       + `<span class="tick" style="display:flex;align-items:center;justify-content:center"><svg class="ic" style="width:12px;height:12px"><use href="#i-check"/></svg></span></span>`).join('')
     + SHARED.photos.map((f,i)=>
       `<span class="tw"><img src="${URL.createObjectURL(f)}"><button class="x" onclick="delSharedPhoto(${i})">×</button></span>`).join('');
-  // 有待上传的照片 → 显示「上传并查看答案」按钮
+  // 有待上传的照片 → 显示按钮；已上传但未提交（重进页面恢复）→ 显示「继续查看答案」
   const upBtn=document.getElementById('upBtn');
-  if(upBtn) upBtn.style.display = SHARED.photos.length ? '' : 'none';
+  if(upBtn){
+    const hasAny = SHARED.photos.length || SHARED.urls.length;
+    upBtn.style.display = hasAny ? '' : 'none';
+    const lb = SHARED.photos.length ? '上传并查看答案' : '继续查看答案';
+    if(upBtn.dataset.lb !== lb){
+      upBtn.dataset.lb = lb;
+      upBtn.innerHTML = '<svg class="ic"><use href="#i-eye"/></svg>' + lb;
+    }
+  }
   // 上传照片后，提示学生核对答案、写错误原因
   const ah=document.getElementById('afterHint');
   if(ah){
@@ -774,6 +798,7 @@ async function uploadShared(){
   }
   SHARED.photos = [];
   renderShared();
+  persistDrafts();   // 记到本地，退出再进来还能接着用（未提交前）
 }
 // 每题状态: revealed(答案是否已展开) result note
 let ST={};
@@ -1064,6 +1089,7 @@ async function submit(){
   document.getElementById('bottomBar').classList.add('hidden');
   // 当日作业已提交完成 → 解锁近期错题，并自动展开供复习
   TASK_DONE = true;
+  try{ if(TASK_ID) localStorage.removeItem('tt_drafts_'+TASK_ID); }catch(e){}
   updateWeekLock();
   document.getElementById('weekList').classList.remove('hidden');
   const _wb2=document.getElementById('weekBtnTxt'); if(_wb2) _wb2.textContent='收起';
