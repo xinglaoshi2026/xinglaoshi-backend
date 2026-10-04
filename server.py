@@ -1735,8 +1735,10 @@ class H(BaseHTTPRequestHandler):
                 # ② 必须已进入本人「已生成」的练习任务（防止把整个错题库的答案一次性套走）
                 if not _error_in_generated_task(eff_sid, eid):
                     return send_json(self, {"error": "这道题还没排进你的练习，先完成今日练习"}, 403)
-                # ③ 必须先上传作答照片（先自己做、再对答案）
-                if not _student_uploaded_today(eff_sid):
+                # ③ 必须先上传作答照片（先自己做、再对答案）；跨零点也认前一天的
+                _today = _date_today()
+                if not (_student_uploaded_today(eff_sid, _today)
+                        or _student_uploaded_today(eff_sid, _date_after(_today, -1))):
                     return send_json(self, {"error": "请先上传作答照片，再看答案"}, 403)
             return send_json(self, {"errorId": eid,
                                     "answer": e.get("answer") or "",
