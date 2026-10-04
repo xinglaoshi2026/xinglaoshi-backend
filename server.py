@@ -1542,6 +1542,15 @@ class H(BaseHTTPRequestHandler):
             items = [e["body"] for e in store_list("trainErrors", limit=5000)]
             if eff_sid:
                 items = [e for e in items if e.get("studentId") == eff_sid]
+            # 学生端「最近一周错题」只列出「自己已经练过」的题：老师刚添加、还没轮到练的题不下发，
+            # 免得学生一提交今日练习就提前看到老师添加的全部错题（含答案）。老师/管理员不受限。
+            if is_student and eff_sid:
+                practiced = set()
+                for lg in store_list("trainLogs", limit=20000):
+                    b = lg.get("body") or {}
+                    if b.get("studentId") == eff_sid and b.get("errorId"):
+                        practiced.add(b["errorId"])
+                items = [e for e in items if e.get("id") in practiced]
             return send_json(self, {"items": items, "count": len(items)})
         if p == "/api/train/errors/export.docx":
             # 导出 Word。学生只能导出自己的；老师可带 ?studentId= 导出指定学生。

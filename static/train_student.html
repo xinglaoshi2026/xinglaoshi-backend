@@ -441,6 +441,7 @@
         <div class="pv" id="shared-pv"></div>
         <input id="shared-ph" type="file" accept="image/*" multiple class="hidden" onchange="addSharedPhotos(this)">
         <button class="btn3 sm" onclick="document.getElementById('shared-ph').click()"><svg class="ic"><use href="#i-camera"/></svg>拍照 / 选照片</button>
+        <button class="btn3 sm" id="upBtn" style="display:none" onclick="revealAll()"><svg class="ic"><use href="#i-eye"/></svg>上传并查看答案</button>
       </div>
       <div id="rvHint" class="statusline"></div>
     </div>
@@ -481,8 +482,8 @@
     </div>
     <ol>
       <li><b>第1步</b>：点最上面 <b>打印题目</b>，把题目打印出来（也可以直接看屏幕），把今天<b>所有题目</b>的答案/计算过程写在<b>同一张纸</b>上。</li>
-      <li><b>第2步</b>：翻到题目下面的「<b>做完拍照上传</b>」，拍好照片上传——可以一次选多张，也可以分几次拍照上传。</li>
-      <li><b>第3步</b>：上传成功后，每道题会<b>自动显示答案与解析</b>，不用逐题点。</li>
+      <li><b>第2步</b>：翻到题目下面的「<b>做完拍照上传</b>」，点「<b>拍照 / 选照片</b>」选中照片——可一次选多张、也可分几次拍。选好后会先在本页预览，<b>拍糊的可点 × 删掉重拍</b>，此时还没上传。</li>
+      <li><b>第3步</b>：确认照片没问题后，点「<b>上传并查看答案</b>」，照片才真正上传；随后每道题会<b>自动显示答案与解析</b>，不用逐题点。</li>
       <li><b>第4步</b>：对照答案给自己打分：做对了 / 半对 / 做错了。</li>
       <li><b>第5步</b>：如果自评是<b>半对或做错了</b>，请写下<b>错误原因</b>（必填）；自评<b>做对了</b>可不填。</li>
       <li>所有题目都填完后，点最下方 <b>提交今日练习</b>。</li>
@@ -733,7 +734,12 @@ function addSharedPhotos(inp){
   [...inp.files].forEach(f=>SHARED.photos.push(f));
   inp.value='';         // 清空以便继续拍照/选图，已选中的仍保留在列表里
   renderShared();
-  if(n) revealAll();    // 上传后自动展开所有题目的答案（第2步）
+  // 只做本地预览，不自动上传；确认没拍糊后再点「上传并查看答案」
+  const hint=document.getElementById('rvHint');
+  if(hint && n){
+    hint.textContent='已选 '+SHARED.photos.length+' 张，确认没拍糊后点「上传并查看答案」';
+    hint.className='statusline warn';
+  }
 }
 function renderShared(){
   document.getElementById('shared-pv').innerHTML =
@@ -741,6 +747,9 @@ function renderShared(){
       + `<span class="tick" style="display:flex;align-items:center;justify-content:center"><svg class="ic" style="width:12px;height:12px"><use href="#i-check"/></svg></span></span>`).join('')
     + SHARED.photos.map((f,i)=>
       `<span class="tw"><img src="${URL.createObjectURL(f)}"><button class="x" onclick="delSharedPhoto(${i})">×</button></span>`).join('');
+  // 有待上传的照片 → 显示「上传并查看答案」按钮
+  const upBtn=document.getElementById('upBtn');
+  if(upBtn) upBtn.style.display = SHARED.photos.length ? '' : 'none';
   // 上传照片后，提示学生核对答案、写错误原因
   const ah=document.getElementById('afterHint');
   if(ah){
@@ -774,13 +783,19 @@ async function revealAll(){
   const qs=[...document.querySelectorAll('#items .q')];
   if(!qs.length) return;
   const hint=document.getElementById('rvHint');
+  const upBtn=document.getElementById('upBtn');
   if(!SHARED.photos.length && !SHARED.urls.length){
     if(hint){ hint.textContent='请先拍照上传答案（可多张）'; hint.className='statusline warn'; }
     return;
   }
+  if(upBtn) upBtn.disabled=true;
   if(hint){ hint.textContent='正在上传并显示答案…'; hint.className='statusline'; }
   try{ await uploadShared(); }catch(e){}
-  if(!SHARED.urls.length){ if(hint){ hint.textContent='上传失败，请重试'; hint.className='statusline warn'; } return; }
+  if(upBtn) upBtn.disabled=false;
+  if(!SHARED.urls.length){
+    if(hint){ hint.textContent='上传失败，请重试'; hint.className='statusline warn'; }
+    return;
+  }
   for(const q of qs){
     await revealOne(q.dataset.idx);
   }
@@ -1011,7 +1026,7 @@ async function submit(){
   if(!qs.length) return;
   const btn=document.getElementById('submitBtn');
   const fail = m => { btn.disabled=false; btn.textContent='提交今日练习'; alert(m); };
-  if(!SHARED.photos.length && !SHARED.urls.length){ alert('请先在第1步上传答案照片（所有题目答案写在同一张纸上）'); return; }
+  if(!SHARED.photos.length && !SHARED.urls.length){ alert('请先在第1步「拍照 / 选照片」，选好后点「上传并查看答案」'); return; }
   btn.disabled=true; btn.textContent='上传中…';
   try{ await uploadShared(); }
   catch(e){ btn.disabled=false; btn.textContent='提交今日练习'; alert('答案照片上传失败，请重试'); return; }
@@ -1024,7 +1039,7 @@ async function submit(){
     const st=ST[idx]||{revealed:false,result:'',note:''};
     // 今天已经交过的题（中途退出后再进来）：不用重填，直接跳过（服务端不会重复记分）
     if(q.dataset.answered==='1' && !st.result){ answers.push({errorId:eid}); continue; }
-    if(!st.revealed){ fail('第'+n+'题的答案还没显示，请先在第1步上传答案照片'); return; }
+    if(!st.revealed){ fail('第'+n+'题的答案还没显示，请先点「上传并查看答案」'); return; }
     if(!st.result){ fail('第'+n+'题还没自评对错，请完成第3步'); return; }
     const needNote = (st.result==='half' || st.result==='self_wrong');
     if(needNote && !(st.note||'').trim()){ fail('第'+n+'题（'+(st.result==='half'?'半对':'做错')+'）还没写错误原因，请完成第4步'); return; }
