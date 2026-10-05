@@ -387,6 +387,22 @@
     background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:20px;
     max-width:92%;max-height:84%;overflow:auto;min-width:280px;box-shadow:var(--sh3)
   }
+  /* ---------- 学生作答详情（题目 + 照片批改） ---------- */
+  .tl-tip{font-size:12px;color:var(--ink3);margin:2px 0 8px;line-height:1.6}
+  .tl-item{border-top:1px solid var(--line2);padding:10px 0}
+  .tl-item:first-of-type{border-top:0;padding-top:2px}
+  .tl-hd{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+  .tl-res{font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px}
+  .tl-res.ok{color:var(--ok);background:var(--ok-soft)}
+  .tl-res.bad{color:var(--err);background:var(--err-soft)}
+  .tl-stem{font-size:13.5px;line-height:1.65;color:var(--ink);white-space:pre-wrap;word-break:break-word}
+  .tl-thumbs{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0}
+  .tl-acts{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 2px}
+  .tl-none{font-size:12px;color:var(--ink3)}
+  .tl-ans{margin:6px 0;padding:8px 10px;background:var(--surface2);border-radius:10px}
+  .tl-lb{font-size:12px;font-weight:700;color:var(--ink2);margin:4px 0 2px}
+  .tl-tx{font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-word}
+  .tl-note{font-size:12.5px;color:var(--ink2);margin-top:4px}
   @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
   /* ---------- 作答照片查看器（多张） ---------- */
   .zd-mask{position:fixed;inset:0;background:rgba(14,11,9,.95);z-index:200;display:none;
@@ -1741,10 +1757,10 @@ function stuName(sid){ return (window._STU_MAP&&window._STU_MAP[sid])||sid||''; 
    错题图、答案图、作答照片共用；交互参照学生端。 */
 let _ZD = null;
 const ZD = { scale:1, tx:0, ty:0, rot:0, natW:0, natH:0, baseW:0, baseH:0, moved:false, lastTap:0, quiet:0 };
-function zoomDrafts(urlsJson){
-  openPhotoViewer((JSON.parse(urlsJson) || []).filter(Boolean), 0);
+function zoomDrafts(urlsJson, caption){
+  openPhotoViewer((JSON.parse(urlsJson) || []).filter(Boolean), 0, caption || '');
 }
-function openPhotoViewer(urls, start){
+function openPhotoViewer(urls, start, caption){
   if(!urls || !urls.length) return;
   let ov = document.getElementById('zd-mask');
   if(!ov){
@@ -1785,7 +1801,7 @@ function openPhotoViewer(urls, start){
     bindZdGestures(ov);
     zdBlockScroll(ov);
   }
-  _ZD = { urls, i: Math.min(Math.max(0, start|0), urls.length - 1) };
+  _ZD = { urls, i: Math.min(Math.max(0, start|0), urls.length - 1), caption: caption || '' };
   renderZD();
   ov.style.display = 'flex';
   zdLockBg(true);
@@ -1923,7 +1939,8 @@ function renderZD(){
     if(img.complete && img.naturalWidth) zdLayout();
   }
   const t = document.getElementById('zd-title');
-  if(t) t.textContent = '图片 · 第 ' + (_ZD.i+1) + ' / ' + _ZD.urls.length + ' 张'
+  if(t) t.textContent = (_ZD.caption ? _ZD.caption + ' · ' : '')
+    + '第 ' + (_ZD.i+1) + ' / ' + _ZD.urls.length + ' 张'
     + (_ZD.urls.length > 1 ? '（未放大时可左右滑动切换）' : '');
   const multi = _ZD.urls.length > 1;
   const p = document.getElementById('zd-prev'), n = document.getElementById('zd-next');
@@ -2315,22 +2332,47 @@ function downloadStuErrors(sid, date, questionsOnly){
 async function viewTaskLogs(tid){
   const {j} = await call('/api/train/tasks/'+tid+'/logs');
   const items = (j&&j.items)||[];
-  let h = '<div class="modal-box"><div class="modal-head"><b>学生作答详情（'+items.length+' 题）</b><button class="ghost icon sm" onclick="closeModal()" title="关闭"><svg class="ic"><use href="#i-close"/></svg></button></div>';
+  let h = '<div class="modal-box" style="max-width:96vw"><div class="modal-head"><b>学生作答详情（'+items.length+' 题）</b>'
+    + '<button class="ghost icon sm" onclick="closeModal()" title="关闭"><svg class="ic"><use href="#i-close"/></svg></button></div>'
+    + '<div class="tl-tip">先看<b>题目</b>，再点「看学生作答」对着照片批改；拿不准就点「看答案 / 解析」。</div>';
   if(!items.length) h += '<p style="color:var(--ink3)">该生还没有提交作答记录。</p>';
   else {
     items.forEach((l,i)=>{
-      const r = l.result==='right'||l.result==='self_right'?'✓ 做对':l.result==='half'?'半对':'✗ 做错';
-      const imgs = l.draftImages||[];
-      const stem = (l.stem||'(看图题)').slice(0,40);
-      h += `<div style="border-bottom:1px solid #eee;padding:8px 0">
-        <div><b>第${i+1}题</b> ${stem}${stem.length>=40?'…':''} · <b>${r}</b></div>
-        <div style="color:var(--ink2);margin-top:2px">错误原因：${l.errorNote||'（未填）'}</div>
-        ${imgs.length?('<button class="ghost sm" style="margin-top:5px" onclick=\'zoomDrafts('+JSON.stringify(JSON.stringify(imgs))+')\'><svg class="ic"><use href="#i-photo-stack"/></svg>看计算过程（'+imgs.length+'张）</button>'):''}
-      </div>`;
+      const ok = (l.result==='right'||l.result==='self_right');
+      const r = ok ? '✓ 做对' : (l.result==='half' ? '半对' : '✗ 做错');
+      const drafts = l.draftImages||[];
+      const qimgs = (l.images && l.images.length) ? l.images : (l.image ? [l.image] : []);
+      const aimgs = l.answerImages||[];
+      const ri  = qimgs.length ? (zoomReg.push(qimgs.map(u=>murl(u)))-1) : -1;
+      const rai = aimgs.length ? (zoomReg.push(aimgs.map(u=>murl(u)))-1) : -1;
+      const cap = '第'+(i+1)+'题';
+      h += '<div class="tl-item">'
+        +   '<div class="tl-hd"><b>第'+(i+1)+'题</b><span class="tl-res '+(ok?'ok':'bad')+'">'+r+'</span></div>'
+        +   '<div class="tl-stem">'+esc(l.stem || '（看图题，请看下面的题图）')+'</div>'
+        +   (qimgs.length ? '<div class="tl-thumbs">'+qimgs.map((u,k)=>
+              '<img class="thumb" src="'+esc(murl(u))+'" onclick="zoomList('+ri+','+k+')" title="点击放大题目">').join('')+'</div>' : '')
+        +   '<div class="tl-acts">'
+        +     (drafts.length ? '<button class="pillbtn" onclick=\'zoomDrafts('+JSON.stringify(JSON.stringify(drafts))+',"'+cap+' · 学生作答")\'><svg class="ic"><use href="#i-photo-stack"/></svg>看学生作答（'+drafts.length+'张）</button>' : '<span class="tl-none">未传作答照片</span>')
+        +     ((l.answer||l.analysis||aimgs.length) ? '<button class="ghost sm" onclick="tlToggleAnswer('+i+',this)">看答案 / 解析</button>' : '')
+        +   '</div>'
+        +   '<div class="tl-ans hidden" id="tlans_'+i+'">'
+        +     (l.answer ? '<div class="tl-lb">答案</div><div class="tl-tx">'+esc(l.answer)+'</div>' : '')
+        +     (l.analysis ? '<div class="tl-lb">解析</div><div class="tl-tx">'+esc(l.analysis)+'</div>' : '')
+        +     (aimgs.length ? '<div class="tl-thumbs">'+aimgs.map((u,k)=>
+                '<img class="thumb" src="'+esc(murl(u))+'" onclick="zoomList('+rai+','+k+')" title="点击放大答案图">').join('')+'</div>' : '')
+        +   '</div>'
+        +   '<div class="tl-note">错误原因：'+esc(l.errorNote||'（未填）')+'</div>'
+        + '</div>';
     });
   }
   h += '</div>';
   showModalHtml(h);
+}
+function tlToggleAnswer(i, btn){
+  const el = document.getElementById('tlans_'+i);
+  if(!el) return;
+  const open = !el.classList.toggle('hidden');
+  if(btn) btn.textContent = open ? '收起答案' : '看答案 / 解析';
 }
 async function loadDash(){
   const dsel = document.getElementById('dash-date');

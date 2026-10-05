@@ -1788,8 +1788,15 @@ class H(BaseHTTPRequestHandler):
                 if b.get("taskId") != tid:
                     continue
                 e, _ = store_get("trainErrors", b.get("errorId"))
+                _e = e or {}
                 out.append({"errorId": b.get("errorId"),
-                            "stem": (e or {}).get("stem", "") if e else "",
+                            "stem": _e.get("stem", ""),
+                            # 老师端着照片批改需要看到题目本身：一并下发题图/答案/解析/答案图
+                            # （本接口对学生 403，不受"学生未做不能看答案"的限制）
+                            "images": _e.get("images") or ([_e.get("image")] if _e.get("image") else []),
+                            "answer": _e.get("answer") or "",
+                            "analysis": _e.get("analysis") or "",
+                            "answerImages": _e.get("answerImages") or [],
                             "result": b.get("result"),
                             "errorNote": b.get("errorNote") or "",
                             "draftImages": b.get("draftImages") or ([] if not b.get("draftImage") else [b.get("draftImage")]),
