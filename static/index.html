@@ -144,10 +144,25 @@
   .kp-kids{margin-left:16px;border-left:1px dashed var(--border-dark);padding-left:4px;display:none}
   .kp-kids.open{display:block}
 
-  /* ===== 图片灯箱 ===== */
-  .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:100;display:flex;align-items:center;justify-content:center;
-    padding:16px;animation:fadeIn .15s}
-  .lightbox img{max-width:100%;max-height:92vh;border-radius:8px;object-fit:contain}
+  /* ===== 图片灯箱（可放大 / 拖动 / 旋转） ===== */
+  .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.93);z-index:100;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;padding:0;animation:fadeIn .15s;touch-action:none;overscroll-behavior:contain;
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+  .lb-top{position:absolute;top:calc(env(safe-area-inset-top,0px) + 10px);left:0;right:0;display:flex;align-items:center;
+    justify-content:space-between;gap:8px;padding:0 12px;z-index:3}
+  .lb-cap{color:#fff;font-size:12.5px;opacity:.9;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lb-tools{display:flex;gap:6px;align-items:center;flex:0 0 auto}
+  .lb-tool{background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:16px;
+    padding:6px 12px;font-size:12.5px;font-weight:600;line-height:1}
+  .lb-tool:active{background:rgba(255,255,255,.34)}
+  .lb-close{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.16);color:#fff;
+    border:1px solid rgba(255,255,255,.3);font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center}
+  .lb-stage{position:relative;flex:1;width:100%;min-height:0;display:flex;align-items:center;justify-content:center;
+    overflow:hidden;touch-action:none}
+  .lb-img{display:block;max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;background:#111;
+    transform-origin:center center;will-change:transform;touch-action:none;-webkit-user-drag:none}
+  .lb-hint{position:absolute;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);color:rgba(255,255,255,.6);
+    font-size:11.5px;z-index:3;pointer-events:none}
 
   /* ===== 课时统计（无边框） ===== */
   .rec-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
@@ -473,9 +488,20 @@
       <div class="sheet-body" id="catTree"></div>
     </div>
   </div>
-  <!-- 图片灯箱 -->
-  <div id="lightbox" class="lightbox hidden" onclick="this.classList.add('hidden')">
-    <img id="lightboxImg" src="" alt="预览">
+  <!-- 图片灯箱（可放大/拖动/旋转） -->
+  <div id="lightbox" class="lightbox hidden">
+    <div class="lb-top">
+      <span class="lb-cap" id="lightboxCap"></span>
+      <span class="lb-tools">
+        <button class="lb-tool" id="lbZout" type="button" title="缩小">－</button>
+        <button class="lb-tool" id="lbZin" type="button" title="放大">＋</button>
+        <button class="lb-tool" id="lbRot" type="button" title="旋转 90°">旋转</button>
+        <button class="lb-tool" id="lbReset" type="button" title="还原大小">还原</button>
+        <button class="lb-close" id="lbClose" type="button" title="关闭">✕</button>
+      </span>
+    </div>
+    <div class="lb-stage" id="lbStage"><img id="lightboxImg" class="lb-img" src="" alt="预览"></div>
+    <div class="lb-hint">双指/双击放大 · 放大后拖动查看 · 点空白处关闭</div>
   </div>
   <div class="toast" id="toast"></div>
 </div>

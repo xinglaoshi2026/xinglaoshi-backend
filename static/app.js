@@ -390,9 +390,129 @@
       btn.innerHTML = on ? "✕ 取消组卷" : "加入组卷";
     });
   }
-  function showLightbox(src) {
-    $("#lightboxImg").src = src;
-    $("#lightbox").classList.remove("hidden");
+  // ---------- 图片灯箱：支持放大（双指/双击/滚轮）、拖动、旋转（参照训练学生端） ----------
+  var LB = { scale:1, tx:0, ty:0, rot:0, natW:0, natH:0, baseW:0, baseH:0, moved:false, lastTap:0, quiet:0, bound:false };
+  function lbApply() {
+    var img = document.getElementById("lightboxImg"); if (!img) return;
+    img.style.transform = "translate(" + LB.tx + "px," + LB.ty + "px) rotate(" + LB.rot + "deg) scale(" + LB.scale + ")";
+  }
+  function lbLayout() {
+    var img = document.getElementById("lightboxImg"); if (!img || !img.naturalWidth) return;
+    LB.natW = img.naturalWidth; LB.natH = img.naturalHeight;
+    var st = document.getElementById("lbStage");
+    var VW = Math.max(120, (st ? st.clientWidth : window.innerWidth) - 8);
+    var VH = Math.max(120, (st ? st.clientHeight : window.innerHeight) - 8);
+    var rotated = (LB.rot % 180) !== 0;
+    var f = rotated ? Math.min(VW / LB.natH, VH / LB.natW) : Math.min(VW / LB.natW, VH / LB.natH);
+    LB.baseW = LB.natW * f; LB.baseH = LB.natH * f;
+    img.style.width = LB.baseW + "px";
+    img.style.height = LB.baseH + "px";
+    lbApply();
+  }
+  function lbReset() { LB.scale = 1; LB.tx = 0; LB.ty = 0; lbApply(); }
+  function lbZoom(k) {
+    LB.scale = Math.min(8, Math.max(1, LB.scale * k));
+    if (LB.scale <= 1.001) { LB.tx = 0; LB.ty = 0; }
+    lbApply();
+  }
+  function lbRotate() { LB.rot = (LB.rot + 90) % 360; LB.scale = 1; LB.tx = 0; LB.ty = 0; lbLayout(); }
+  function lbHide() {
+    var ov = document.getElementById("lightbox"); if (ov) ov.classList.add("hidden");
+    try { document.documentElement.style.overflow = ""; document.body.style.overflow = ""; } catch (e) {}
+  }
+  function lbBind() {
+    if (LB.bound) return; LB.bound = true;
+    var ov = document.getElementById("lightbox"), stage = document.getElementById("lbStage");
+    document.getElementById("lbClose").onclick = function (e) { e.stopPropagation(); lbHide(); };
+    document.getElementById("lbZin").onclick = function (e) { e.stopPropagation(); lbZoom(1.25); };
+    document.getElementById("lbZout").onclick = function (e) { e.stopPropagation(); lbZoom(0.8); };
+    document.getElementById("lbRot").onclick = function (e) { e.stopPropagation(); lbRotate(); };
+    document.getElementById("lbReset").onclick = function (e) { e.stopPropagation(); lbReset(); };
+    ov.addEventListener("click", function (e) {
+      if (Date.now() - LB.quiet < 400) return;              // 刚拖过/划过，防误关
+      if (e.target === ov || e.target.id === "lbStage") lbHide();
+    });
+    // 手势（指针事件统一鼠标/触摸）
+    var pts = new Map(), startDist = 0, startScale = 1, startTx = 0, startTy = 0, startMid = { x:0, y:0 };
+    var lastX = 0, lastY = 0, dragging = false, sx = 0, sy = 0;
+    function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+    function mid(a, b) { return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; }
+    stage.addEventListener("pointerdown", function (e) {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      try { stage.setPointerCapture(e.pointerId); } catch (_) {}
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      LB.moved = false;
+      if (pts.size === 1) { dragging = true; lastX = sx = e.clientX; lastY = sy = e.clientY; }
+      else if (pts.size === 2) {
+        dragging = false;
+        var a = Array.from(pts.values());
+        startDist = dist(a[0], a[1]); startScale = LB.scale;
+        startMid = mid(a[0], a[1]); startTx = LB.tx; startTy = LB.ty;
+      }
+    });
+    stage.addEventListener("pointermove", function (e) {
+      if (!pts.has(e.pointerId)) return;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pts.size === 2) {
+        var a = Array.from(pts.values()), d = dist(a[0], a[1]);
+        if (startDist > 0) LB.scale = Math.min(8, Math.max(1, startScale * d / startDist));
+        var m = mid(a[0], a[1]);
+        LB.tx = startTx + (m.x - startMid.x);
+        LB.ty = startTy + (m.y - startMid.y);
+        lbApply(); LB.moved = true;
+        if (e.cancelable) e.preventDefault();
+      } else if (pts.size === 1 && dragging) {
+        var dx = e.clientX - lastX, dy = e.clientY - lastY;
+        lastX = e.clientX; lastY = e.clientY;
+        if (Math.abs(dx) + Math.abs(dy) > 4) LB.moved = true;
+        if (LB.scale > 1.001) { LB.tx += dx; LB.ty += dy; lbApply(); if (e.cancelable) e.preventDefault(); }
+      }
+    });
+    function endPt(e) {
+      if (!pts.has(e.pointerId)) return;
+      pts.delete(e.pointerId);
+      if (pts.size < 2) startDist = 0;
+      if (pts.size > 0) return;
+      dragging = false;
+      LB.quiet = Date.now();
+      if (LB.moved) return;
+      if (e.target && e.target.id === "lightboxImg") {
+        var now = Date.now();
+        if (now - LB.lastTap < 300) {                        // 双击：放大 / 还原
+          LB.scale = LB.scale > 1.5 ? 1 : 2.4;
+          if (LB.scale === 1) { LB.tx = 0; LB.ty = 0; }
+          lbApply(); LB.lastTap = 0; return;
+        }
+        LB.lastTap = now;
+      }
+    }
+    stage.addEventListener("pointerup", endPt);
+    stage.addEventListener("pointercancel", endPt);
+    stage.addEventListener("wheel", function (e) {           // 电脑浏览器：滚轮缩放
+      if (e.cancelable) e.preventDefault();
+      lbZoom(e.deltaY < 0 ? 1.12 : 0.89);
+    }, { passive: false });
+    // 兜底：不依赖 touch-action，阻止底层页面跟着手指滚（微信/QQ 的 X5 内核支持差）
+    ov.addEventListener("touchmove", function (e) { if (e.cancelable) e.preventDefault(); }, { passive: false });
+    window.addEventListener("resize", function () {
+      if (!ov.classList.contains("hidden")) lbLayout();
+    });
+  }
+  function showLightbox(src, caption) {
+    var ov = document.getElementById("lightbox");
+    var img = document.getElementById("lightboxImg");
+    if (!ov || !img || !src) return;
+    lbBind();
+    LB.scale = 1; LB.tx = 0; LB.ty = 0; LB.rot = 0; LB.lastTap = 0;
+    img.style.width = ""; img.style.height = ""; img.style.transform = "";
+    img.onload = function () { lbLayout(); };
+    img.src = src;
+    if (img.complete && img.naturalWidth) lbLayout();
+    var cap = document.getElementById("lightboxCap");
+    if (cap) cap.textContent = caption || "";
+    ov.classList.remove("hidden");
+    try { document.documentElement.style.overflow = "hidden"; document.body.style.overflow = "hidden"; } catch (e) {}
+    setTimeout(lbLayout, 30);
   }
 
   // ---------- 知识点选择抽屉 ----------
