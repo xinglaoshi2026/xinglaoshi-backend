@@ -390,7 +390,8 @@
   @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
   /* ---------- 作答照片查看器（多张） ---------- */
   .zd-mask{position:fixed;inset:0;background:rgba(14,11,9,.95);z-index:200;display:none;
-    flex-direction:column;align-items:center;justify-content:center;padding:6px;overflow:hidden;animation:fadeIn .14s ease}
+    flex-direction:column;align-items:center;justify-content:center;padding:6px;overflow:hidden;animation:fadeIn .14s ease;
+    touch-action:none;overscroll-behavior:contain;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
   .zd-top{position:absolute;top:calc(env(safe-area-inset-top,0px) + 8px);left:0;right:0;
     display:flex;align-items:center;justify-content:space-between;padding:0 14px;z-index:3}
   .zd-title{color:#fff;font-size:13px;font-weight:600;opacity:.9;text-shadow:0 1px 3px rgba(0,0,0,.5)}
@@ -1751,6 +1752,8 @@ function openPhotoViewer(urls, start){
     ov.innerHTML = ''
       + '<div class="zd-top"><span class="zd-title" id="zd-title"></span>'
       +   '<span class="zd-tools">'
+      +     '<button class="zd-tool" id="zd-zout" title="缩小">－</button>'
+      +     '<button class="zd-tool" id="zd-zin" title="放大">＋</button>'
       +     '<button class="zd-tool" id="zd-rot" title="旋转 90°">旋转</button>'
       +     '<button class="zd-tool" id="zd-reset" title="还原大小">还原</button>'
       +     '<button class="zd-close" id="zd-close" title="关闭">✕</button>'
@@ -1760,7 +1763,7 @@ function openPhotoViewer(urls, start){
       +   '<img class="zd-img" id="zd-img" alt="图片">'
       +   '<div class="zd-nav zd-next" id="zd-next" title="下一张">›</div>'
       + '</div>'
-      + '<div class="zd-hint">双指/双击放大 · 拖动查看 · 放大后左右滑动翻页</div>'
+      + '<div class="zd-hint">双指/双击放大 · 或点右上角「＋」 · 放大后拖动查看 · 未放大时左右滑动翻页</div>'
       + '<div class="zd-thumbs" id="zd-thumbs"></div>';
     document.body.appendChild(ov);
     ov.querySelector('#zd-close').onclick = e => { e.stopPropagation(); hideZoomDrafts(); };
@@ -1780,14 +1783,34 @@ function openPhotoViewer(urls, start){
       else if(e.key === 'Escape') hideZoomDrafts();
     });
     bindZdGestures(ov);
+    zdBlockScroll(ov);
   }
   _ZD = { urls, i: Math.min(Math.max(0, start|0), urls.length - 1) };
   renderZD();
   ov.style.display = 'flex';
+  zdLockBg(true);
 }
 function zdGo(d){ if(!_ZD) return; _ZD.i = (_ZD.i + d + _ZD.urls.length) % _ZD.urls.length; renderZD(); }
 function zdJump(k){ if(!_ZD) return; _ZD.i = k; renderZD(); }
-function hideZoomDrafts(){ const ov=document.getElementById('zd-mask'); if(ov) ov.style.display='none'; }
+function hideZoomDrafts(){ const ov=document.getElementById('zd-mask'); if(ov) ov.style.display='none'; zdLockBg(false); }
+
+/* 不依赖 touch-action 的兜底：阻止"底层页面跟着手指滚"（微信/QQ 的 X5 内核对 touch-action 支持差）。
+   只在图片/空白区拦，缩略图条仍可横向滚动；不拦 touchstart，保证按钮的点击不被吃掉。 */
+function zdBlockScroll(ov){
+  if(ov._zdScrollBound) return; ov._zdScrollBound = true;
+  ov.addEventListener('touchmove', e => {
+    const t = e.target;
+    if(t && t.closest && t.closest('.zd-thumbs')) return;   // 缩略图条：允许横向滑
+    if(e.cancelable) e.preventDefault();
+  }, {passive:false});
+}
+/* 查看图片时锁住底层页面滚动（关掉还原） */
+function zdLockBg(on){
+  try{
+    document.documentElement.style.overflow = on ? 'hidden' : '';
+    document.body.style.overflow = on ? 'hidden' : '';
+  }catch(e){}
+}
 
 /* 按当前旋转角度把图片「适应屏幕」，再套用 缩放/平移 */
 function zdLayout(){
