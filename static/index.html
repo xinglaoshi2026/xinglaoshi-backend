@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>邢老师工作台·手机端</title>
+<!-- PWA：加到主屏幕后图标 / 开屏 与电脑端一致 -->
+<link rel="manifest" href="/static/manifest.webmanifest">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="/static/icon-192.png">
+<meta name="theme-color" content="#4F46E5">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="工作台">
 <style>
   /* ===== 与桌面版一致的配色与组件体系 ===== */
   :root{
@@ -48,6 +57,9 @@
   .badge-danger{background:var(--danger-bg);color:var(--danger)}
   .badge-info{background:var(--info-bg);color:var(--info)}
   .badge-gray{background:#F3F4F6;color:var(--text-muted)}
+  /* 试卷库筛选 chips */
+  .ep-chip-m{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;font-size:12px;border:1px solid #E5E7EB;background:#fff;color:#374151;cursor:pointer;user-select:none;transition:background .15s,border-color .15s}
+  .ep-chip-m.on{background:var(--primary);border-color:var(--primary);color:#fff}
 
   /* ===== 按钮 ===== */
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 16px;
@@ -311,9 +323,25 @@
   .toast.success{background:var(--success)}
   .toast.error{background:var(--danger)}
   @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+
+  /* ===== 开屏（与电脑端同一套品牌图） ===== */
+  #appSplash{position:fixed;inset:0;z-index:300;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:14px;background:linear-gradient(160deg,#1B2745 0%,#24406E 55%,#335AC0 100%);color:#fff;
+    transition:opacity .38s ease;opacity:1}
+  #appSplash.gone{opacity:0;pointer-events:none}
+  #appSplash img{width:118px;height:118px;border-radius:26px;box-shadow:0 16px 40px rgba(0,0,0,.35)}
+  #appSplash .sp-title{font-size:20px;font-weight:700;letter-spacing:.06em}
+  #appSplash .sp-sub{font-size:12px;color:rgba(255,255,255,.72);letter-spacing:.04em}
 </style>
 </head>
 <body>
+<!-- 开屏：品牌图 + 名称，首屏就绪后由 app.js 淡出（另设 5s 兜底，避免卡住） -->
+<div id="appSplash">
+  <img src="/static/splash-logo.png" alt="邢老师工作台">
+  <div class="sp-title">邢老师工作台</div>
+  <div class="sp-sub">高中物理 · 题库 / 组卷 / 试卷库</div>
+</div>
+<script>setTimeout(function(){var e=document.getElementById('appSplash');if(e)e.classList.add('gone');},5000);</script>
 <div class="app" id="app">
 
   <!-- 登录 -->
@@ -341,6 +369,7 @@
       <section id="view-questions" class="main-view">
         <div class="subtabs" id="qSubTabs">
           <button class="subtab on" data-sub="q" onclick="qSub('q')">题库</button>
+          <button class="subtab" data-sub="fav" onclick="qSub('fav')">好题</button>
           <button class="subtab" data-sub="compose" onclick="qSub('compose')">组卷</button>
           <button class="subtab" data-sub="paper" onclick="qSub('paper')">试卷</button>
           <button class="subtab" data-sub="add" onclick="qSub('add')">添加题目</button>
@@ -354,6 +383,7 @@
             <button id="qKpBtn" type="button" class="filter-select" onclick="openKpSheet()">全部知识点</button>
             <input id="qSearch" class="f-search" placeholder="搜索题干/答案/编号…" oninput="debounce(applyFilter,400)()">
           </div>
+          <div id="qfChips" style="margin:2px 0 8px"></div>
           <div class="q-count" id="qCount"></div>
           <div id="qList"></div>
           <div class="center"><button class="btn sec" onclick="loadMore()">加载更多</button></div>
@@ -367,6 +397,15 @@
         </div>
 
         <div id="sub-paper" class="subpane hidden">
+          <!-- 试卷库（与电脑端「试卷中心·试卷库」一致：类型/年级/年份筛选，点开看每道题） -->
+          <div class="card page" style="margin-bottom:16px;padding:14px">
+            <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px">
+              <div style="font-size:16px;font-weight:700">📄 试卷库 <span class="muted" id="epCountM"></span></div>
+            </div>
+            <input id="epKwM" class="f-search" style="width:100%;margin-bottom:8px" placeholder="🔍 搜索试卷名 / 学校 / 来源" oninput="epKwInput(this.value)">
+            <div id="epChipsM"></div>
+            <div id="epListM" style="margin-top:10px"></div>
+          </div>
           <!-- 收藏试卷（与电脑端「试卷中心·收藏试卷」一致），置于顶部便于直达 -->
           <div class="card page" style="margin-bottom:16px;padding:14px">
             <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -382,8 +421,19 @@
           <div id="allPapers"></div>
         </div>
 
-        <div id="sub-add" class="subpane hidden">
-          <div class="card">
+        <!-- 好题集 / 我的分类（与电脑端「好题集·我的分类」一致） -->
+        <div id="sub-fav" class="subpane hidden">
+          <div class="row" style="gap:8px;margin-bottom:10px;flex-wrap:nowrap">
+            <button id="favModeBtnAll" class="filter-select on" style="flex:1;margin:0;text-align:center" onclick="favMode('all')">★ 好题集</button>
+            <button id="favModeBtnCat" class="filter-select" style="flex:1;margin:0;text-align:center" onclick="favMode('cat')">🏷️ 我的分类</button>
+            <button class="btn sec sm" style="margin:0" onclick="manageMyCats()">管理</button>
+          </div>
+          <div id="favCatChips"></div>
+          <div class="q-count" id="favCount"></div>
+          <div id="favList"></div>
+        </div>
+
+        <div id="sub-add" class="subpane hidden">          <div class="card">
             <div id="addQForm"></div>
             <button class="btn ok" style="width:100%;margin-top:8px" onclick="saveNewQuestion()">保存题目</button>
           </div>

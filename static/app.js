@@ -13,7 +13,7 @@
   let qMap = {};            // id -> question item
   let qFiltered = [], qShown = 0;   // 题库本地过滤 + 分页
   let lastPull = 0;
-  let qf = { kw: "", type: "", kpId: "" };          // 题库筛选：关键词/题型/知识点
+  let qf = { kw: "", type: "", kpId: "", fav: false, cat: "" };   // 题库筛选：关键词/题型/知识点/好题/我的分类
   let kpMap = {}, kpKids = {};                      // 知识点索引：id->body / id->[childIds]
   const Q_TYPE_CHIPS = ["选择题", "多选题", "填空题", "解答题", "计算题", "实验题", "作图题", "综合题"];
 
@@ -283,6 +283,11 @@
       const b = it.body || {};
       if (qf.type && (b.type || "") !== qf.type) return false;
       if (kpIds && !kpIds.has(b.kpId || "")) return false;
+      if (qf.fav && !b.favorite) return false;
+      if (qf.cat) {
+        const sub = myCatSubtree(qf.cat);
+        if (!(b.catIds || []).some(c => sub.has(c))) return false;
+      }
       if (qf.kw) {
         const hay = ((b.content || "") + " " + (b.answer || "") + " " + (b.kpId || "") + " " + (b.qid || "") + " " + (b.tags || "") + " " + kpPath(b.kpId || "")).toLowerCase();
         if (!hay.includes(qf.kw)) return false;
@@ -324,7 +329,23 @@
       kpBtn.classList.remove("on");
     }
     $("#qCount").textContent = "共 " + qFiltered.length + " 题" + (qf.kpId ? " · " + kpPath(qf.kpId) : "") + (qf.type ? " · " + qf.type : "");
+    renderQfChips();
   }
+  // 题库筛选 chips：全部 / ★好题 / 按我的分类（与电脑端一致）
+  function renderQfChips() {
+    const box = $("#qfChips");
+    if (!box) return;
+    const cats = myCats();
+    const favCnt = (DB.data.questions || []).filter(it => (it.body || {}).favorite).length;
+    let h = '<span class="ep-chip-m' + (!qf.fav && !qf.cat ? " on" : "") + '" onclick="setFavFilter(false)">全部</span>'
+          + '<span class="ep-chip-m' + (qf.fav ? " on" : "") + '" onclick="setFavFilter(true)">★ 好题 ' + favCnt + "</span>";
+    cats.forEach(c => {
+      h += '<span class="ep-chip-m' + (qf.cat === c.id ? " on" : "") + '" onclick="setCatFilter(\'' + c.id + "','" + esc(c.name) + "')\">🏷️ " + esc(c.name) + "</span>";
+    });
+    box.innerHTML = h;
+  }
+  function setFavFilter(on) { qf.fav = !!on; if (on) qf.cat = ""; applyFilter(); }
+  function setCatFilter(id, name) { qf.cat = (qf.cat === id ? "" : id); qf.fav = false; applyFilter(); }
   function setTypeFilter(t) { qf.type = t; applyFilter(); }
   function setKpFilter(id) { qf.kpId = id || ""; applyFilter(); }
   function showMore() {
@@ -341,11 +362,17 @@
   function qCard(it) {
     const b = it.body || {};
     const inCompose = composeSet.includes(it.id);
+    const fav = !!b.favorite;
+    const cats = (b.catIds || []).map(myCatName).filter(Boolean);
     const div = document.createElement("div");
     div.className = "card q";
     div.innerHTML =
-      '<div class="q-body-wrap" data-act="detail" data-id="' + it.id + '"><div class="q-content">' + renderRich(b.content) + "</div></div>" +
+      '<div class="q-body-wrap" data-act="detail" data-id="' + it.id + '">' +
+        (cats.length ? '<div style="margin-bottom:6px">' + cats.map(n => '<span class="ep-chip-m" style="font-size:11px;padding:1px 8px;cursor:default">🏷️ ' + esc(n) + "</span>").join(" ") + "</div>" : "") +
+        '<div class="q-content">' + renderRich(b.content) + "</div></div>" +
       '<div class="q-actions">' +
+        '<button class="q-link' + (fav ? " on" : "") + '" data-act="fav" data-id="' + it.id + '">' + (fav ? "★ 已收藏" : "☆ 收藏") + "</button>" +
+        '<button class="q-link" data-act="cat" data-id="' + it.id + '">归分类</button>' +
         '<button class="q-link" data-act="answer" data-id="' + it.id + '">查看解析</button>' +
         '<button class="q-link" data-act="detail" data-id="' + it.id + '">详情</button>' +
         '<button class="q-link' + (inCompose ? " on" : "") + '" data-act="compose" data-id="' + it.id + '">' + (inCompose ? "✕ 取消组卷" : "加入组卷") + "</button>" +
@@ -368,6 +395,8 @@
       t.innerHTML = box.classList.contains("open") ? "收起解析" : "查看解析";
     }
     else if (act === "compose") quickCompose(id);
+    else if (act === "fav") toggleFav(id);
+    else if (act === "cat") openCatPicker(id);
     else if (act === "kp") { setKpFilter(t.getAttribute("data-kp")); window.scrollTo(0, 0); }
   }
   function quickCompose(id) {
@@ -668,6 +697,10 @@
         ${b.analysis ? '<div class="dt-sec"><span class="dt-label">解析</span><div class="dt-content">' + renderRich(b.analysis) + "</div></div>" : ""}
       </div>
       <div class="modal-footer">
+        <div class="row-2" style="margin-bottom:8px">
+          <button class="btn ${b.favorite ? 'ok' : 'sec'}" onclick="toggleFav('${id}');openDetail('${id}')">${b.favorite ? "★ 已收藏" : "☆ 收藏为好题"}</button>
+          <button class="btn sec" onclick="openCatPicker('${id}')">🏷️ 归入我的分类</button>
+        </div>
         <div class="row-3">
           <button class="btn sec" onclick="openEditor('${id}')">编辑</button>
           <button class="btn sec" onclick="delQ('${id}')">删除</button>
@@ -995,8 +1028,9 @@
   function qSub(s) {
     qSubPane = s;
     document.querySelectorAll("#qSubTabs .subtab").forEach(b => b.classList.toggle("on", b.dataset.sub === s));
-    ["q", "compose", "paper", "add"].forEach(id => $("#sub-" + id).classList.toggle("hidden", id !== s));
+    ["q", "fav", "compose", "paper", "add"].forEach(id => $("#sub-" + id).classList.toggle("hidden", id !== s));
     if (s === "q") applyFilter();
+    else if (s === "fav") renderFavView();
     else if (s === "compose") renderMyPapers();
     else if (s === "paper") renderAllPapers();
     else if (s === "add") renderAddQForm();
@@ -1011,6 +1045,220 @@
     else renderRecordsList();
   }
   function openSidebar() {} function closeSidebar() {} function closeArc() {}
+
+  // ===================== 好题收藏 & 我的分类（与电脑端一致） =====================
+  // ---- 分类树工具 ----
+  function myCats() {
+    return (DB.data.myCategories || []).map(it => it.body || it).filter(c => c && c.id);
+  }
+  function myCatName(id) {
+    const c = myCats().find(x => x.id === id);
+    return c ? (c.name || "") : "";
+  }
+  function myCatChildren(pid) {
+    const arr = myCats().filter(c => (c.parentId || "") === (pid || ""));
+    arr.sort((a, b) => (a.order == null ? 0 : a.order) - (b.order == null ? 0 : b.order));
+    return arr;
+  }
+  function myCatSubtree(id) {
+    const out = new Set([id]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const c of myCats()) {
+        if (c.parentId && out.has(c.parentId) && !out.has(c.id)) { out.add(c.id); grew = true; }
+      }
+    }
+    return out;
+  }
+  // ---- 题目写回（收藏 / 分类）----
+  async function saveQBody(id, patch) {
+    let it = qMap[id];
+    const cur = (it && it.body) || {};
+    const body = Object.assign({}, cur, patch, { id: id, updatedAt: Date.now() });
+    await api("PUT", "/api/questions/" + id, body);
+    if (it) { it.body = body; it.updated_at = body.updatedAt; }
+    else {
+      it = { id: id, updated_at: body.updatedAt, body: body };
+      qMap[id] = it;
+      DB.data.questions = DB.data.questions || [];
+      DB.data.questions.push(it);
+    }
+    cachePut("pull", DB);
+    return body;
+  }
+  async function toggleFav(id) {
+    const b = (qMap[id] && qMap[id].body) || {};
+    try {
+      const nb = await saveQBody(id, { favorite: !b.favorite });
+      document.querySelectorAll('button[data-act="fav"][data-id="' + id + '"]').forEach(btn => {
+        btn.classList.toggle("on", !!nb.favorite);
+        btn.textContent = nb.favorite ? "★ 已收藏" : "☆ 收藏";
+      });
+      toast(nb.favorite ? "已收藏为好题 ★" : "已取消收藏");
+      renderQfChips();
+      if (qSubPane === "fav") renderFavView();
+      if ($("#modalBox").classList.contains("open")) openDetail(id);
+    } catch (e) { toast("操作失败：" + e.message); }
+  }
+  // ---- 归入分类（多选）----
+  let _catDraftId = "", _catDraft = [];
+  function openCatPicker(id) {
+    const b = (qMap[id] && qMap[id].body) || {};
+    _catDraftId = id; _catDraft = (b.catIds || []).slice();
+    $("#modalBox").innerHTML =
+      '<div class="modal-header"><span class="modal-title">🏷️ 归入「我的分类」</span><button class="modal-close" onclick="closeModal()">✕</button></div>' +
+      '<div class="modal-body"><div id="catPickBox"></div>' +
+      '<div class="row" style="margin-top:12px"><input id="catNewName" class="f-search" style="flex:1" placeholder="新建一个分类"><button class="btn sec" onclick="catPickCreate()">＋ 新建</button></div></div>' +
+      '<div class="modal-footer"><div class="row-2"><button class="btn ok" onclick="catPickSave()">保存</button><button class="btn sec" onclick="closeModal()">取消</button></div></div>';
+    renderCatPickBox();
+    openModal();
+  }
+  function renderCatPickBox() {
+    const box = $("#catPickBox");
+    if (!box) return;
+    if (!myCats().length) { box.innerHTML = '<div class="center">还没有分类，用下面输入框先建一个</div>'; return; }
+    const rows = [];
+    (function walk(pid, depth) {
+      myCatChildren(pid).forEach(c => {
+        rows.push('<label style="display:flex;align-items:center;gap:8px;padding:9px 4px;padding-left:' + (8 + depth * 16) + 'px;border-bottom:1px solid var(--border)">' +
+          '<input type="checkbox" value="' + c.id + '"' + (_catDraft.indexOf(c.id) >= 0 ? " checked" : "") + ' onchange="catPickToggle(this)">' +
+          '<span>' + esc(c.name) + "</span></label>");
+        walk(c.id, depth + 1);
+      });
+    })("", 0);
+    box.innerHTML = rows.join("");
+  }
+  function catPickToggle(el) {
+    const id = el.value;
+    if (el.checked) { if (_catDraft.indexOf(id) < 0) _catDraft.push(id); }
+    else _catDraft = _catDraft.filter(x => x !== id);
+  }
+  async function catPickCreate() {
+    const name = ($("#catNewName").value || "").trim();
+    if (!name) return toast("请输入分类名");
+    try {
+      await api("POST", "/api/myCategories", { name: name, parentId: "", order: myCats().length });
+      $("#catNewName").value = "";
+      await loadPull(true);
+      renderCatPickBox(); renderQfChips();
+      toast("已新建分类");
+    } catch (e) { toast("新建失败：" + e.message); }
+  }
+  async function catPickSave() {
+    try {
+      await saveQBody(_catDraftId, { catIds: _catDraft.slice() });
+      toast("已更新分类"); closeModal();
+      if (qSubPane === "fav") renderFavView(); else applyFilter();
+      renderQfChips();
+    } catch (e) { toast("保存失败：" + e.message); }
+  }
+  // ---- 分类管理 ----
+  function manageMyCats() {
+    $("#modalBox").innerHTML =
+      '<div class="modal-header"><span class="modal-title">🏷️ 我的分类管理</span><button class="modal-close" onclick="closeModal()">✕</button></div>' +
+      '<div class="modal-body"><div id="catMgrBox"></div>' +
+      '<div class="row" style="margin-top:12px"><input id="catMgrName" class="f-search" style="flex:1" placeholder="新分类名"><button class="btn sec" onclick="catMgrCreate()">＋ 新建</button></div></div>' +
+      '<div class="modal-footer"><button class="btn sec" onclick="closeModal()">关闭</button></div>';
+    renderCatMgrBox();
+    openModal();
+  }
+  function renderCatMgrBox() {
+    const box = $("#catMgrBox");
+    if (!box) return;
+    const rows = [];
+    (function walk(pid, depth) {
+      myCatChildren(pid).forEach(c => {
+        rows.push('<div style="display:flex;align-items:center;gap:2px;padding:6px 2px;padding-left:' + (depth * 16) + 'px;border-bottom:1px solid var(--border)">' +
+          '<span style="flex:1">' + esc(c.name) + "</span>" +
+          '<button class="q-link" onclick="catMgrAddChild(\'' + c.id + "','" + esc(c.name) + "')\">＋子类</button>" +
+          '<button class="q-link" onclick="catMgrRename(\'' + c.id + "')\">改名</button>" +
+          '<button class="q-link" onclick="catMgrDel(\'' + c.id + "','" + esc(c.name) + "')\">删除</button></div>");
+        walk(c.id, depth + 1);
+      });
+    })("", 0);
+    box.innerHTML = rows.join("") || '<div class="center">还没有分类</div>';
+  }
+  async function catMgrCreate() {
+    const n = ($("#catMgrName").value || "").trim();
+    if (!n) return toast("请输入分类名");
+    $("#catMgrName").value = "";
+    try {
+      await api("POST", "/api/myCategories", { name: n, parentId: "", order: myCats().length });
+      await loadPull(true); renderCatMgrBox(); renderQfChips(); toast("已新建分类");
+    } catch (e) { toast("失败：" + e.message); }
+  }
+  async function catMgrAddChild(pid, pname) {
+    const n = (prompt("在「" + pname + "」下新建子类", "") || "").trim();
+    if (!n) return;
+    try {
+      await api("POST", "/api/myCategories", { name: n, parentId: pid, order: myCatChildren(pid).length });
+      await loadPull(true); renderCatMgrBox(); renderQfChips(); toast("已新建子类");
+    } catch (e) { toast("失败：" + e.message); }
+  }
+  async function catMgrRename(id) {
+    const cur = myCats().find(c => c.id === id) || {};
+    const n = (prompt("重命名分类", cur.name || "") || "").trim();
+    if (!n || n === cur.name) return;
+    try {
+      await api("PUT", "/api/myCategories/" + id, Object.assign({}, cur, { name: n, updatedAt: Date.now() }));
+      await loadPull(true); renderCatMgrBox(); renderQfChips(); toast("已重命名");
+    } catch (e) { toast("失败：" + e.message); }
+  }
+  async function catMgrDel(id, name) {
+    if (!confirm("删除分类「" + name + "」？\n其下的题目只是移出该分类，题目本身不会被删除。")) return;
+    try {
+      await api("DELETE", "/api/myCategories/" + id);
+      await loadPull(true); renderCatMgrBox(); renderQfChips();
+      if (qSubPane === "fav") renderFavView();
+      toast("已删除分类");
+    } catch (e) { toast("失败：" + e.message); }
+  }
+  // ---- 好题集 / 我的分类 视图 ----
+  let _favMode = "all", _favCat = "";
+  function favMode(m) {
+    _favMode = m;
+    $("#favModeBtnAll").classList.toggle("on", m === "all");
+    $("#favModeBtnCat").classList.toggle("on", m === "cat");
+    renderFavView();
+  }
+  function favPickCat(id) { _favCat = (_favCat === id ? "" : id); renderFavView(); }
+  function renderFavView() {
+    const list = $("#favList"), chips = $("#favCatChips"), cnt = $("#favCount");
+    if (!list) return;
+    if (_favMode === "cat") {
+      const cats = myCats();
+      chips.innerHTML = cats.length
+        ? cats.map(c => '<span class="ep-chip-m' + (_favCat === c.id ? " on" : "") + '" onclick="favPickCat(\'' + c.id + "')\">🏷️ " + esc(c.name) + "</span>").join(" ")
+        : '<div class="center" style="padding:10px">还没有分类，点右上「管理」新建</div>';
+    } else chips.innerHTML = "";
+    const all = DB.data.questions || [];
+    let items;
+    if (_favMode === "cat" && _favCat) {
+      const sub = myCatSubtree(_favCat);
+      items = all.filter(it => ((it.body || {}).catIds || []).some(c => sub.has(c)));
+    } else {
+      items = all.filter(it => (it.body || {}).favorite);
+    }
+    const tsOf = it => {
+      let t = it.updated_at || (it.body && (it.body.updatedAt || it.body.createdAt)) || 0;
+      if (t && t < 1e11) t *= 1000;
+      return t;
+    };
+    items = items.slice().sort((a, b) => tsOf(b) - tsOf(a));
+    cnt.textContent = "共 " + items.length + " 题";
+    list.innerHTML = "";
+    if (!items.length) {
+      list.innerHTML = '<div class="center">' +
+        (_favMode === "cat" && _favCat ? "这个分类下还没有题目<br><span style=\"font-size:12px\">在题库点题目上的「归分类」" :
+          "还没有收藏的好题<br><span style=\"font-size:12px\">在题库点题目上的「☆ 收藏」") + "</span></div>";
+      return;
+    }
+    const frag = document.createDocumentFragment();
+    items.slice(0, 200).forEach(it => frag.appendChild(qCard(it)));
+    list.appendChild(frag);
+  }
+
 
   // ---------- 组卷（在题库点「加入组卷」收集，底部浮条保存） ----------
   let composeSet = [];   // 已选题目 id（有序）
@@ -1087,6 +1335,96 @@
     box.innerHTML = items.length ? "" : '<div class="center">暂无试卷</div>';
     items.forEach(it => box.appendChild(paperCard(it)));
     renderExamsM();
+    renderExamPapersM();
+  }
+
+  // ---------- 试卷库（examPapers，与电脑端「试卷中心·试卷库」一致：类型/年级/年份筛选） ----------
+  const EP_TYPES = ["高考", "期末试题", "期中试题", "月考试题", "单元测验", "同步练习"];
+  const EP_GRADES = ["八上", "八下", "九上", "九下", "高一上", "高一下", "高二上", "高二下", "高三上", "高三下"];
+  let epFilterM = { kw: "", type: "", grade: "", year: "" };
+  function epYearOptsM() {
+    const y = new Date().getFullYear();
+    return ["" + y, "" + (y - 1), "" + (y - 2), "" + (y - 3), "" + (y - 4), "更早"];
+  }
+  function epYearMatchM(p, sel) {
+    if (!sel) return true;
+    const y = String((p && p.year) || "");
+    if (sel === "更早") { const n = parseInt(y, 10); return !n || n < new Date().getFullYear() - 4; }
+    return y === sel;
+  }
+  function epChipsHtmlM(label, key, val, opts) {
+    let h = '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">' +
+      '<span class="muted" style="font-size:12px;min-width:52px">' + label + '</span>';
+    h += '<span class="ep-chip-m' + (val === "" ? " on" : "") + '" onclick="epSetFilterM(\'' + key + '\',\'\')">全部</span>';
+    opts.forEach(o => {
+      h += '<span class="ep-chip-m' + (val === o ? " on" : "") + '" onclick="epSetFilterM(\'' + key + '\',\'' + o + '\')">' + o + '</span>';
+    });
+    return h + "</div>";
+  }
+  function renderExamPapersM() {
+    const chips = $("#epChipsM"), list = $("#epListM");
+    if (!chips || !list) return;
+    chips.innerHTML =
+      epChipsHtmlM("试卷类型", "type", epFilterM.type, EP_TYPES) +
+      epChipsHtmlM("年级", "grade", epFilterM.grade, EP_GRADES) +
+      epChipsHtmlM("年份", "year", epFilterM.year, epYearOptsM()) +
+      '<div style="text-align:right;margin:-2px 0 4px"><span class="ep-chip-m" style="color:#888" onclick="epClearFilterM()">✕ 清除筛选</span></div>';
+    const kw = epFilterM.kw.trim().toLowerCase();
+    const all = DB.data.examPapers || [];
+    const items = all.filter(p => {
+      if (epFilterM.type && (p.type || "") !== epFilterM.type) return false;
+      if (epFilterM.grade && (p.grade || "") !== epFilterM.grade) return false;
+      if (!epYearMatchM(p, epFilterM.year)) return false;
+      if (kw) {
+        const hay = [p.title, p.school, p.source, p.region].filter(Boolean).join(" ").toLowerCase();
+        if (!hay.includes(kw)) return false;
+      }
+      return true;
+    });
+    $("#epCountM").textContent = "（" + items.length + "份）";
+    if (!items.length) { list.innerHTML = '<div class="center" style="padding:10px">没有符合条件的试卷</div>'; return; }
+    list.innerHTML = items.map(p => {
+      const n = (p.questionIds || []).length;
+      const badges = [p.type, p.grade, p.year].filter(Boolean)
+        .map(t => '<span class="badge">' + esc(t) + "</span>").join(" ");
+      return '<div class="card" style="margin:8px 0;padding:12px" onclick="openExamPaperM(\'' + esc(p.id) + '\')">' +
+        '<div style="font-weight:700;margin-bottom:4px">' + esc(p.title || "未命名试卷") + "</div>" +
+        '<div class="muted" style="font-size:12px">' + badges + (badges ? " · " : "") + "共 " + n + " 题</div></div>";
+    }).join("");
+  }
+  function epSetFilterM(key, val) {
+    if (key === "kw") epFilterM.kw = val || "";
+    else epFilterM[key] = val || "";
+    renderExamPapersM();
+    // 关键词输入后同步回输入框以外的状态时保持焦点在输入框
+    if (key !== "kw") { const inp = $("#epKwM"); if (inp) inp.value = epFilterM.kw; }
+  }
+  function epKwInput(v) { clearTimeout(epKwInput._t); epKwInput._t = setTimeout(() => epSetFilterM("kw", v), 350); }
+  function epClearFilterM() {
+    epFilterM = { kw: "", type: "", grade: "", year: "" };
+    const inp = $("#epKwM"); if (inp) inp.value = "";
+    renderExamPapersM();
+  }
+  function openExamPaperM(id) {
+    const p = (DB.data.examPapers || []).find(x => x.id === id);
+    if (!p) return toast("未找到试卷");
+    const map = {};
+    (DB.data.questions || []).forEach(q => { map[q.id] = q; });
+    const qs = (p.questionIds || []).map(qid => map[qid]).filter(Boolean)
+      .map((q, i) => ({ q, i, n: (v => (isNaN(v) || v <= 0) ? Infinity : v)(parseInt((q.body || {}).qno, 10)) }))
+      .sort((a, b) => (a.n === b.n ? a.i - b.i : a.n - b.n))
+      .map(x => x.q);
+    let body = "";
+    qs.forEach(q => {
+      const b = q.body || {};
+      body += '<div class="card" style="margin:6px 0">' + renderRich(b.content) +
+        '<div class="muted">答：' + (renderRich(b.answer) || "—") + "</div></div>";
+    });
+    if (!qs.length) body = '<div class="center muted">该卷题目尚未同步到手机端</div>';
+    $("#modalBox").innerHTML = '<div class="modal-header"><span class="modal-title">📄 ' + esc(p.title || "试卷") + '</span><button class="modal-close" onclick="closeModal()">✕</button></div>' +
+      '<div class="modal-body">' + body + "</div>" +
+      '<div class="modal-footer"><button class="btn sec" style="flex:1 1 100%" onclick="closeModal()">关闭</button></div>';
+    openModal();
   }
 
   // ---------- 收藏试卷（exams，与电脑端「试卷中心·收藏试卷」一致） ----------
@@ -1824,12 +2162,21 @@
   window.quickCompose = quickCompose;
   window.showLightbox = showLightbox;
   window.openDetail = openDetail; window.openEditor = openEditor; window.saveQ = saveQ;
+  // 好题收藏 / 我的分类
+  window.toggleFav = toggleFav; window.openCatPicker = openCatPicker;
+  window.catPickToggle = catPickToggle; window.catPickCreate = catPickCreate; window.catPickSave = catPickSave;
+  window.manageMyCats = manageMyCats; window.renderCatMgrBox = renderCatMgrBox;
+  window.catMgrCreate = catMgrCreate; window.catMgrAddChild = catMgrAddChild;
+  window.catMgrRename = catMgrRename; window.catMgrDel = catMgrDel;
+  window.favMode = favMode; window.favPickCat = favPickCat; window.renderFavView = renderFavView;
+  window.setFavFilter = setFavFilter; window.setCatFilter = setCatFilter; window.renderQfChips = renderQfChips;
   window.delQ = delQ; window.closeModal = closeModal; window.openPaper = openPaper;
   window.downloadPaper = downloadPaper;
   window.switchMain = switchMain; window.qSub = qSub; window.schedSub = schedSub;
   window.renderStudents = renderStudents; window.openStudentEditor = openStudentEditor; window.saveStudentEditor = saveStudentEditor; window.doRecharge = doRecharge;
   window.doComposeSave = doComposeSave; window.commitComposeSave = commitComposeSave; window.clearComposeSel = clearComposeSel; window.openComposeModal = openComposeModal;
   window.renderMyPapers = renderMyPapers; window.renderAllPapers = renderAllPapers;
+  window.epSetFilterM = epSetFilterM; window.epClearFilterM = epClearFilterM; window.epKwInput = epKwInput; window.openExamPaperM = openExamPaperM;
   window.renderScheduleGrid = renderScheduleGrid; window.schedulePrevWeek = schedulePrevWeek; window.scheduleNextWeek = scheduleNextWeek;
   window.scheduleGotoThisWeek = scheduleGotoThisWeek; window.scheduleCopyWeekToNext = scheduleCopyWeekToNext;
   window.scheduleOpenAddFor = scheduleOpenAddFor; window.scheduleCheckin = scheduleCheckin; window.scheduleDelete = scheduleDelete; window.scheduleSaveForm = scheduleSaveForm;
@@ -1866,10 +2213,25 @@
 
   // 全局事件委托：题库卡片（详情/答案/组卷/错题/知识点/图片放大）
   document.getElementById("qList").addEventListener("click", qListClick);
+  const _favList = document.getElementById("favList");
+  if (_favList) _favList.addEventListener("click", qListClick);
   document.getElementById("modalBox").addEventListener("click", (e) => {
     const img = e.target.closest("img");
     if (img) showLightbox(img.src);
   });
 
-  if (token) enterMain();
+  // 开屏淡出：首屏就绪后收起；最少显示 0.8s（避免一闪而过），另有 5s 兜底
+  function splashOut() {
+    const el = document.getElementById("appSplash");
+    if (!el || el._out) return;
+    el._out = true;
+    const wait = Math.max(0, 800 - (window.performance && performance.now ? performance.now() : 0));
+    setTimeout(() => { el.classList.add("gone"); setTimeout(() => el.remove(), 450); }, wait);
+  }
+  (async function boot() {
+    try {
+      if (token) await enterMain();
+    } catch (e) { try { toast("启动失败：" + e.message); } catch (_) {} }
+    finally { splashOut(); }
+  })();
 })();

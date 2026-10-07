@@ -110,6 +110,7 @@ def migrate_ts():
 # ---------------- 存储层 ----------------
 MODULES = ["questions", "papers", "exams", "students", "schedule",
            "records", "knowledgePoints", "examCategories", "wrongNotes",
+           "examPapers", "myCategories",
            "dailyQuestions", "dailyAnswers",
            "trainErrors", "trainCards", "trainTasks", "trainLogs"]
 
