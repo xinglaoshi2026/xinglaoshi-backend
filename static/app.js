@@ -92,6 +92,15 @@
   document.addEventListener("visibilitychange", function () {
     if (!document.hidden) loadMediaTicket();
   });
+  // 网络恢复后，把之前失败的图片重新拉一遍（手机切后台/弱网很常见）
+  window.addEventListener("online", function () {
+    loadMediaTicket();
+    document.querySelectorAll("img.img-fail").forEach(function (el) {
+      el.classList.remove("img-fail");
+      el.dataset.r = "0";
+      if (el.dataset.src) el.src = el.dataset.src + (el.dataset.src.indexOf("?") >= 0 ? "&" : "?") + "r=" + Date.now();
+    });
+  });
   function mediaUrl(p) {
     const base = localStorage.getItem(LS_BASE) || "";
     if (MT) return base + "/api/media/" + p + (p.indexOf("?") >= 0 ? "&" : "?") + MT;
@@ -101,11 +110,35 @@
   // 图片加载失败自动重试一次：弱网/慢网下首次加载常超时，
   // 直接隐藏会让"纯图片题"在手机上看起来是一道空题（电脑端本地文件秒开无此问题）。
   function imgRetry(el) {
-    if (!el.dataset.r) {
-      el.dataset.r = "1";
-      el.src = el.src + (el.src.includes("?") ? "&" : "?") + "r=" + Date.now();
-    } else { el.style.display = "none"; }
+    if (!el.dataset.src) el.dataset.src = el.src || "";
+    const n = parseInt(el.dataset.r || "0", 10);
+    if (n < 2 && el.dataset.src) {
+      el.dataset.r = String(n + 1);
+      // 第一次很快重试，第二次等 2 秒（弱网下给服务器缓一口气）
+      const delay = n === 0 ? 600 : 2000;
+      setTimeout(function () {
+        if (el.dataset.ok) return;
+        el.src = el.dataset.src + (el.dataset.src.indexOf("?") >= 0 ? "&" : "?") + "r=" + Date.now();
+      }, delay);
+    } else {
+      // 关键：不再 hidden。纯图片题一旦隐藏，在手机上就是"一道空题"，
+      // 让人以为题库丢了题。改为显示可点重试的占位块。
+      el.classList.add("img-fail");
+      el.removeAttribute("src");
+      el.alt = "图片加载失败 · 点按重试";
+      el.onclick = function () {
+        el.classList.remove("img-fail");
+        el.dataset.r = "0";
+        if (el.dataset.src) el.src = el.dataset.src;
+      };
+    }
   }
+  function imgOk(el) {
+    el.dataset.ok = "1";
+    el.classList.remove("img-fail");
+    el.removeAttribute("alt");
+  }
+  window.imgOk = imgOk;
   window.imgRetry = imgRetry;
   // 把 media://questions/<id>/{c,a}/img_1.png 改成可访问的图片标签
   // 捕获组必须带 questions/ 前缀：服务端媒体路径是 questions/<qid>/<kind>/img_N.png，
@@ -113,7 +146,7 @@
   function renderMedia(text) {
     if (!text) return "";
     return esc(text).replace(/media:\/\/(questions\/[^\s)]+)/g,
-      (m, p) => `<img class="qimg" loading="lazy" src="${mediaUrl(p)}" onerror="imgRetry(this)">`);
+      (m, p) => `<img class="qimg" loading="lazy" decoding="async" src="${mediaUrl(p)}" onload="imgOk(this)" onerror="imgRetry(this)">`);
   }
   // 内容是桌面端生成的 HTML（含 <img src="media://...">）→ 按原样渲染并改写媒体地址；
   // 纯文本则转义后把 media:// 引用转成图片。
@@ -124,7 +157,7 @@
       return s.replace(/<div class="qb-meta">[\s\S]*?<\/div>/gi, "")
               .replace(/(src\s*=\s*["'])media:\/\/([^\s"'>]+)/gi,
                 (m, pre, p) => pre + mediaUrl(p))
-              .replace(/<img(?![^>]*onerror)/gi, '<img loading="lazy" onerror="imgRetry(this)"')
+              .replace(/<img(?![^>]*onerror)/gi, '<img loading="lazy" decoding="async" onload="imgOk(this)" onerror="imgRetry(this)"')
               .replace(/<img(?![^>]*\bclass=)/gi, '<img class="qimg"');
     }
     return renderMedia(s);
@@ -1370,7 +1403,8 @@
       epChipsHtmlM("年份", "year", epFilterM.year, epYearOptsM()) +
       '<div style="text-align:right;margin:-2px 0 4px"><span class="ep-chip-m" style="color:#888" onclick="epClearFilterM()">✕ 清除筛选</span></div>';
     const kw = epFilterM.kw.trim().toLowerCase();
-    const all = DB.data.examPapers || [];
+    // 同步回的每条是 {id, updated_at, body}，业务字段在 body 里
+    const all = (DB.data.examPapers || []).map(it => Object.assign({ id: it.id }, it.body || {}));
     const items = all.filter(p => {
       if (epFilterM.type && (p.type || "") !== epFilterM.type) return false;
       if (epFilterM.grade && (p.grade || "") !== epFilterM.grade) return false;
@@ -1406,8 +1440,9 @@
     renderExamPapersM();
   }
   function openExamPaperM(id) {
-    const p = (DB.data.examPapers || []).find(x => x.id === id);
-    if (!p) return toast("未找到试卷");
+    const raw = (DB.data.examPapers || []).find(x => x.id === id);
+    if (!raw) return toast("未找到试卷");
+    const p = Object.assign({ id: raw.id }, raw.body || {});
     const map = {};
     (DB.data.questions || []).forEach(q => { map[q.id] = q; });
     const qs = (p.questionIds || []).map(qid => map[qid]).filter(Boolean)

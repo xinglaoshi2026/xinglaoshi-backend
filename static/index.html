@@ -191,7 +191,11 @@
   .rec-table .rt-date{color:var(--text-sec,#666)}
 
   /* ===== 图片兜底 ===== */
-  .qimg{max-width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);margin:6px 0;display:block}
+  .qimg{max-width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);margin:6px 0;display:block;
+    min-height:56px;background:#F6F7F9}
+  .qimg.ok{min-height:0;background:transparent}
+  .qimg.img-fail{min-height:96px;border:1px dashed var(--border-dark);background:#FBFBFC;
+    color:#8B93A0;font-size:13px;padding:34px 12px;text-align:center;box-sizing:border-box}
   .q-content img,.q-ans-box img,.q-preview-card img,.modal img,.wn-card img{
     max-width:100%!important;height:auto!important;width:auto!important}
   /* 题目图片放大：居中且等比例放大铺满并超出屏宽，容器裁切两侧实现居中放大 */
