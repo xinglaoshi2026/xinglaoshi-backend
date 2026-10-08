@@ -2328,6 +2328,56 @@ class H(BaseHTTPRequestHandler):
             n = cx.execute("DELETE FROM tombstones").rowcount
             cx.commit(); cx.close()
             return send_json(self, {"ok": True, "cleared": n})
+        if p == "/api/admin/media_stats":
+            # 运维诊断：media/ 各一级子目录的文件数与占用，定位「磁盘被谁占满」
+            u = user_of(get_token(self))
+            if not u or u.get("role") != "admin":
+                return send_json(self, {"error": "仅管理员可执行"}, 403)
+            stats = {}
+            try:
+                for entry in os.scandir(MEDIA_DIR):
+                    if entry.is_dir():
+                        n = 0; sz = 0
+                        for root, _d, files in os.walk(entry.path):
+                            for fn in files:
+                                try:
+                                    sz += os.path.getsize(os.path.join(root, fn)); n += 1
+                                except Exception:
+                                    pass
+                        stats[entry.name] = {"files": n, "bytes": sz}
+                    elif entry.is_file():
+                        try:
+                            slot = stats.setdefault("(根文件)", {"files": 0, "bytes": 0})
+                            slot["files"] += 1
+                            slot["bytes"] += entry.stat().st_size
+                        except Exception:
+                            pass
+            except Exception as e:
+                return send_json(self, {"ok": False, "error": str(e)}, 500)
+            du = shutil.disk_usage(os.path.dirname(MEDIA_DIR) or ".")
+            return send_json(self, {"ok": True, "dirs": stats,
+                                    "disk_total": du.total, "disk_used": du.used, "disk_free": du.free})
+        if p == "/api/admin/purge_exports":
+            # 清理 media/_exports/（导出的 Word/PDF 等中间产物，纯缓存，可随时重新生成）
+            u = user_of(get_token(self))
+            if not u or u.get("role") != "admin":
+                return send_json(self, {"error": "仅管理员可执行"}, 403)
+            freed = removed = 0
+            exp_dir = os.path.join(MEDIA_DIR, "_exports")
+            for root, _d, files in os.walk(exp_dir):
+                for fn in files:
+                    fp = os.path.join(root, fn)
+                    try:
+                        freed += os.path.getsize(fp); os.remove(fp); removed += 1
+                    except Exception:
+                        pass
+            try:
+                _rmdirs_empty(exp_dir)
+            except Exception:
+                pass
+            du = shutil.disk_usage(os.path.dirname(MEDIA_DIR) or ".")
+            return send_json(self, {"ok": True, "removed": removed, "freed_bytes": freed,
+                                    "disk_free_after": du.free})
         if p == "/api/auth/register":
             body, err = read_body(self)
             if err: return send_json(self, {"error": err}, 400)
@@ -2479,10 +2529,15 @@ class H(BaseHTTPRequestHandler):
             rel = f"{sub}/{name}"
             # 磁盘空间保护：本地回退模式剩余不足时拒绝写入, 避免撑爆数据盘导致
             # sync.db(WAL)写入失败而整体宕机；R2 模式媒体不落本地盘, 不受此限。
+            #
+            # 例外：**覆盖同名已存在文件**放行。旧图换更小版本(降质/降分辨率)是
+            # 磁盘写满时唯一的自救手段——体积只会持平或变小，不会加剧占用。
+            # 不加这条会陷入死锁：盘满 → 拒绝写入 → 腾不出空间 → 永远传不了新图。
             try:
-                free = shutil.disk_usage(os.path.dirname(MEDIA_DIR) or ".").free
-                if free < 20 * 1024 * 1024 and not _r2_enabled():
-                    return send_json(self, {"error": "云端磁盘空间不足, 图片上传被拒绝(请清理或启用对象存储)"}, 507)
+                if _safe_media_path(rel) is None:
+                    free = shutil.disk_usage(os.path.dirname(MEDIA_DIR) or ".").free
+                    if free < 20 * 1024 * 1024 and not _r2_enabled():
+                        return send_json(self, {"error": "云端磁盘空间不足, 图片上传被拒绝(请清理或启用对象存储)"}, 507)
             except Exception:
                 pass
             ok, url, code = _put_media(rel, raw, name)
