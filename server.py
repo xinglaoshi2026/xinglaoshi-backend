@@ -416,6 +416,26 @@ _r2_client = _s3_client
 _r2_enabled = _s3_enabled
 
 
+# 对象存储「是否存在该对象」缓存：避免每次读图都 HEAD 一次 COS。
+# 写入成功置 True；迁移线程搬完旧图后置 True；其余情况 HEAD 后缓存结果。
+_COS_HAS = {}
+
+
+def _cos_has(rel):
+    if rel in _COS_HAS:
+        return _COS_HAS[rel]
+    cl = _s3_client()
+    if not cl:
+        return False
+    try:
+        cl.head_object(Bucket=_s3_conf()["bucket"], Key=rel)
+        _COS_HAS[rel] = True
+        return True
+    except Exception:
+        _COS_HAS[rel] = False
+        return False
+
+
 def _guess_ct(name, data):
     ct = mimetypes.guess_type(name or "")[0]
     if ct:
@@ -444,6 +464,7 @@ def _put_media(rel, raw, name):
     if cl:
         try:
             cl.put_object(Bucket=_r2_conf()["bucket"], Key=rel, Body=raw, ContentType=ct)
+            _COS_HAS[rel] = True
             return True, "/api/media/" + rel, 200
         except Exception as e:
             return False, "对象存储上传失败: " + str(e), 500
@@ -503,9 +524,13 @@ def media_ticket_ok(tk, exp):
 
 
 def _media_url(rel):
-    """R2 启用时返回预签名 GET URL(供 302 重定向)；未启用返回 None(走本地)。"""
+    """对象存储启用且「该对象已存在于云」时返回预签名 GET URL(302 重定向)；
+    否则返回 None(走本地磁盘读)。这样迁移期间旧图仍在本地、新图已上云，
+    读取自动路由，不出现 404 窗口。"""
     cl = _r2_client()
     if not cl:
+        return None
+    if not _cos_has(rel):
         return None
     try:
         return cl.generate_presigned_url("get_object",
@@ -585,29 +610,38 @@ def _disk_watchdog():
 
 
 def _migrate_media_to_r2():
-    """把本地媒体批量上传到对象存储(键=逻辑 rel), 成功后删除本地副本, 释放云端盘。
+    """把本地媒体批量上传到对象存储(键=逻辑 rel)。两段式：先全部上传(不删本地),
+    全部成功后再统一删除本地副本释放盘, 避免「传到一半删本地」导致读取缺口。
     兼容 腾讯云 COS / Cloudflare R2。"""
     cl = _s3_client()
     if not cl:
         return {"ok": False, "error": "对象存储未配置"}
     bucket = _r2_conf()["bucket"]
-    done = errs = 0
+    todo = []
     for root, dirs, files in os.walk(MEDIA_DIR):
         for fn in files:
             fp = os.path.join(root, fn)
             rel = urlunquote(os.path.relpath(fp, MEDIA_DIR).replace(os.sep, "/"))
+            todo.append((fp, rel))
+    done = errs = 0
+    for fp, rel in todo:
+        try:
+            with open(fp, "rb") as f:
+                data = f.read()
+            cl.put_object(Bucket=bucket, Key=rel, Body=data, ContentType=_guess_ct(rel, data))
+            _COS_HAS[rel] = True
+            done += 1
+        except Exception:
+            errs += 1
+    removed = 0
+    if errs == 0:  # 全部上云成功才清本地, 否则保留本地副本(下次重跑可续传)
+        for fp, rel in todo:
             try:
-                with open(fp, "rb") as f:
-                    data = f.read()
-                cl.put_object(Bucket=bucket, Key=rel, Body=data, ContentType=_guess_ct(rel, data))
-                try:
-                    os.remove(fp)
-                except Exception:
-                    pass
-                done += 1
+                os.remove(fp); removed += 1
             except Exception:
-                errs += 1
-    return {"ok": True, "migrated": done, "errors": errs}
+                pass
+        _rmdirs_empty(MEDIA_DIR)
+    return {"ok": True, "migrated": done, "errors": errs, "removed_local": removed}
 
 
 # ---------------- 错题循环训练（间隔重复 / 艾宾浩斯简化） ----------------
@@ -2689,12 +2723,46 @@ def purge_plaintext_student_pw():
         print("[security] 已清理 %d 条历史明文学生密码(spw)" % n)
 
 
+def _maybe_automigrate():
+    """部署且对象存储已配置时, 后台把本地媒体一次性搬上云并清本地盘, 只跑一次
+    (meta 标记 s3_migrated 控制)。无需人工触发; 迁移期间读取由 _cos_has 自动路由。"""
+    import threading
+    def run():
+        import time as _t
+        try:
+            _t.sleep(8)  # 等 db 与首次请求就绪
+            if not _s3_enabled():
+                return
+            cx = db()
+            try:
+                r = cx.execute("SELECT v FROM meta WHERE k='s3_migrated'").fetchone()
+                if r and r["v"]:
+                    return
+            finally:
+                cx.close()
+            res = _migrate_media_to_r2()
+            if res.get("ok") and res.get("errors", 0) == 0:
+                cx = db()
+                try:
+                    cx.execute("INSERT OR REPLACE INTO meta(k,v) VALUES('s3_migrated','1')")
+                    cx.commit()
+                finally:
+                    cx.close()
+                print("[migrate] 本地媒体已迁移至对象存储并清本地盘:", res)
+            else:
+                print("[migrate] 迁移未全部成功, 保留本地副本:", res)
+        except Exception as e:
+            print("[migrate] 自动迁移异常:", e)
+    threading.Thread(target=run, daemon=True).start()
+
+
 def main():
     _free_disk_if_needed()
     init_db()
     migrate_ts()
     purge_plaintext_student_pw()
     _disk_watchdog()  # 后台自动清理孤儿媒体, 防云端盘被撑满
+    _maybe_automigrate()  # 对象存储就绪后自动把本地媒体搬上云并清本地盘
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), H)
     print(f"[server] 云端同步后端已启动: http://0.0.0.0:{PORT}  (数据目录 {DATA_DIR})")
     try:
