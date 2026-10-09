@@ -1854,30 +1854,65 @@ class H(BaseHTTPRequestHandler):
                 items = [t for t in items if t.get("generated")]
             return send_json(self, {"items": items, "count": len(items)})
         if p.startswith("/api/train/tasks/") and p.endswith("/logs"):
-            # 老师查看某学生某天任务的逐题作答(自评/错误原因/过程照片)
+            # 老师查看某学生某天任务的逐题作答。
+            # 需求：不论学生是否提交，老师都能看到当日全部题目（含题图/答案/解析）；
+            # 已提交的再附带学生自评/错误原因/过程照片。故以「任务的题目清单」为主线，
+            # 合并学生已提交的作答日志（而不是只依赖日志，否则未提交时是空的）。
             if u.get("role") == "student":
                 return send_json(self, {"error": "无权限"}, 403)
             tid = p[len("/api/train/tasks/"):-len("/logs")]
-            out = []
+            task = None
+            for t in store_list("trainTasks", limit=8000):
+                tb = t.get("body") or {}
+                if tb.get("id") == tid:
+                    task = tb
+                    break
+            # 学生已作答日志：按 errorId 归并（同一题多次作答时保留最后一条）
+            logs_by_eid = {}
             for lg in store_list("trainLogs", limit=20000):
                 b = lg.get("body") or {}
                 if b.get("taskId") != tid:
                     continue
-                e, _ = store_get("trainErrors", b.get("errorId"))
+                eid = b.get("errorId")
+                if eid:
+                    logs_by_eid[eid] = b
+
+            def _mk_log_item(eid, lb):
+                e, _ = store_get("trainErrors", eid)
                 _e = e or {}
-                out.append({"errorId": b.get("errorId"),
-                            "stem": _e.get("stem", ""),
-                            # 老师端着照片批改需要看到题目本身：一并下发题图/答案/解析/答案图
-                            # （本接口对学生 403，不受"学生未做不能看答案"的限制）
-                            "images": _e.get("images") or ([_e.get("image")] if _e.get("image") else []),
-                            "answer": _e.get("answer") or "",
-                            "analysis": _e.get("analysis") or "",
-                            "answerImages": _e.get("answerImages") or [],
-                            "result": b.get("result"),
-                            "errorNote": b.get("errorNote") or "",
-                            "draftImages": b.get("draftImages") or ([] if not b.get("draftImage") else [b.get("draftImage")]),
-                            "date": b.get("answerDate")})
-            return send_json(self, {"taskId": tid, "items": out, "count": len(out)})
+                return {"errorId": eid,
+                        "stem": _e.get("stem", ""),
+                        # 老师端着照片批改需要看到题目本身：一并下发题图/答案/解析/答案图
+                        # （本接口对学生 403，不受"学生未做不能看答案"的限制）
+                        "images": _e.get("images") or ([_e.get("image")] if _e.get("image") else []),
+                        "answer": _e.get("answer") or "",
+                        "analysis": _e.get("analysis") or "",
+                        "answerImages": _e.get("answerImages") or [],
+                        "result": lb.get("result"),
+                        "errorNote": lb.get("errorNote") or "",
+                        "draftImages": lb.get("draftImages") or ([] if not lb.get("draftImage") else [lb.get("draftImage")]),
+                        "submitted": bool(lb),
+                        "date": lb.get("answerDate")}
+
+            # 题目顺序：优先任务自带的 errorIds；没有则退回日志里的题（历史数据兜底）
+            eids = [e for e in ((task or {}).get("errorIds") or []) if e]
+            if not eids:
+                eids = list(logs_by_eid.keys())
+            out, seen = [], set()
+            for eid in eids:
+                if eid in seen:
+                    continue
+                seen.add(eid)
+                out.append(_mk_log_item(eid, logs_by_eid.get(eid) or {}))
+            for eid, lb in logs_by_eid.items():
+                if eid in seen:
+                    continue
+                seen.add(eid)
+                out.append(_mk_log_item(eid, lb))
+            return send_json(self, {"taskId": tid, "items": out, "count": len(out),
+                                    "studentId": (task or {}).get("studentId"),
+                                    "date": (task or {}).get("date"),
+                                    "status": (task or {}).get("status")})
         if p == "/api/train/today":
             d = q.get("date", [None])[0]
             if not eff_sid:

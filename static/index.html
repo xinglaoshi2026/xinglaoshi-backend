@@ -97,7 +97,7 @@
 
   /* ===== 题目卡片 ===== */
   .card.q{border-left:none;border-radius:0;box-shadow:none;margin:0 -12px 10px;padding:6px 0}
-  .q-content{font-size:14px;line-height:1.7;margin:6px 4px;white-space:pre-wrap;word-break:break-word}
+  .q-content{font-size:14px;line-height:1.7;margin:4px 4px;white-space:pre-wrap;word-break:break-word}
   .q-answer{font-size:13px;color:var(--text-muted);background:#F9FAFB;padding:10px 14px;border-radius:var(--radius-sm);
     margin-top:8px;white-space:pre-wrap;border:1px dashed var(--border)}
   .q-head{display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap;padding:12px 14px 2px}
@@ -107,12 +107,12 @@
     background:var(--primary-bg);padding:2px 9px;border-radius:6px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .q-kp:active{background:#E0E7FF}
   .q-body-wrap{padding:4px 8px 0;cursor:pointer}
-  .q-ans-box{margin:8px 14px 0;display:none;border-left:3px solid var(--info);background:var(--info-bg);
-    border-radius:0 8px 8px 0;padding:10px 12px;font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-word}
+  .q-ans-box{margin:6px 14px 0;display:none;border-left:3px solid var(--info);background:var(--info-bg);
+    border-radius:0 8px 8px 0;padding:8px 12px;font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-word}
   .q-ans-box.open{display:block;animation:fadeIn .18s ease}
-  .q-ans-box .ans-label{font-weight:600;color:var(--info);margin-bottom:4px}
+  .q-ans-box .ans-label{font-weight:600;color:var(--info);margin-bottom:2px;line-height:1.25}
   /* 题卡操作行：无边框纯文字链接，简约小巧，给题目内容腾空间 */
-  .q-actions{display:flex;align-items:center;gap:4px;margin-top:4px;padding:4px 14px 2px}
+  .q-actions{display:flex;align-items:center;gap:4px;margin-top:2px;padding:2px 14px 2px}
   .q-link{background:none;border:none;box-shadow:none;padding:4px 6px;font-size:11px;line-height:1;
     color:#7A7F8A;white-space:nowrap;-webkit-tap-highlight-color:transparent}
   .q-link:active{color:var(--primary)}
@@ -306,7 +306,7 @@
 
   .dt-badges{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
   .dt-label{display:inline-block;font-size:12px;font-weight:700;color:var(--primary);background:var(--primary-bg);
-    padding:3px 12px;border-radius:999px;margin-bottom:8px}
+    padding:3px 12px;border-radius:999px;margin-bottom:6px}
   .dt-label.ans{color:var(--info);background:var(--info-bg)}
   .dt-content{font-size:14px;line-height:1.75;white-space:pre-wrap;word-break:break-word}
   .dt-content.ans-box{background:var(--info-bg);border-left:3px solid var(--info);padding:10px 14px;border-radius:var(--radius-sm)}
@@ -559,6 +559,6 @@
   </div>
   <div class="toast" id="toast"></div>
 </div>
-<script src="/static/app.js?v=20260924"></script>
+<script src="/static/app.js?v=20261009"></script>
 </body>
 </html>

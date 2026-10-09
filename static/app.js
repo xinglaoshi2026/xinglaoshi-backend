@@ -402,7 +402,7 @@
     div.innerHTML =
       '<div class="q-body-wrap" data-act="detail" data-id="' + it.id + '">' +
         (cats.length ? '<div style="margin-bottom:6px">' + cats.map(n => '<span class="ep-chip-m" style="font-size:11px;padding:1px 8px;cursor:default">🏷️ ' + esc(n) + "</span>").join(" ") + "</div>" : "") +
-        '<div class="q-content">' + renderRich(b.content) + "</div></div>" +
+        '<div class="q-content">' + renderRich((b.content || "").trim()) + "</div></div>" +
       '<div class="q-actions">' +
         '<button class="q-link' + (fav ? " on" : "") + '" data-act="fav" data-id="' + it.id + '">' + (fav ? "★ 已收藏" : "☆ 收藏") + "</button>" +
         '<button class="q-link" data-act="cat" data-id="' + it.id + '">归分类</button>' +
@@ -410,7 +410,7 @@
         '<button class="q-link" data-act="detail" data-id="' + it.id + '">详情</button>' +
         '<button class="q-link' + (inCompose ? " on" : "") + '" data-act="compose" data-id="' + it.id + '">' + (inCompose ? "✕ 取消组卷" : "加入组卷") + "</button>" +
       "</div>" +
-      '<div class="q-ans-box" id="ans-' + it.id + '"><div class="ans-label">答案 / 解析</div>' + (renderRich(b.answer) || "—") + (b.analysis ? '<div style="margin-top:6px">' + renderRich(b.analysis) + "</div>" : "") + "</div>";
+      '<div class="q-ans-box" id="ans-' + it.id + '"><div class="ans-label">答案 / 解析</div>' + (renderRich((b.answer || "").trim()) || "—") + (b.analysis ? '<div style="margin-top:6px">' + renderRich((b.analysis || "").trim()) + "</div>" : "") + "</div>";
     return div;
   }
   // 题库列表统一事件委托（详情/答案/组卷/错题/知识点/图片放大）
@@ -496,7 +496,7 @@
     });
     // 手势（指针事件统一鼠标/触摸）
     var pts = new Map(), startDist = 0, startScale = 1, startTx = 0, startTy = 0, startMid = { x:0, y:0 };
-    var lastX = 0, lastY = 0, dragging = false, sx = 0, sy = 0;
+    var lastX = 0, lastY = 0, dragging = false, sx = 0, sy = 0, downTarget = null;
     function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
     function mid(a, b) { return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; }
     stage.addEventListener("pointerdown", function (e) {
@@ -504,7 +504,7 @@
       try { stage.setPointerCapture(e.pointerId); } catch (_) {}
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       LB.moved = false;
-      if (pts.size === 1) { dragging = true; lastX = sx = e.clientX; lastY = sy = e.clientY; }
+      if (pts.size === 1) { dragging = true; lastX = sx = e.clientX; lastY = sy = e.clientY; downTarget = e.target; }
       else if (pts.size === 2) {
         dragging = false;
         var a = Array.from(pts.values());
@@ -536,17 +536,23 @@
       if (pts.size < 2) startDist = 0;
       if (pts.size > 0) return;
       dragging = false;
-      LB.quiet = Date.now();
-      if (LB.moved) return;
-      if (e.target && e.target.id === "lightboxImg") {
+      // 只有真正拖动/双指缩放后，才刷新 quiet 以防误关；
+      // 否则「点击空白」会被下面的 click 兜底当成"刚拖过"而永远关不掉（原 bug）
+      if (LB.moved) { LB.quiet = Date.now(); return; }
+      var onImg = downTarget && downTarget.id === "lightboxImg";
+      if (onImg) {                                           // 双击图片：放大 / 还原
         var now = Date.now();
-        if (now - LB.lastTap < 300) {                        // 双击：放大 / 还原
+        if (now - LB.lastTap < 300) {
           LB.scale = LB.scale > 1.5 ? 1 : 2.4;
           if (LB.scale === 1) { LB.tx = 0; LB.ty = 0; }
           lbApply(); LB.lastTap = 0; return;
         }
         LB.lastTap = now;
+        return;
       }
+      // 点图片外的空白处 → 关闭（不依赖 click 事件，兼容各 WebView / 微信内核）
+      LB.quiet = Date.now();
+      lbHide();
     }
     stage.addEventListener("pointerup", endPt);
     stage.addEventListener("pointercancel", endPt);
@@ -725,9 +731,9 @@
       <div class="modal-header"><span class="modal-title">题目详情</span><button class="modal-close" onclick="closeModal()">✕</button></div>
       <div class="modal-body">
         <div class="dt-badges">${badges.join("")}</div>
-        <div class="dt-sec"><span class="dt-label">题干</span><div class="dt-content">${renderRich(b.content) || "—"}</div></div>
-        <div class="dt-sec"><span class="dt-label ans">答案</span><div class="dt-content ans-box">${renderRich(b.answer) || "—"}</div></div>
-        ${b.analysis ? '<div class="dt-sec"><span class="dt-label">解析</span><div class="dt-content">' + renderRich(b.analysis) + "</div></div>" : ""}
+        <div class="dt-sec"><span class="dt-label">题干</span><div class="dt-content">${renderRich((b.content || "").trim()) || "—"}</div></div>
+        <div class="dt-sec"><span class="dt-label ans">答案</span><div class="dt-content ans-box">${renderRich((b.answer || "").trim()) || "—"}</div></div>
+        ${b.analysis ? '<div class="dt-sec"><span class="dt-label">解析</span><div class="dt-content">' + renderRich((b.analysis || "").trim()) + "</div></div>" : ""}
       </div>
       <div class="modal-footer">
         <div class="row-2" style="margin-bottom:8px">
@@ -2248,6 +2254,40 @@
 
   // 全局事件委托：题库卡片（详情/答案/组卷/错题/知识点/图片放大）
   document.getElementById("qList").addEventListener("click", qListClick);
+  // 顶部菜单左右滑动切换（题库 / 好题 / 组卷 / 试卷 / 添加题目）
+  (function () {
+    const sec = document.getElementById("view-questions");
+    if (!sec) return;
+    const order = ["q", "fav", "compose", "paper", "add"];
+    let sx = 0, sy = 0, tracking = false;
+    function inHScroll(el) {
+      while (el && el !== document.body && el !== document.documentElement) {
+        const cs = getComputedStyle(el);
+        if ((cs.overflowX === "auto" || cs.overflowX === "scroll") && el.scrollWidth > el.clientWidth + 4) return true;
+        el = el.parentElement;
+      }
+      return false;
+    }
+    sec.addEventListener("touchstart", function (e) {
+      if (e.touches.length !== 1) { tracking = false; return; }
+      const t = e.target;
+      // 顶部 tab 自身、弹窗/抽屉/灯箱、以及可横向滚动区域上不响应切换，避免误触
+      if (t && t.closest && (t.closest(".subtabs") || t.closest(".modal") ||
+          t.closest(".sheet-overlay") || t.closest(".lightbox") || t.closest("select") || inHScroll(t))) {
+        tracking = false; return;
+      }
+      sx = e.touches[0].clientX; sy = e.touches[0].clientY; tracking = true;
+    }, { passive: true });
+    sec.addEventListener("touchend", function (e) {
+      if (!tracking) return; tracking = false;
+      const t = e.changedTouches && e.changedTouches[0]; if (!t) return;
+      const dx = t.clientX - sx, dy = t.clientY - sy;
+      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.4) return;   // 太短或偏竖直＝滚动，忽略
+      let i = order.indexOf(qSubPane); if (i < 0) i = 0;
+      if (dx < 0 && i < order.length - 1) qSub(order[i + 1]);               // 左滑 → 下一个
+      else if (dx > 0 && i > 0) qSub(order[i - 1]);                          // 右滑 → 上一个
+    }, { passive: true });
+  })();
   const _favList = document.getElementById("favList");
   if (_favList) _favList.addEventListener("click", qListClick);
   document.getElementById("modalBox").addEventListener("click", (e) => {

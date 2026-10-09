@@ -395,6 +395,7 @@
   .tl-res{font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px}
   .tl-res.ok{color:var(--ok);background:var(--ok-soft)}
   .tl-res.bad{color:var(--err);background:var(--err-soft)}
+  .tl-res.sub{color:var(--ink3);background:rgba(0,0,0,.06)}
   .tl-stem{font-size:13.5px;line-height:1.65;color:var(--ink);white-space:pre-wrap;word-break:break-word}
   .tl-thumbs{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0}
   .tl-acts{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 2px}
@@ -2368,14 +2369,19 @@ function downloadStuErrors(sid, date, questionsOnly){
 async function viewTaskLogs(tid){
   const {j} = await call('/api/train/tasks/'+tid+'/logs');
   const items = (j&&j.items)||[];
+  const hasDraft = l => !!(l.submitted || l.result || (l.draftImages&&l.draftImages.length));
+  const anySubmitted = items.some(hasDraft);
   let h = '<div class="modal-box" style="max-width:96vw"><div class="modal-head"><b>学生作答详情（'+items.length+' 题）</b>'
     + '<button class="ghost icon sm" onclick="closeModal()" title="关闭"><svg class="ic"><use href="#i-close"/></svg></button></div>'
     + '<div class="tl-tip">先看<b>题目</b>，再点「看学生作答」对着照片批改；拿不准就点「看答案 / 解析」。</div>';
-  if(!items.length) h += '<p style="color:var(--ink3)">该生还没有提交作答记录。</p>';
+  if(!items.length) h += '<p style="color:var(--ink3)">该生今天没有题目。</p>';
   else {
+    if(!anySubmitted) h += '<p style="color:var(--ink3);margin:2px 0 8px">该生<b>尚未提交</b>作答，以下为当日题目（可先看题 / 答案）。</p>';
     items.forEach((l,i)=>{
+      const submitted = hasDraft(l);
       const ok = (l.result==='right'||l.result==='self_right');
-      const r = ok ? '✓ 做对' : (l.result==='half' ? '半对' : '✗ 做错');
+      const r = !submitted ? '未提交' : (ok ? '✓ 做对' : (l.result==='half' ? '半对' : '✗ 做错'));
+      const rCls = !submitted ? 'sub' : (ok ? 'ok' : 'bad');
       const drafts = l.draftImages||[];
       const qimgs = (l.images && l.images.length) ? l.images : (l.image ? [l.image] : []);
       const aimgs = l.answerImages||[];
@@ -2383,12 +2389,12 @@ async function viewTaskLogs(tid){
       const rai = aimgs.length ? (zoomReg.push(aimgs.map(u=>murl(u)))-1) : -1;
       const cap = '第'+(i+1)+'题';
       h += '<div class="tl-item">'
-        +   '<div class="tl-hd"><b>第'+(i+1)+'题</b><span class="tl-res '+(ok?'ok':'bad')+'">'+r+'</span></div>'
+        +   '<div class="tl-hd"><b>第'+(i+1)+'题</b><span class="tl-res '+rCls+'">'+r+'</span></div>'
         +   '<div class="tl-stem">'+esc(l.stem || '（看图题，请看下面的题图）')+'</div>'
         +   (qimgs.length ? '<div class="tl-thumbs">'+qimgs.map((u,k)=>
               '<img class="thumb" src="'+esc(murl(u))+'" onclick="zoomList('+ri+','+k+')" title="点击放大题目">').join('')+'</div>' : '')
         +   '<div class="tl-acts">'
-        +     (drafts.length ? '<button class="pillbtn" onclick=\'zoomDrafts('+JSON.stringify(JSON.stringify(drafts))+',"'+cap+' · 学生作答")\'><svg class="ic"><use href="#i-photo-stack"/></svg>看学生作答（'+drafts.length+'张）</button>' : '<span class="tl-none">未传作答照片</span>')
+        +     (drafts.length ? '<button class="pillbtn" onclick=\'zoomDrafts('+JSON.stringify(JSON.stringify(drafts))+',"'+cap+' · 学生作答")\'><svg class="ic"><use href="#i-photo-stack"/></svg>看学生作答（'+drafts.length+'张）</button>' : '<span class="tl-none">'+(submitted?'未传作答照片':'学生尚未提交')+'</span>')
         +     ((l.answer||l.analysis||aimgs.length) ? '<button class="ghost sm" onclick="tlToggleAnswer('+i+',this)">看答案 / 解析</button>' : '')
         +   '</div>'
         +   '<div class="tl-ans hidden" id="tlans_'+i+'">'
@@ -2397,7 +2403,7 @@ async function viewTaskLogs(tid){
         +     (aimgs.length ? '<div class="tl-thumbs">'+aimgs.map((u,k)=>
                 '<img class="thumb" src="'+esc(murl(u))+'" onclick="zoomList('+rai+','+k+')" title="点击放大答案图">').join('')+'</div>' : '')
         +   '</div>'
-        +   '<div class="tl-note">错误原因：'+esc(l.errorNote||'（未填）')+'</div>'
+        +   (submitted ? '<div class="tl-note">错误原因：'+esc(l.errorNote||'（未填）')+'</div>' : '')
         + '</div>';
     });
   }
