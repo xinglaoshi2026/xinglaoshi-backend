@@ -9,8 +9,8 @@
     --bg:#F6F6F7; --card:#FFFFFF;
     --ink:#1A1A1A; --ink2:#6B6B70; --ink3:#9A9AA0;
     --line:#ECECEE; --line2:#DEDEE2;
-    --brand:#6B8A72; --brand2:#8FAE94; --brand3:#54705C; --brand-soft:#E7EFE9;
-    --hero-from:#FFFFFF; --hero-to:#E7EFE9;
+    --brand:#2FA86A; --brand2:#5FC795; --brand3:#1F7C4C; --brand-soft:#EAF6EF;
+    --hero-from:#FFFFFF; --hero-to:#EAF6EF;
     --ok:#3F9D6B; --ok-soft:#EDF6F0;
     --warn:#C79A2E; --warn-soft:#F7F3E8;
     --err:#D26056; --err-soft:#FBEDEB;
@@ -18,7 +18,7 @@
     --sh1:0 1px 2px rgba(20,20,22,.05), 0 4px 12px rgba(20,20,22,.045);
     --sh2:0 1px 2px rgba(20,20,22,.05), 0 12px 28px rgba(20,20,22,.08);
     --sh3:0 22px 48px rgba(20,20,22,.16);
-    --focus:0 0 0 4px rgba(107,138,114,.18);
+    --focus:0 0 0 4px rgba(47,168,106,.2);
     --grad:linear-gradient(135deg,var(--brand2) 0%,var(--brand) 72%,var(--brand3) 132%);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -27,7 +27,7 @@
     margin:0;background:var(--bg);color:var(--ink);font-size:16px;line-height:1.65;
     font-family:-apple-system,BlinkMacSystemFont,"MiSans","HarmonyOS Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
     -webkit-font-smoothing:antialiased;letter-spacing:.005em;
-    background-image:radial-gradient(700px 360px at 50% -130px,#E7EFE9 0%,rgba(231,239,233,0) 70%);
+    background-image:radial-gradient(700px 360px at 50% -130px,#EAF6EF 0%,rgba(234,246,239,0) 70%);
     background-attachment:fixed;
   }
   ::selection{background:var(--brand-soft);color:var(--brand3)}
@@ -236,15 +236,15 @@
   #zoom-mask{position:fixed;inset:0;background:rgba(20,20,22,.95);z-index:120;display:flex;
     align-items:center;justify-content:center;overflow:hidden;touch-action:none;
     -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
-  #zoom-mask .zm-stage{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none}
+  #zoom-mask .zm-stage{position:absolute;left:0;right:0;top:env(safe-area-inset-top,0px);bottom:calc(env(safe-area-inset-bottom,0px) + 66px);display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none}
   #zoom-mask .zm-img{display:block;border-radius:10px;transform-origin:center center;will-change:transform;
     box-shadow:0 12px 44px rgba(0,0,0,.55);-webkit-user-drag:none;pointer-events:auto}
-  #zoom-mask .zm-bar{position:absolute;top:calc(env(safe-area-inset-top,0px) + 10px);left:0;right:0;
-    display:flex;justify-content:center;gap:8px;z-index:3}
+  #zoom-mask .zm-bar{position:absolute;bottom:calc(env(safe-area-inset-bottom,0px) + 10px);left:0;right:0;
+    display:flex;justify-content:center;gap:10px;z-index:3}
   #zoom-mask .zm-btn{background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.3);
-    border-radius:999px;padding:7px 15px;font-size:13px;font-weight:600;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+    border-radius:999px;padding:9px 18px;font-size:13px;font-weight:600;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
   #zoom-mask .zm-btn:active{background:rgba(255,255,255,.32)}
-  #zoom-mask .zm-hint{position:absolute;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);left:0;right:0;
+  #zoom-mask .zm-hint{position:absolute;top:calc(env(safe-area-inset-top,0px) + 12px);left:0;right:0;
     text-align:center;color:rgba(255,255,255,.62);font-size:12px;z-index:3;pointer-events:none}
   .filetag{
     display:inline-flex;align-items:center;gap:5px;background:#fff;color:var(--brand3);
@@ -944,7 +944,7 @@ function layoutZoom(autoRotate){
     ZV._autoDone = true;
     if(ZV.natH > ZV.natW * 1.12) ZV.rot = 90;
   }
-  const VW = window.innerWidth, VH = window.innerHeight;
+  const VW = (ZV.stage && ZV.stage.clientWidth) || window.innerWidth, VH = (ZV.stage && ZV.stage.clientHeight) || window.innerHeight;
   const rotated = (ZV.rot % 180) !== 0;
   const f = rotated ? Math.min(VW / ZV.natH, VH / ZV.natW)
                     : Math.min(VW / ZV.natW, VH / ZV.natH);

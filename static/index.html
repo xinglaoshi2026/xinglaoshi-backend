@@ -8,7 +8,7 @@
 <link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
 <link rel="icon" type="image/png" href="/static/icon-192.png">
-<meta name="theme-color" content="#54705C">
+<meta name="theme-color" content="#2FA86A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -17,7 +17,7 @@
   /* ===== 与桌面版一致的配色与组件体系 ===== */
   :root{
     /* 青竹绿皮肤：白底 + 柔和鼠尾草绿点缀，与电脑端工作台一致 */
-    --primary:#6B8A72; --primary-light:#8FAE94; --primary-dark:#54705C; --primary-bg:#E7EFE9;
+    --primary:#2FA86A; --primary-light:#5FC795; --primary-dark:#1F7C4C; --primary-bg:#EAF6EF;
     --bg:#F5F5F7; --card-bg:#FFFFFF; --text:#1A1A1A; --text-muted:#8A8A8E;
     --border:#EFEFF2; --border-dark:#E3E3E8;
     --success:#10B981; --success-bg:#ECFDF5; --warning:#F59E0B; --warning-bg:#FFFBEB;
@@ -42,6 +42,8 @@
   /* ===== 内容区（底部留出 tabbar 空间） ===== */
   .content{flex:1;padding:12px 12px calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 12px);max-width:1100px;width:100%;margin:0 auto}
   .main-view{}
+  #view-questions{display:flex;flex-direction:column;height:100%;min-height:0}
+  .subtrack{flex:1;min-height:0;display:flex;width:100%;overflow:hidden;will-change:transform;touch-action:pan-y}
 
   /* ===== 卡片 ===== */
   .card{background:var(--card-bg);border-radius:var(--radius);box-shadow:var(--shadow-sm);
@@ -231,7 +233,7 @@
   .subtab.on::after{content:'';position:absolute;left:50%;transform:translateX(-50%);bottom:-4px;
     width:18px;height:3px;border-radius:2px;background:var(--primary)}
   /* 子面板：跟手拖动 + 换页滑入动画（更灵动） */
-  .subpane{will-change:transform,opacity}
+  .subpane{flex:0 0 100%;width:100%;min-width:0;height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;will-change:transform}
   @keyframes paneInL{from{transform:translateX(-92%);opacity:0}to{transform:none;opacity:1}}
   @keyframes paneInR{from{transform:translateX(92%);opacity:0}to{transform:none;opacity:1}}
   .subpane.in-l{animation:paneInL .28s cubic-bezier(.22,1,.36,1)}
@@ -386,6 +388,7 @@
           <button class="subtab" data-sub="add" onclick="qSub('add')">添加题目</button>
         </div>
 
+        <div class="subtrack" id="subTrack">
         <div id="sub-q" class="subpane">
           <div class="filter-row">
             <select id="qTypeSel" onchange="setTypeFilter(this.value)">
@@ -400,14 +403,26 @@
           <div class="center"><button class="btn sec" onclick="loadMore()">加载更多</button></div>
         </div>
 
-        <div id="sub-compose" class="subpane hidden">
+        <!-- 好题集 / 我的分类（与电脑端「好题集·我的分类」一致） -->
+        <div id="sub-fav" class="subpane">
+          <div class="row" style="gap:8px;margin-bottom:10px;flex-wrap:nowrap">
+            <button id="favModeBtnAll" class="filter-select on" style="flex:1;margin:0;text-align:center" onclick="favMode('all')">★ 好题集</button>
+            <button id="favModeBtnCat" class="filter-select" style="flex:1;margin:0;text-align:center" onclick="favMode('cat')">🏷️ 我的分类</button>
+            <button class="btn sec sm" style="margin:0" onclick="manageMyCats()">管理</button>
+          </div>
+          <div id="favCatChips"></div>
+          <div class="q-count" id="favCount"></div>
+          <div id="favList"></div>
+        </div>
+
+        <div id="sub-compose" class="subpane">
           <div class="row compose-actions" style="margin-bottom:10px">
             <button class="btn" style="flex:1" onclick="openComposeModal()">＋ 新建组卷</button>
           </div>
           <div id="myPapers"></div>
         </div>
 
-        <div id="sub-paper" class="subpane hidden">
+        <div id="sub-paper" class="subpane">
           <!-- 试卷库（与电脑端「试卷中心·试卷库」一致：类型/年级/年份筛选，点开看每道题） -->
           <div class="card page" style="margin-bottom:16px;padding:14px">
             <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -432,22 +447,12 @@
           <div id="allPapers"></div>
         </div>
 
-        <!-- 好题集 / 我的分类（与电脑端「好题集·我的分类」一致） -->
-        <div id="sub-fav" class="subpane hidden">
-          <div class="row" style="gap:8px;margin-bottom:10px;flex-wrap:nowrap">
-            <button id="favModeBtnAll" class="filter-select on" style="flex:1;margin:0;text-align:center" onclick="favMode('all')">★ 好题集</button>
-            <button id="favModeBtnCat" class="filter-select" style="flex:1;margin:0;text-align:center" onclick="favMode('cat')">🏷️ 我的分类</button>
-            <button class="btn sec sm" style="margin:0" onclick="manageMyCats()">管理</button>
-          </div>
-          <div id="favCatChips"></div>
-          <div class="q-count" id="favCount"></div>
-          <div id="favList"></div>
-        </div>
-
-        <div id="sub-add" class="subpane hidden">          <div class="card">
+        <div id="sub-add" class="subpane">          <div class="card">
             <div id="addQForm"></div>
             <button class="btn ok" style="width:100%;margin-top:8px" onclick="saveNewQuestion()">保存题目</button>
           </div>
+        </div>
+
         </div>
 
         <!-- 组卷底部浮条（题库子视图选题目后出现） -->
@@ -464,7 +469,7 @@
           <button class="subtab" data-sub="records" onclick="schedSub('records')">课时</button>
         </div>
         <div id="sub-grid" class="subpane"></div>
-        <div id="sub-records" class="subpane hidden"></div>
+        <div id="sub-records" class="subpane"></div>
       </section>
 
       <!-- 学生主视图 -->
