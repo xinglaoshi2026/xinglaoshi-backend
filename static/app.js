@@ -2,6 +2,32 @@
 // v2：题目内容按 HTML 渲染（media:// 改写为 /api/media/）；
 //     一次 /api/sync/pull 拉全量到内存，切页/搜索/翻页全部本地完成，秒开。
 (function () {
+  // 全局错误横幅：任何未捕获的同步/异步异常都会以红条显示，便于在真机上暴露“某 pane 崩白”的真实原因
+  function showErrBanner(msg) {
+    try {
+      var el = document.getElementById("errBanner");
+      if (!el) {
+        el = document.createElement("div");
+        el.id = "errBanner";
+        el.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:99999;background:#c0392b;color:#fff;font-size:12px;padding:8px 12px;line-height:1.4;max-height:42%;overflow:auto;white-space:pre-wrap";
+        (document.body || document.documentElement).appendChild(el);
+      }
+      el.textContent = "⚠ 出错：" + msg + "（请截图反馈）";
+    } catch (e) {}
+  }
+  window.__xlsErrBanner = showErrBanner;
+  window.addEventListener("error", function (e) {
+    var m = (e && e.message) ? e.message : "未知错误";
+    if (e && e.lineno) m += " @" + e.lineno;
+    showErrBanner(m);
+  });
+  window.addEventListener("unhandledrejection", function (e) {
+    var r = e && e.reason; var m = (r && r.message) ? r.message : String(r);
+    showErrBanner("异步:" + m);
+  });
+  // 单项渲染容错：某条坏数据不应拖垮整 pane（避免整片空白）
+  function _safeNode(builder) { try { return builder(); } catch (e) { console.error("item-render-error", e); return null; } }
+
   const $ = (s) => document.querySelector(s);
   const LS_TOKEN = "xls_token", LS_USER = "xls_user", LS_BASE = "xls_base";
   let token = localStorage.getItem(LS_TOKEN);
@@ -107,6 +133,14 @@
     const t = token || "";
     return base + "/api/media/" + p + (t ? "?token=" + encodeURIComponent(t) : "");
   }
+  // 题目媒体一律存于 questions/ 下；部分旧数据（如选修一）的图片引用可能漏写该前缀，
+  // 漏写会被拼成 /api/media/<qid>/... 而 404（手机端图片裂开）。这里统一补前缀，避免该问题。
+  function normMediaRel(p) {
+    p = (p || "").trim();
+    if (!p) return p;
+    if (/^(questions|papers|exams|train|media|uploads)\//i.test(p)) return p;
+    return "questions/" + p;
+  }
   // 图片加载失败自动重试一次：弱网/慢网下首次加载常超时，
   // 直接隐藏会让"纯图片题"在手机上看起来是一道空题（电脑端本地文件秒开无此问题）。
   function imgRetry(el) {
@@ -145,8 +179,8 @@
   // 丢掉该段会拼出 /api/media/<qid>/... 导致 404（表现为手机端看不到题目/答案图片）。
   function renderMedia(text) {
     if (!text) return "";
-    return esc(text).replace(/media:\/\/(questions\/[^\s)]+)/g,
-      (m, p) => `<img class="qimg" loading="lazy" decoding="async" src="${mediaUrl(p)}" onload="imgOk(this)" onerror="imgRetry(this)">`);
+    return esc(text).replace(/media:\/\/([^\s)]+)/g,
+      (m, p) => `<img class="qimg" loading="lazy" decoding="async" src="${mediaUrl(normMediaRel(p))}" onload="imgOk(this)" onerror="imgRetry(this)">`);
   }
   // 内容是桌面端生成的 HTML（含 <img src="media://...">）→ 按原样渲染并改写媒体地址；
   // 纯文本则转义后把 media:// 引用转成图片。
@@ -156,7 +190,7 @@
     if (/<[a-z][\s\S]*>/i.test(s)) {
       return s.replace(/<div class="qb-meta">[\s\S]*?<\/div>/gi, "")
               .replace(/(src\s*=\s*["'])media:\/\/([^\s"'>]+)/gi,
-                (m, pre, p) => pre + mediaUrl(p))
+                (m, pre, p) => pre + mediaUrl(normMediaRel(p)))
               .replace(/<img(?![^>]*onerror)/gi, '<img loading="lazy" decoding="async" onload="imgOk(this)" onerror="imgRetry(this)"')
               .replace(/<img(?![^>]*\bclass=)/gi, '<img class="qimg"');
     }
@@ -1324,7 +1358,7 @@
       return;
     }
     const frag = document.createDocumentFragment();
-    items.slice(0, 200).forEach(it => frag.appendChild(qCard(it)));
+    items.slice(0, 200).forEach(it => { var n = _safeNode(() => qCard(it)); if (n) frag.appendChild(n); });
     list.appendChild(frag);
   }
 
@@ -1396,13 +1430,13 @@
     const box = $("#myPapers");
     const items = (DB.data.papers || []).filter(p => { const s = (p.body || {}).source; return s === "mobile" || s === "desktop"; });
     box.innerHTML = items.length ? "" : '<div class="center">还没有组卷<br><span style="font-size:12px">去「题库」选题目加入组卷</span></div>';
-    items.forEach(it => box.appendChild(paperCard(it)));
+    items.forEach(it => { var n = _safeNode(() => paperCard(it)); if (n) box.appendChild(n); });
   }
   function renderAllPapers() {
     const box = $("#allPapers");
     const items = DB.data.papers || [];
     box.innerHTML = items.length ? "" : '<div class="center">暂无试卷</div>';
-    items.forEach(it => box.appendChild(paperCard(it)));
+    items.forEach(it => { var n = _safeNode(() => paperCard(it)); if (n) box.appendChild(n); });
     renderExamsM();
     renderExamPapersM();
   }
@@ -1454,12 +1488,14 @@
     $("#epCountM").textContent = "（" + items.length + "份）";
     if (!items.length) { list.innerHTML = '<div class="center" style="padding:10px">没有符合条件的试卷</div>'; return; }
     list.innerHTML = items.map(p => {
-      const n = (p.questionIds || []).length;
-      const badges = [p.type, p.grade, p.year].filter(Boolean)
-        .map(t => '<span class="badge">' + esc(t) + "</span>").join(" ");
-      return '<div class="card" style="margin:8px 0;padding:12px" onclick="openExamPaperM(\'' + esc(p.id) + '\')">' +
-        '<div style="font-weight:700;margin-bottom:4px">' + esc(p.title || "未命名试卷") + "</div>" +
-        '<div class="muted" style="font-size:12px">' + badges + (badges ? " · " : "") + "共 " + n + " 题</div></div>";
+      try {
+        const n = (p.questionIds || []).length;
+        const badges = [p.type, p.grade, p.year].filter(Boolean)
+          .map(t => '<span class="badge">' + esc(t) + "</span>").join(" ");
+        return '<div class="card" style="margin:8px 0;padding:12px" onclick="openExamPaperM(\'' + esc(p.id) + '\')">' +
+          '<div style="font-weight:700;margin-bottom:4px">' + esc(p.title || "未命名试卷") + "</div>" +
+          '<div class="muted" style="font-size:12px">' + badges + (badges ? " · " : "") + "共 " + n + " 题</div></div>";
+      } catch (e) { console.error("ep-card-error", e); return ""; }
     }).join("");
   }
   function epSetFilterM(key, val) {
@@ -1513,21 +1549,23 @@
     box.innerHTML = items.length ? "" :
       '<div class="center">还没有收藏试卷<br><span style="font-size:12px">真题卷、期末卷、好练习卷都能收藏，可上传 PDF/Word</span></div>';
     items.forEach(it => {
-      const b = it.body || {};
-      const files = b.files || [];
-      const meta = [b.grade, b.source, (b.tags || "").toString()].filter(Boolean).join(" · ");
-      let catLabel = "";
-      if (b.categoryId) { const cc = examCats().find(x => x.id === b.categoryId); if (cc) catLabel = " · 🏷️ " + catPath(b.categoryId); }
-      const div = document.createElement("div"); div.className = "card pa-card";
-      div.innerHTML =
-        '<div class="pa-main"><div class="pa-title">' + esc(b.title || "未命名试卷") + "</div>" +
-        '<div class="pa-sub">' + esc(meta) + (files.length ? " · 📎" + files.length + "个附件" : "") + catLabel + "</div></div>" +
-        '<div class="pa-actions">' +
-          '<button class="btn sm" onclick="openExamDetail(\'' + esc(it.id) + '\')">查看</button>' +
-          '<button class="btn ok sm" onclick="openExamEditor(\'' + esc(it.id) + '\')">编辑</button>' +
-          '<button class="btn danger sm" onclick="delExamM(\'' + esc(it.id) + '\')">删除</button>' +
-        "</div>";
-      box.appendChild(div);
+      try {
+        const b = it.body || {};
+        const files = b.files || [];
+        const meta = [b.grade, b.source, (b.tags || "").toString()].filter(Boolean).join(" · ");
+        let catLabel = "";
+        if (b.categoryId) { const cc = examCats().find(x => x.id === b.categoryId); if (cc) catLabel = " · 🏷️ " + catPath(b.categoryId); }
+        const div = document.createElement("div"); div.className = "card pa-card";
+        div.innerHTML =
+          '<div class="pa-main"><div class="pa-title">' + esc(b.title || "未命名试卷") + "</div>" +
+          '<div class="pa-sub">' + esc(meta) + (files.length ? " · 📎" + files.length + "个附件" : "") + catLabel + "</div></div>" +
+          '<div class="pa-actions">' +
+            '<button class="btn sm" onclick="openExamDetail(\'' + esc(it.id) + '\')">查看</button>' +
+            '<button class="btn ok sm" onclick="openExamEditor(\'' + esc(it.id) + '\')">编辑</button>' +
+            '<button class="btn danger sm" onclick="delExamM(\'' + esc(it.id) + '\')">删除</button>' +
+          "</div>";
+        box.appendChild(div);
+      } catch (e) { console.error("exam-card-error", e); }
     });
   }
   function openExamEditor(id) {
