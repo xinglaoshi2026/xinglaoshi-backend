@@ -1168,7 +1168,16 @@
       <div class="card">
         <div class="tbar">
           <button class="lg" onclick="genTasks()"><svg class="ic"><use href="#i-zap"/></svg>生成今日任务</button>
-          <div class="hint">为全体学生生成今天的练习包（到期错题 + 新课巩固）。每人每天题数在「学生管理」里单独设置（默认 3 道，能力弱/时间少的生可调少）。生成后在下面按学生查看。</div>
+          <button type="button" class="tint sm" onclick="toggleGenSel()">选择学生 ▾</button>
+          <div class="hint">生成今天的练习包（到期错题 + 新课巩固）。默认给<b>全体学生</b>生成；点「选择学生」可只给勾选的学生单独派发。每人每天题数在「学生管理」里单独设置（默认 3 道）。生成后在下面按学生查看。</div>
+        </div>
+        <div id="gen-sel" class="hidden" style="margin-top:10px;border:1px solid var(--bd);border-radius:10px;padding:10px 12px;max-width:640px">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+            <button type="button" class="tint xs" onclick="selGenStu(true)">全选</button>
+            <button type="button" class="tint xs" onclick="selGenStu(false)">清空</button>
+            <span id="gen-sel-count" style="color:var(--ink3)">未选 = 全体</span>
+          </div>
+          <div id="gen-sel-list" style="display:flex;flex-wrap:wrap;gap:6px 14px;max-height:200px;overflow:auto"></div>
         </div>
         <div id="task-msg"></div>
         <div class="row2" style="margin-top:8px">
@@ -2174,10 +2183,37 @@ async function delStudent(sid){
   renderTasks(); loadDash();
 }
 async function genTasks(){
-  const {j} = await call('/api/train/tasks/generate',{method:'POST'});
-  document.getElementById('task-msg').textContent = (j&&j.students!=null)? ('已为 '+j.students+' 名学生生成 '+j.date+' 任务 ✓'):'生成失败';
+  const checked=[...document.querySelectorAll('#gen-sel-list input:checked')].map(c=>c.value);
+  const body = checked.length ? {studentIds:checked} : {};
+  const {j} = await call('/api/train/tasks/generate',{method:'POST',json:body});
+  document.getElementById('task-msg').textContent = (j&&j.students!=null)?
+    ('已为 '+j.students+' 名学生生成 '+j.date+' 任务 ✓'+(checked.length?('（仅选中的 '+checked.length+' 人）'):'')):'生成失败';
   renderTasks();
   loadDash();   // 生成后同步刷新看板，否则「查看学生」仍显示生成前的"无任务"
+}
+function toggleGenSel(){
+  const el=document.getElementById('gen-sel');
+  const hidden=el.classList.toggle('hidden');
+  if(!hidden && !el.dataset.filled){
+    const list=document.getElementById('gen-sel-list');
+    list.innerHTML='';
+    const map=window._STU_MAP||{};
+    Object.keys(map).forEach(id=>{
+      list.insertAdjacentHTML('beforeend',
+        '<label class="chk"><input type="checkbox" value="'+esc(id)+'" onchange="updateGenSelCount()"> '+esc(map[id])+'</label>');
+    });
+    el.dataset.filled='1';
+  }
+  updateGenSelCount();
+}
+function selGenStu(on){
+  document.querySelectorAll('#gen-sel-list input').forEach(c=>c.checked=on);
+  updateGenSelCount();
+}
+function updateGenSelCount(){
+  const n=document.querySelectorAll('#gen-sel-list input:checked').length;
+  const tot=document.querySelectorAll('#gen-sel-list input').length;
+  document.getElementById('gen-sel-count').textContent = n? ('已选 '+n+' / '+tot+' 人') : '未选 = 全体';
 }
 const STMAP={pending:'待完成',partial:'部分完成',done:'已完成',none:'无任务'};
 function todayStr(d){ d=d||new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }

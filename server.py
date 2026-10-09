@@ -907,7 +907,10 @@ def train_heal_task_status(task):
 def train_build_daily(student_id, date_str, include_new=True):
     """为某学生生成某天应练的错题卡（到期错题优先, 新课巩固补充, 不足则提前拉取）。
     每日题量上限取该学生自定的 dailyCount（默认 TRAIN_DAILY_MAX=3 道），
-    不同学生能力/时间不同，题量也应不同。"""
+    不同学生能力/时间不同，题量也应不同。
+
+    名额分配(修复旧漏洞)：至少留 max(1, daily_max//2) 道给「新课巩固」池，避免
+    旧到期卡永远占满全部名额、新收录的错题长期排不进去（学生一落后就卡死在老题上）。"""
     stu, _ = store_get("students", student_id)
     try:
         daily_max = int((stu or {}).get("dailyCount", TRAIN_DAILY_MAX) or TRAIN_DAILY_MAX)
@@ -921,21 +924,47 @@ def train_build_daily(student_id, date_str, include_new=True):
            and c.get("status") == "active" and c.get("nextDueDate", "") <= date_str]
     due.sort(key=lambda c: (c.get("level", 0),
                             -_days_between(c.get("nextDueDate", date_str), date_str)))
-    picked = due[:daily_max]
-    picked_ids = {p.get("errorId") for p in picked}
-    if include_new and len(picked) < daily_max:
-        # 新课巩固：近7天收录且仍 level0 的错题，补足当日名额
+    # 新课巩固池：近7天收录且仍 level0 的错题
+    new_pool = []
+    if include_new:
         new_errs = [e["body"] for e in store_list("trainErrors", limit=3000)]
         for e in new_errs:
-            if len(picked) >= daily_max:
-                break
             if e.get("studentId") != student_id:
                 continue
             cid = train_card_id(student_id, e["id"])
             c = next((x for x in cards if x.get("id") == cid), None)
             if c and c.get("level", 0) == 0 and _days_between(c.get("firstSeen", date_str), date_str) <= 7:
-                if e["id"] not in picked_ids:
-                    picked.append(c); picked_ids.add(e["id"])
+                new_pool.append(c)
+    new_ids = {c.get("errorId") for c in new_pool}
+    new_quota = max(1, daily_max // 2) if new_pool else 0
+    picked = []
+    picked_ids = set()
+    # 1) 先取新课巩固（限量），保证新错题至少露面
+    for c in new_pool:
+        if len(picked) >= new_quota:
+            break
+        eid = c.get("errorId")
+        if eid in picked_ids:
+            continue
+        picked.append(c); picked_ids.add(eid)
+    # 2) 用到期卡填满剩余名额
+    for c in due:
+        if len(picked) >= daily_max:
+            break
+        eid = c.get("errorId")
+        if eid in picked_ids:
+            continue
+        picked.append(c); picked_ids.add(eid)
+    # 3) 仍不满(到期卡不够)：用新课巩固剩余补齐，绝不因配额而少派
+    if len(picked) < daily_max:
+        for c in new_pool:
+            if len(picked) >= daily_max:
+                break
+            eid = c.get("errorId")
+            if eid in picked_ids:
+                continue
+            picked.append(c); picked_ids.add(eid)
+    # 4) 仍不满：拉即将到期的(未来1天内)
     if len(picked) < daily_max:
         up = [c for c in cards if c.get("studentId") == student_id
               and c.get("status") == "active" and c.get("nextDueDate", "") > date_str
@@ -1012,10 +1041,14 @@ def train_rebuild_today_task(student_id, date_str=None):
     return len(task["errorIds"])
 
 
-def train_generate_tasks(date_str=None):
-    """为全体学生生成某天任务包(覆盖式)。返回生成统计。"""
+def train_generate_tasks(date_str=None, student_ids=None):
+    """为全体学生(或指定 student_ids)生成某天任务包(覆盖式)。返回生成统计。
+    student_ids 非空时只给这些学生生成，其余学生任务不动（用于按学生单独派发）。"""
     date_str = date_str or _date_today()
     students = [s["body"] for s in store_list("students", limit=2000)]
+    if student_ids:
+        wanted = set(str(x).strip() for x in student_ids if str(x).strip())
+        students = [s for s in students if s.get("id") in wanted]
     if date_str[8:10] == "01":  # 每月1号先月度抽检
         for s in students:
             train_monthly_sample(s.get("id"), date_str)
@@ -2134,11 +2167,17 @@ class H(BaseHTTPRequestHandler):
                     store_delete("trainCards", cid)
             return send_json(self, {"ok": True})
         if p == "/api/train/tasks/generate":
-            # 生成全体任务——仅老师/管理员
+            # 生成任务——仅老师/管理员；支持按 studentIds 指定学生单独派发
             if not _teacher_only():
                 return
             d = q.get("date", [None])[0]
-            return send_json(self, train_generate_tasks(d))
+            sids = None
+            body, _ = read_body(self)
+            if isinstance(body, dict):
+                v = body.get("studentIds")
+                if v:
+                    sids = [str(x).strip() for x in v if str(x).strip()]
+            return send_json(self, train_generate_tasks(d, student_ids=sids))
         if p == "/api/train/logs":
             # 手动登记/改写作答流水（会改卡片等级）——仅老师/管理员
             if not _teacher_only():
