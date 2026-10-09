@@ -1141,6 +1141,60 @@ def train_student_today(student_id, date_str=None):
             "review": train_pick_review(student_id, date_str, finished=finished, today=task)}
 
 
+def train_student_recent(student_id, days=14):
+    """学生端「近期表现」：近 days 天的练习量/正确率/连续打卡等，用于激励展示。
+    按北京时间(与 _date_today 一致)统计，避免跨零点日期偏移。"""
+    from datetime import date, timedelta
+    try:
+        days = max(1, min(int(days or 14), 60))
+    except Exception:
+        days = 14
+    today = date.fromisoformat(_date_today())
+    day_map = {}
+    for d in range(days):
+        dt = today - timedelta(days=d)
+        day_map[dt.isoformat()] = {"date": dt.isoformat(), "dd": dt.day, "n": 0, "right": 0}
+    total = 0
+    for it in store_list("trainLogs", limit=100000):
+        b = it.get("body") if isinstance(it, dict) else None
+        if not b or (b.get("studentId") or "") != student_id:
+            continue
+        ad = (b.get("answerDate") or b.get("date") or "").strip()
+        if ad in day_map:
+            day_map[ad]["n"] += 1
+            if b.get("result") in ("right", "self_right"):
+                day_map[ad]["right"] += 1
+        if ad:
+            total += 1
+    seq = sorted(day_map.keys())                      # 升序（旧→新）
+    last7 = seq[-7:] if days >= 7 else seq
+    week_n = sum(day_map[k]["n"] for k in last7)
+    week_right = sum(day_map[k]["right"] for k in last7)
+    week_acc = round(week_right / week_n * 100) if week_n else 0
+    week_days = sum(1 for k in last7 if day_map[k]["n"] > 0)
+    # 连续打卡：从今天起向前数连续有练习的天（今天没练则从昨天起算，不算断）
+    streak = 0
+    start = 0
+    if day_map.get(today.isoformat(), {}).get("n", 0) == 0:
+        start = 1
+    for d in range(start, days):
+        dt = today - timedelta(days=d)
+        if day_map.get(dt.isoformat(), {}).get("n", 0) > 0:
+            streak += 1
+        else:
+            break
+    days_list = []
+    for k in seq:
+        x = day_map[k]
+        x["a"] = round(x["right"] / x["n"] * 100) if x["n"] else 0
+        days_list.append(x)
+    return {
+        "streak": streak, "weekCount": week_n, "weekAcc": week_acc,
+        "totalCount": total, "weekGoal": 5, "weekGoalDone": week_days,
+        "days": days_list,
+    }
+
+
 def train_submit(student_id, date_str, answers):
     """学生提交：自动判分 + 更新卡片 + 写流水 + 更新任务。返回逐题结果。"""
     date_str = date_str or _date_today()
@@ -1949,6 +2003,20 @@ class H(BaseHTTPRequestHandler):
                 out.append({"studentId": r["student_id"], "username": r["username"],
                             "hasPassword": bool(r["pw_hash"])})
             return send_json(self, {"items": out})
+        if p.startswith("/api/train/student/") and p.endswith("/recent"):
+            import re as _re
+            m = _re.match(r"^/api/train/student/([^/]+)/recent$", p)
+            if not m:
+                return send_json(self, {"error": "参数错误"}, 400)
+            rsid = m.group(1)
+            sid = eff_sid if is_student else (rsid or sid_param)
+            if not sid:
+                return send_json(self, {"error": "缺少 studentId"}, 400)
+            try:
+                dd = int(q.get("days", ["14"])[0])
+            except Exception:
+                dd = 14
+            return send_json(self, train_student_recent(sid, dd))
         return None
 
     def _train_route_post(self, p, q):

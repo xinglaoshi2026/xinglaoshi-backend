@@ -371,6 +371,46 @@
   @media (prefers-reduced-motion:reduce){
     .rise,.pop{animation:none!important}
   }
+
+  /* ---------- 近期表现（学生端概览）---------- */
+  .perf-mhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
+  .perf-mhead h2{font-size:18px;font-weight:700;letter-spacing:.2px;display:flex;align-items:center;gap:8px}
+  .perf-mhead h2 .dot{width:8px;height:18px;border-radius:4px;background:var(--grad)}
+  .perf-seg{display:inline-flex;background:var(--brand-soft);border-radius:999px;padding:3px}
+  .perf-segbtn{border:0;background:transparent;color:var(--brand3);font-size:13px;font-weight:700;
+    padding:6px 13px;border-radius:999px;cursor:pointer;font-family:inherit;box-shadow:none;width:auto}
+  .perf-segbtn.on{background:#fff;color:var(--brand3);box-shadow:var(--sh1)}
+  .perf-hero{position:relative;overflow:hidden;border-radius:var(--r-sm);padding:14px 15px;margin:10px 0 14px;
+    background:linear-gradient(135deg,#EAF3EE 0%,#DCEBE1 100%);border:1px solid #DCEBE1}
+  .perf-hero .fire{position:absolute;right:-14px;top:-22px;width:96px;height:96px;border-radius:50%;
+    background:radial-gradient(circle,rgba(47,168,106,.22) 0%,rgba(47,168,106,0) 68%)}
+  .perf-hero .lead{position:relative;font-size:15px;font-weight:700;color:var(--brand3);line-height:1.5}
+  .perf-hero .sub{position:relative;margin-top:5px;font-size:13px;color:var(--ink2);font-weight:600}
+  .perf-stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:4px 0 14px}
+  .perf-stat{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:12px 13px}
+  .perf-stat .v{font-size:23px;font-weight:750;color:var(--brand3);line-height:1.05}
+  .perf-stat .v small{font-size:12px;font-weight:600;color:var(--ink3);margin-left:2px}
+  .perf-stat .k{font-size:12px;color:var(--ink2);margin-top:4px;font-weight:600}
+  .perf-goal{margin:2px 0 14px}
+  .perf-goal .gh{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;
+    color:var(--ink2);margin-bottom:7px;font-weight:600}
+  .perf-goal .gh b{color:var(--brand3);font-size:14px}
+  .perf-bar{height:10px;background:var(--brand-soft);border-radius:999px;overflow:hidden}
+  .perf-bar>i{display:block;height:100%;background:var(--grad);border-radius:999px;transition:width .4s ease}
+  .perf-chart{display:flex;align-items:flex-end;gap:5px;height:158px;padding-top:16px}
+  .perf-col{flex:1;display:flex;flex-direction:column;align-items:center;height:100%;min-width:0}
+  .perf-col-acc{font-size:10px;color:var(--ink3);height:14px;line-height:14px;white-space:nowrap;font-weight:600}
+  .perf-col-track{flex:1;width:100%;display:flex;align-items:flex-end;justify-content:center}
+  .perf-col-fill{width:72%;max-width:22px;border-radius:6px 6px 3px 3px;background:var(--brand2);
+    transition:height .35s cubic-bezier(.22,1,.36,1)}
+  .perf-col-fill.c-hi{background:linear-gradient(180deg,var(--brand) 0%,var(--brand3) 100%)}
+  .perf-col-fill.c-mid{background:linear-gradient(180deg,#7FD0A0 0%,var(--brand) 100%)}
+  .perf-col-fill.c-lo{background:linear-gradient(180deg,#E9C879 0%,var(--warn) 100%)}
+  .perf-col-fill.c-zero{background:#E6E6EA}
+  .perf-col-d{font-size:10px;color:var(--ink3);margin-top:6px;line-height:1}
+  .perf-col.today .perf-col-d{color:var(--brand3);font-weight:700}
+  .perf-clabel{font-size:11.5px;color:var(--ink3);margin-top:10px;text-align:center}
+  .perf-clabel b{color:var(--ink2)}
 </style>
 </head>
 <body>
@@ -426,6 +466,33 @@
     </div>
 
     <div class="card" id="head"></div>
+
+    <div class="card" id="perfCard" style="margin-top:14px">
+      <div class="perf-mhead">
+        <h2><span class="dot"></span>近期表现</h2>
+        <div class="perf-seg">
+          <button class="perf-segbtn on" data-d="7" onclick="setRange(7,this)">近 7 天</button>
+          <button class="perf-segbtn" data-d="14" onclick="setRange(14,this)">近 14 天</button>
+        </div>
+      </div>
+      <div class="perf-hero">
+        <div class="fire"></div>
+        <div class="lead" id="perf-lead">—</div>
+        <div class="sub" id="perf-sub"></div>
+      </div>
+      <div class="perf-stats">
+        <div class="perf-stat"><div class="v" id="s-week">0<small>题</small></div><div class="k">本周练习</div></div>
+        <div class="perf-stat"><div class="v" id="s-acc">0<small>%</small></div><div class="k">平均正确率</div></div>
+        <div class="perf-stat"><div class="v" id="s-streak">0<small>天</small></div><div class="k">连续打卡</div></div>
+        <div class="perf-stat"><div class="v" id="s-total">0<small>次</small></div><div class="k">累计练习</div></div>
+      </div>
+      <div class="perf-goal">
+        <div class="gh"><span>本周目标 <b id="g-goal">5</b> 题</span><span>已完成 <b id="g-done">0</b>（<b id="g-pct">0</b>%）</span></div>
+        <div class="perf-bar"><i id="g-bar" style="width:0%"></i></div>
+      </div>
+      <div class="perf-chart" id="perf-chart"></div>
+      <div class="perf-clabel">柱高 = 当日练习题数 · 颜色 = 正确率（<b style="color:var(--brand3)">绿高</b> / <b style="color:var(--warn)">黄低</b>）· 顶部为当日正确率</div>
+    </div>
 
     <div class="card reviewcard hidden" id="reviewCard"></div>
 
@@ -497,6 +564,7 @@
 const API = location.origin;
 let TOKEN = localStorage.getItem('tt_token') || '';
 let ME = '';
+let SID = '';
 
 async function call(p, opts={}){
   opts.headers = Object.assign({'Content-Type':'application/json'}, opts.headers||{});
@@ -522,6 +590,73 @@ function murl(u){
 }
 document.addEventListener('visibilitychange', function(){ if(!document.hidden) loadMediaTicket(); });
 
+/* ---------- 近期表现（学生端概览）---------- */
+let PERF_ALL = [];      // 后端返回的 days 数组（升序，末位为今天）
+let PERF_GOAL = 5;      // 本周目标（后端给出，缺省 5）
+let PERF_RANGE = 7;     // 当前展示范围：7 或 14
+
+async function loadRecent(days){
+  days = days || PERF_RANGE; PERF_RANGE = days;
+  if(!SID) return;
+  try{
+    const {status,j} = await call('/api/train/student/'+encodeURIComponent(SID)+'/recent?days='+days);
+    if(status!==200 || !j || j.error){ return; }
+    PERF_ALL = (j.days||[]).map(function(d){ return {dd:String(d.dd), n:Number(d.n)||0, a:Number(d.a)||0, date:d.date||''}; });
+    if(PERF_ALL.length) PERF_ALL[PERF_ALL.length-1].today = true;   // 末位标记今天
+    PERF_GOAL = Number(j.weekGoal)||5;
+    setRange(PERF_RANGE, document.querySelector('#perfCard .perf-segbtn.on'));
+  }catch(e){}
+}
+
+function setRange(n, btn){
+  PERF_RANGE = n;
+  if(btn){ document.querySelectorAll('#perfCard .perf-segbtn').forEach(function(b){ b.classList.toggle('on', b===btn); }); }
+  else { document.querySelectorAll('#perfCard .perf-segbtn').forEach(function(b){ b.classList.toggle('on', Number(b.dataset.d)===n); }); }
+  const days = (n===7 ? PERF_ALL.slice(-7) : PERF_ALL);
+  renderPerfChart(days);
+  renderPerfStats(days);
+}
+
+function renderPerfStats(days){
+  const week = days.filter(function(d){ return d.n>0; });
+  const total = PERF_ALL.filter(function(d){ return d.n>0; }).reduce(function(s,d){ return s+d.n; },0);
+  const weekCount = week.reduce(function(s,d){ return s+d.n; },0);
+  const weekAcc = week.length ? Math.round(week.reduce(function(s,d){ return s+d.a; },0)/week.length) : 0;
+  let streak=0; for(let i=PERF_ALL.length-1;i>=0;i--){ if(PERF_ALL[i].n>0) streak++; else break; }
+  document.getElementById('s-week').innerHTML = weekCount+'<small>题</small>';
+  document.getElementById('s-acc').innerHTML  = weekAcc+'<small>%</small>';
+  document.getElementById('s-streak').innerHTML = streak+'<small>天</small>';
+  document.getElementById('s-total').innerHTML = total+'<small>次</small>';
+  const goal=PERF_GOAL, done=Math.min(weekCount,goal), pct=Math.round(done/goal*100);
+  document.getElementById('g-goal').textContent=goal;
+  document.getElementById('g-done').textContent=done;
+  document.getElementById('g-pct').textContent=pct;
+  document.getElementById('g-bar').style.width=pct+'%';
+  let lead, sub;
+  if(streak>=5) lead='连续打卡 '+streak+' 天，节奏超棒！';
+  else if(streak>=3) lead='连续打卡 '+streak+' 天，别断签～';
+  else lead='最近有点断断续续，今天补上就能连起来！';
+  if(weekAcc>=85) sub='本周正确率 '+weekAcc+'%，稳居高位，保持手感！';
+  else if(weekAcc>=70) sub='本周正确率 '+weekAcc+'%，再细心一点就能上 90%。';
+  else sub='本周正确率 '+weekAcc+'%，多回顾错题本里的老题。';
+  document.getElementById('perf-lead').textContent=lead;
+  document.getElementById('perf-sub').textContent=sub;
+}
+
+function renderPerfChart(days){
+  const max = Math.max.apply(null, days.map(function(d){ return d.n; }).concat([1]));
+  const el = document.getElementById('perf-chart');
+  el.innerHTML = days.map(function(d){
+    const h = d.n>0 ? Math.max(Math.round(d.n/max*100),10) : 2;
+    const col = d.n===0 ? 'c-zero' : (d.a>=85?'c-hi':d.a>=70?'c-mid':'c-lo');
+    const acc = d.n===0 ? '—' : d.a+'%';
+    return '<div class="perf-col'+(d.today?' today':'')+'">'
+      + '<div class="perf-col-acc">'+acc+'</div>'
+      + '<div class="perf-col-track"><div class="perf-col-fill '+col+'" style="height:'+h+'%"></div></div>'
+      + '<div class="perf-col-d">'+d.dd+'</div></div>';
+  }).join('');
+}
+
 function show(ok){
   document.getElementById('login').classList.toggle('hidden', ok);
   document.getElementById('main').classList.toggle('hidden', !ok);
@@ -535,7 +670,7 @@ async function doLogin(){
   if(!u||!pw){ document.getElementById('lmsg').textContent='请输入账号和密码'; return; }
   const {status,j}=await call('/api/auth/login',{method:'POST',body:JSON.stringify({username:u,password:pw})});
   if(status!==200||!j||!j.token){ document.getElementById('lmsg').textContent=(j&&j.error)||'登录失败'; return; }
-  TOKEN=j.token; ME=(j.user&&j.user.username)||u;
+  TOKEN=j.token; ME=(j.user&&j.user.username)||u; SID=(j.user&&j.user.studentId)||'';
   localStorage.setItem('tt_token', TOKEN);
   show(true);
   setMe(null);
@@ -544,6 +679,7 @@ async function doLogin(){
     const r = await call('/api/train/students');
     if(r.status===200 && r.j && r.j.items && r.j.items[0]) setMe(r.j.items[0]);
   }catch(e){}
+  loadRecent();                // 近期表现（不阻塞今日任务加载）
   await loadToday();
   updateWeekLock();
 }
