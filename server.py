@@ -1763,16 +1763,24 @@ class H(BaseHTTPRequestHandler):
         if p == "/api/train/errors/practices":
             # 每个错题的练习次数（可选按学生过滤）
             sid = q.get("studentId", [None])[0] or eff_sid
+            sid = str(sid) if sid else None
             counts, per = {}, {}
             for l in store_list("trainLogs", limit=20000):
-                b = l.get("body") or {}
-                eid = b.get("errorId")
-                if not eid:
+                try:
+                    b = l.get("body") if isinstance(l, dict) else None
+                    if not isinstance(b, dict):
+                        continue
+                    eid = b.get("errorId")
+                    if not eid or not isinstance(eid, str):
+                        continue
+                    ssid = b.get("studentId")
+                    if sid and str(ssid) != sid:
+                        continue
+                    counts[eid] = counts.get(eid, 0) + 1
+                    key = str(ssid) if ssid is not None else "unknown"
+                    per.setdefault(eid, {})[key] = per[eid].get(key, 0) + 1
+                except Exception:
                     continue
-                if sid and b.get("studentId") != sid:
-                    continue
-                counts[eid] = counts.get(eid, 0) + 1
-                per.setdefault(eid, {})[b.get("studentId")] = per[eid].get(b.get("studentId"), 0) + 1
             return send_json(self, {"counts": counts, "perStudent": per})
         if p.startswith("/api/train/errors/") and p.endswith("/practices"):
             eid = p[len("/api/train/errors/"):-len("/practices")]
