@@ -1011,6 +1011,30 @@
 
   /* 去掉遗留说明文字 */
   #picked-hint{display:none!important}
+  /* ---------- 教师端·逐题评语 ---------- */
+  .tl-cmt{margin-top:9px;border-top:1px dashed var(--line2);padding-top:9px}
+  .tl-cmt > .pillbtn{margin-bottom:2px}
+  .cmt-list{margin-top:8px;display:flex;flex-direction:column;gap:8px}
+  .cmt-empty{color:var(--ink3);font-size:12.5px}
+  .cmt-row{background:var(--brand-soft);border-radius:12px;padding:8px 30px 8px 10px;position:relative}
+  .cmt-meta{font-size:11px;color:var(--brand3);font-weight:700;margin-bottom:3px}
+  .cmt-tx{font-size:14px;color:var(--ink);white-space:pre-wrap;line-height:1.5;word-break:break-word}
+  .cmt-img{max-width:100%;border-radius:10px;margin-top:4px;cursor:pointer;display:block}
+  .cmt-audio{width:100%;margin-top:4px;height:34px}
+  .cmt-del{position:absolute;top:6px;right:7px;font-size:11px;color:var(--ink3);background:none;border:0;padding:2px 4px;cursor:pointer}
+  .cmt-del:hover{color:var(--err)}
+  .cmt-ed{margin-top:8px;background:var(--bg);border:1px solid var(--line2);border-radius:14px;padding:10px}
+  .cmt-ed textarea{width:100%;min-height:62px;border:1px solid var(--line2);border-radius:10px;padding:10px;font-size:14px;font-family:inherit;resize:vertical;background:#fff;color:var(--ink)}
+  .cmt-ed textarea:focus{outline:0;border-color:var(--brand2);box-shadow:var(--focus)}
+  .cmt-imgrow{display:flex;gap:8px;margin-top:8px}
+  .cmt-imgrow .btn3{flex:1}
+  .cmt-attach{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .cmt-att{display:flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line2);border-radius:10px;padding:6px 8px;font-size:12.5px;color:var(--ink2)}
+  .cmt-att img{max-width:88px;border-radius:6px;display:block}
+  .cmt-att button{background:var(--err-soft);color:var(--err);border:0;border-radius:50%;width:22px;height:22px;font-size:14px;line-height:1;cursor:pointer;flex:0 0 auto}
+  .cmt-acts{display:flex;gap:8px;margin-top:10px}
+  .cmt-acts .btn2,.cmt-acts .ghost{flex:1}
+  button.recording{background:var(--err)!important;color:#fff!important;box-shadow:none!important}
 </style>
 </head>
 <body>
@@ -1018,6 +1042,7 @@
 <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
 <symbol id="i-tag" viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r="1.5"/></symbol>
 <symbol id="i-camera" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></symbol>
+<symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3M8.5 21h7"/></symbol>
 <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a6.5 6.5 0 0 0-3.8 11.8c.5.4.8 1 .8 1.7V17h6v-1.5c0-.7.3-1.3.8-1.7A6.5 6.5 0 0 0 12 2z"/></symbol>
 <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></symbol>
 <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
@@ -1234,6 +1259,10 @@
 <script>
 const API = location.origin;
 let TOKEN = localStorage.getItem('tt_token') || '';
+let CMT_SID = '';                 // 当前查看任务对应的学生（写评语用）
+const CMREC = {};                 // errorId -> MediaRecorder
+const CMEDIA = {};                // errorId -> MediaStream
+const CMBLOB = {};                // errorId -> [Blob chunks]
 // HTML 转义：所有「来自服务端/学生提交」的文本，塞进 innerHTML 前必须过这里，
 // 否则学生可把 <img src=x onerror=...> 写进错题题面，在老师浏览器里执行 → 偷走老师 token。
 function esc(s){
@@ -2370,6 +2399,7 @@ function downloadStuErrors(sid, date, questionsOnly){
 async function viewTaskLogs(tid){
   const {j} = await call('/api/train/tasks/'+tid+'/logs');
   const items = (j&&j.items)||[];
+  CMT_SID = (j&&j.studentId) || '';
   const hasDraft = l => !!(l.submitted || l.result || (l.draftImages&&l.draftImages.length));
   const anySubmitted = items.some(hasDraft);
   let h = '<div class="modal-box" style="max-width:96vw"><div class="modal-head"><b>学生作答详情（'+items.length+' 题）</b>'
@@ -2379,6 +2409,7 @@ async function viewTaskLogs(tid){
   else {
     if(!anySubmitted) h += '<p style="color:var(--ink3);margin:2px 0 8px">该生<b>尚未提交</b>作答，以下为当日题目（可先看题 / 答案）。</p>';
     items.forEach((l,i)=>{
+      const eid = l.errorId || ('e'+i);
       const submitted = hasDraft(l);
       const ok = (l.result==='right'||l.result==='self_right');
       const r = !submitted ? '未提交' : (ok ? '✓ 做对' : (l.result==='half' ? '半对' : '✗ 做错'));
@@ -2405,17 +2436,161 @@ async function viewTaskLogs(tid){
                 '<img class="thumb" src="'+esc(murl(u))+'" onclick="zoomList('+rai+','+k+')" title="点击放大答案图">').join('')+'</div>' : '')
         +   '</div>'
         +   (submitted ? '<div class="tl-note">错误原因：'+esc(l.errorNote||'（未填）')+'</div>' : '')
+        +   '<div class="tl-cmt">'
+        +     '<button class="pillbtn" onclick="openCmtEditor(\''+eid+'\')"><svg class="ic"><use href="#i-chat"/></svg>写评语</button>'
+        +     '<div class="cmt-list" id="cmtList_'+eid+'"></div>'
+        +   '</div>'
+        +   '<div class="cmt-ed hidden" id="cmtEd_'+eid+'">'
+        +     '<textarea id="cmtTx_'+eid+'" placeholder="写给学生的讲解（文字）"></textarea>'
+        +     '<div class="cmt-imgrow">'
+        +       '<input type="file" accept="image/*" id="cmtImg_'+eid+'" class="hidden" onchange="cmtPickImg(\''+eid+'\')">'
+        +       '<button class="btn3 sm" onclick="document.getElementById(\'cmtImg_'+eid+'\').click()"><svg class="ic"><use href="#i-camera"/></svg>图片</button>'
+        +       '<button class="btn3 sm" id="cmtRec_'+eid+'" onpointerdown="cmtRecStart(\''+eid+'\',event)" onpointerup="cmtRecStop(\''+eid+'\')" onpointerleave="cmtRecStop(\''+eid+'\')"><svg class="ic"><use href="#i-mic"/></svg>按住 发语音</button>'
+        +     '</div>'
+        +     '<div class="cmt-attach" id="cmtAtt_'+eid+'"></div>'
+        +     '<div class="cmt-acts"><button class="btn2 sm" onclick="cmtSubmit(\''+eid+'\')">发送评语</button>'
+        +       '<button class="ghost sm" onclick="closeCmtEditor(\''+eid+'\')">取消</button></div>'
+        +   '</div>'
         + '</div>';
     });
   }
   h += '</div>';
   showModalHtml(h);
+  items.forEach(function(l){ const e=l.errorId; if(e) loadCmtList(e); });
 }
 function tlToggleAnswer(i, btn){
   const el = document.getElementById('tlans_'+i);
   if(!el) return;
   const open = !el.classList.toggle('hidden');
   if(btn) btn.textContent = open ? '收起答案' : '看答案 / 解析';
+}
+
+/* ---------- 教师端·逐题评语（文字 / 图片 / 语音）---------- */
+function fmtCmtTime(ts){
+  if(!ts) return '';
+  const d = new Date(ts);
+  if(isNaN(d.getTime())) return '';
+  const p = n => (n<10?'0':'')+n;
+  return (d.getMonth()+1)+'月'+d.getDate()+'日 '+p(d.getHours())+':'+p(d.getMinutes());
+}
+function openCmtEditor(eid){ const ed=document.getElementById('cmtEd_'+eid); if(ed) ed.classList.remove('hidden'); }
+function closeCmtEditor(eid){ const ed=document.getElementById('cmtEd_'+eid); if(ed) ed.classList.add('hidden'); }
+function cmtItemHtml(c){
+  let inner='';
+  if(c.type==='text') inner='<div class="cmt-tx">'+esc(c.text||'')+'</div>';
+  else if(c.type==='image') inner='<img class="cmt-img" src="'+esc(murl(c.url))+'" onclick="zoomImg(\''+esc(murl(c.url))+'\')">';
+  else if(c.type==='voice') inner='<audio class="cmt-audio" src="'+esc(murl(c.url))+'" controls preload="none"></audio>';
+  return '<div class="cmt-row"><div class="cmt-meta">老师 · '+fmtCmtTime(c.ts)+'</div>'+inner
+    +'<button class="cmt-del" onclick="cmtDel(\''+c.id+'\',\''+esc(c.errorId||'')+'\')">删除</button></div>';
+}
+async function loadCmtList(eid){
+  const box = document.getElementById('cmtList_'+eid);
+  if(!box || !CMT_SID) return;
+  try{
+    const {status,j} = await call('/api/train/comments?studentId='+encodeURIComponent(CMT_SID)+'&errorId='+encodeURIComponent(eid));
+    if(status!==200 || !j) return;
+    const arr = (j.items||[]);
+    if(!arr.length){ box.innerHTML='<div class="cmt-empty">还没有评语，点「写评语」给学生讲解这道题</div>'; return; }
+    box.innerHTML = arr.map(cmtItemHtml).join('');
+  }catch(e){}
+}
+async function cmtDel(id, eid){
+  if(!confirm('确定删除这条评语？')) return;
+  try{ await call('/api/train/comments/'+encodeURIComponent(id)+'/delete', {method:'POST'}); }catch(e){}
+  loadCmtList(eid);
+}
+async function uploadCommentMedia(file, eid, kind){
+  try{
+    const ext = (file.name?file.name.split('.').pop():'').toLowerCase().replace(/[^a-z0-9]/g,'');
+    const safeExt = ext || (kind==='voice'?'webm':'bin');
+    const name = 'cm_'+Date.now()+'_'+Math.random().toString(36).slice(2,8)+'.'+safeExt;
+    const buf = await file.arrayBuffer();
+    const r = await fetch(API+'/api/media?name='+encodeURIComponent(name)+'&sub=train/comments', {
+      method:'POST',
+      headers:{'Authorization':'Bearer '+TOKEN, 'Content-Type':(file.type||'application/octet-stream')},
+      body: buf
+    });
+    const j = await r.json().catch(()=>({}));
+    if(r.status===200 && j && j.ok && j.url) return j.url;
+    alert('上传失败：'+(j.error||r.status)); return '';
+  }catch(e){ alert('上传出错：'+e.message); return ''; }
+}
+function cmtPickImg(eid){
+  const inp = document.getElementById('cmtImg_'+eid);
+  const f = inp && inp.files && inp.files[0];
+  if(!f) return;
+  uploadCommentMedia(f, eid, 'image').then(url=>{
+    if(!url) return;
+    window.__cmtAtt = window.__cmtAtt||{}; window.__cmtAtt[eid]=window.__cmtAtt[eid]||{};
+    window.__cmtAtt[eid].image = url;
+    renderCmtAtt(eid);
+  });
+}
+function renderCmtAtt(eid){
+  const att = (window.__cmtAtt && window.__cmtAtt[eid])||{};
+  const box = document.getElementById('cmtAtt_'+eid); if(!box) return;
+  let h='';
+  if(att.image) h+='<div class="cmt-att"><img src="'+esc(murl(att.image))+'"><button onclick="cmtRmAtt(\''+eid+'\',\'image\')">×</button></div>';
+  if(att.voice) h+='<div class="cmt-att">语音<audio src="'+esc(murl(att.voice))+'" controls preload="none"></audio><button onclick="cmtRmAtt(\''+eid+'\',\'voice\')">×</button></div>';
+  box.innerHTML=h;
+}
+function cmtRmAtt(eid, kind){
+  window.__cmtAtt = window.__cmtAtt||{}; window.__cmtAtt[eid]=window.__cmtAtt[eid]||{};
+  delete window.__cmtAtt[eid][kind];
+  renderCmtAtt(eid);
+}
+async function cmtPost(sid, eid, type, text, url){
+  const {status} = await call('/api/train/comments', {method:'POST', json:{studentId:sid, errorId:eid, type:type, text:text, url:url}});
+  return status===200;
+}
+async function cmtSubmit(eid){
+  const tx = ((document.getElementById('cmtTx_'+eid)||{}).value) || '';
+  const att = (window.__cmtAtt && window.__cmtAtt[eid])||{};
+  if(!tx.trim() && !att.image && !att.voice){ alert('请填写文字，或添加图片 / 语音'); return; }
+  let ok=true;
+  if(tx.trim()) ok = (await cmtPost(CMT_SID, eid, 'text', tx.trim(), '')) && ok;
+  if(att.image) ok = (await cmtPost(CMT_SID, eid, 'image', '', att.image)) && ok;
+  if(att.voice) ok = (await cmtPost(CMT_SID, eid, 'voice', '', att.voice)) && ok;
+  if(ok){
+    const t=document.getElementById('cmtTx_'+eid); if(t) t.value='';
+    if(window.__cmtAtt) delete window.__cmtAtt[eid];
+    const a=document.getElementById('cmtAtt_'+eid); if(a) a.innerHTML='';
+    closeCmtEditor(eid);
+    await loadCmtList(eid);
+  }else{ alert('评语发送失败，请重试'); }
+}
+async function cmtRecStart(eid, ev){
+  ev.preventDefault();
+  if(typeof navigator==='undefined' || !navigator.mediaDevices || typeof MediaRecorder==='undefined'){ alert('当前浏览器不支持录音'); return; }
+  if(CMREC[eid] && CMREC[eid].state!=='inactive') return;
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    CMEDIA[eid]=stream;
+    let mime='';
+    if(MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/mp4')) mime='audio/mp4';
+    else if(MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm')) mime='audio/webm';
+    const rec = mime ? new MediaRecorder(stream,{mimeType:mime}) : new MediaRecorder(stream);
+    CMBLOB[eid]=[];
+    rec.ondataavailable = e=>{ if(e.data && e.data.size) CMBLOB[eid].push(e.data); };
+    rec.onstop = async ()=>{
+      const blob = new Blob(CMBLOB[eid], {type: rec.mimeType || 'audio/webm'});
+      (CMEDIA[eid]||[]).forEach(tr=>tr.stop());
+      CMEDIA[eid]=null;
+      const url = await uploadCommentMedia(blob, eid, 'voice');
+      if(url){ window.__cmtAtt=window.__cmtAtt||{}; window.__cmtAtt[eid]=window.__cmtAtt[eid]||{}; window.__cmtAtt[eid].voice=url; renderCmtAtt(eid); }
+    };
+    rec.start();
+    CMREC[eid]=rec;
+    const btn=document.getElementById('cmtRec_'+eid);
+    if(btn){ btn.classList.add('recording'); btn.innerHTML='<svg class="ic"><use href="#i-mic"/></svg>松开 发送'; }
+  }catch(e){ alert('无法访问麦克风：'+((e&&e.message)||e)); }
+}
+function cmtRecStop(eid){
+  const rec=CMREC[eid];
+  if(rec && rec.state!=='inactive') rec.stop();
+  CMREC[eid]=null;
+  const btn=document.getElementById('cmtRec_'+eid);
+  if(btn){ btn.classList.remove('recording'); btn.innerHTML='<svg class="ic"><use href="#i-mic"/></svg>按住 发语音'; }
 }
 async function loadDash(){
   const dsel = document.getElementById('dash-date');

@@ -2017,6 +2017,19 @@ class H(BaseHTTPRequestHandler):
             except Exception:
                 dd = 14
             return send_json(self, train_student_recent(sid, dd))
+        if p == "/api/train/comments":
+            # 读取某学生某题的教师评语（文字/图片/语音）。学生角色强制本人，老师可查任意学生。
+            sid = eff_sid if is_student else (q.get("studentId", [None])[0] or sid_param)
+            eid = (q.get("errorId", [None])[0] or "").strip()
+            if not sid or not eid:
+                return send_json(self, {"error": "缺少 studentId/errorId"}, 400)
+            items = []
+            for it in store_list("trainComments", limit=200000):
+                b = it.get("body") or {}
+                if b.get("studentId") == sid and b.get("errorId") == eid:
+                    items.append(b)
+            items.sort(key=lambda x: (x.get("ts") or 0))
+            return send_json(self, {"items": items})
         return None
 
     def _train_route_post(self, p, q):
@@ -2321,6 +2334,38 @@ class H(BaseHTTPRequestHandler):
                 if c:
                     train_on_answer(c, body.get("result", "self_right"))
             return send_json(self, {"ok": True, "id": lid})
+        if p == "/api/train/comments":
+            # 老师/管理员给学生某题写评语（文字/图片/语音）；学生禁止写（只能看）。
+            if not _teacher_only():
+                return
+            body, err = read_body(self)
+            if err:
+                return send_json(self, {"error": err}, 400)
+            sid = (body.get("studentId") or "").strip()
+            eid = (body.get("errorId") or "").strip()
+            ctype = (body.get("type") or "text").strip()
+            text = (body.get("text") or "").strip()
+            url = (body.get("url") or "").strip()
+            if not sid or not eid:
+                return send_json(self, {"error": "缺少 studentId/errorId"}, 400)
+            if ctype not in ("text", "image", "voice"):
+                return send_json(self, {"error": "类型不合法"}, 400)
+            if ctype == "text" and not text:
+                return send_json(self, {"error": "文字评语不能为空"}, 400)
+            if ctype in ("image", "voice") and not url:
+                return send_json(self, {"error": "媒体评语缺少文件"}, 400)
+            rid = "".join("%02x" % b for b in os.urandom(3))
+            cid = "cm_%s_%s_%d_%s" % (sid, eid, now_ms(), rid)
+            rec = {"id": cid, "studentId": sid, "errorId": eid,
+                   "type": ctype, "text": text, "url": url, "ts": now_ms()}
+            store_put("trainComments", cid, rec)
+            return send_json(self, {"ok": True, "item": rec})
+        if p.startswith("/api/train/comments/") and p.endswith("/delete"):
+            if not _teacher_only():
+                return
+            cid = p[len("/api/train/comments/"):-len("/delete")]
+            store_delete("trainComments", cid)
+            return send_json(self, {"ok": True})
         return None
 
     def route_get(self):

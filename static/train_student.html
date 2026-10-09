@@ -372,6 +372,15 @@
     .rise,.pop{animation:none!important}
   }
 
+  /* ---------- 学生端·教师评语 ---------- */
+  .cmtbox{margin-top:12px;border-top:1px dashed var(--line2);padding-top:10px}
+  .cmtcap{font-size:12px;font-weight:700;color:var(--brand3);margin-bottom:6px;display:flex;align-items:center;gap:5px}
+  .cmtcap::before{content:"";width:6px;height:14px;border-radius:3px;background:var(--brand3)}
+  .cmt-row{background:var(--brand-soft);border-radius:12px;padding:10px 12px;margin-top:8px}
+  .cmt-tx{font-size:14.5px;color:var(--ink);line-height:1.6;white-space:pre-wrap;word-break:break-word}
+  .cmt-img{max-width:100%;border-radius:10px;display:block;margin-top:4px;cursor:pointer}
+  .cmt-audio{width:100%;margin-top:4px;height:36px}
+
   /* ---------- 近期表现（学生端概览）---------- */
   .perf-mhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
   .perf-mhead h2{font-size:18px;font-weight:700;letter-spacing:.2px;display:flex;align-items:center;gap:8px}
@@ -865,7 +874,9 @@ async function loadToday(){
       ${files?('<div style="margin-top:8px">'+files+'</div>'):''}
       <div id="rv_${idx}" class="rv hidden"></div>
       <div id="fb_${idx}" class="fb"></div>
+      <div class="cmtbox" id="cmt_${idx}"></div>
     </div>`);
+    loadStuComments(e.id, idx);
   });
   updateProgress();
   requestAnimationFrame(animateIn);
@@ -1037,6 +1048,26 @@ function updateProgress(){
 // 使用说明（帮助前几次使用的学生）
 function showHelp(){ document.getElementById('helpMask').classList.remove('hidden'); }
 function closeHelp(){ document.getElementById('helpMask').classList.add('hidden'); }
+
+/* ---------- 学生端·教师评语（每题后展示）---------- */
+function stuCmtHtml(c){
+  let inner='';
+  if(c.type==='text') inner='<div class="cmt-tx">'+esc(c.text||'')+'</div>';
+  else if(c.type==='image') inner='<img class="cmt-img" src="'+esc(murl(c.url))+'" onclick="zoomImg(\''+esc(murl(c.url))+'\')">';
+  else if(c.type==='voice') inner='<audio class="cmt-audio" src="'+esc(murl(c.url))+'" controls preload="none"></audio>';
+  return '<div class="cmt-row">'+inner+'</div>';
+}
+async function loadStuComments(eid, idx){
+  const box = document.getElementById('cmt_'+idx);
+  if(!box || !SID) return;
+  try{
+    const {status,j} = await call('/api/train/comments?studentId='+encodeURIComponent(SID)+'&errorId='+encodeURIComponent(eid));
+    if(status!==200 || !j) return;
+    const arr = (j.items||[]);
+    if(!arr.length){ box.innerHTML=''; return; }
+    box.innerHTML = '<div class="cmtcap">老师评语</div>' + arr.map(stuCmtHtml).join('');
+  }catch(e){}
+}
 
 /* ================= 图片查看器（相册式） =================
    点图放大 · 双指缩放 · 双击缩放 · 单指拖动 · 旋转（竖图自动转横向）
