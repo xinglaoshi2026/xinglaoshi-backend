@@ -27,8 +27,6 @@
     margin:0;background:var(--bg);color:var(--ink);font-size:16px;line-height:1.65;
     font-family:-apple-system,BlinkMacSystemFont,"MiSans","HarmonyOS Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
     -webkit-font-smoothing:antialiased;letter-spacing:.005em;
-    background-image:radial-gradient(700px 360px at 50% -130px,#EAF6EF 0%,rgba(234,246,239,0) 70%);
-    background-attachment:fixed;
   }
   ::selection{background:var(--brand-soft);color:var(--brand3)}
   .c{max-width:560px;margin:0 auto;padding:10px 16px calc(104px + env(safe-area-inset-bottom))}
@@ -54,8 +52,8 @@
     font-family:inherit;cursor:pointer;border:1px solid transparent;border-radius:var(--r-xs);
     font-size:16px;padding:13px 18px;width:100%;font-weight:650;letter-spacing:.02em;
     display:inline-flex;align-items:center;justify-content:center;gap:7px;
-    background:var(--grad);color:#fff;
-    box-shadow:0 2px 9px rgba(20,20,22,.20), inset 0 1px 0 rgba(255,255,255,.22);
+    background:var(--brand3);color:#fff;
+    box-shadow:0 1px 3px rgba(20,20,22,.16);
     transition:transform .08s ease, filter .18s ease, box-shadow .18s ease, background .18s ease;
   }
   button:hover{filter:brightness(1.03)}
@@ -96,9 +94,9 @@
   /* ---------- 登录 ---------- */
   .loginwrap{padding:38px 4px 12px;text-align:center}
   .logo{
-    width:72px;height:72px;border-radius:22px;margin:0 auto 16px;
-    background:var(--grad);display:flex;align-items:center;justify-content:center;color:#fff;
-    box-shadow:0 14px 32px rgba(20,20,22,.30), inset 0 1px 0 rgba(255,255,255,.30);
+    width:72px;height:72px;border-radius:20px;margin:0 auto 16px;
+    background:var(--brand3);display:flex;align-items:center;justify-content:center;color:#fff;
+    box-shadow:0 8px 20px rgba(31,124,76,.22);
   }
   .logo .ic{width:34px;height:34px}
   .loginwrap h1{font-size:23px;font-weight:700;letter-spacing:.02em}
@@ -389,12 +387,10 @@
   .perf-segbtn{border:0;background:transparent;color:var(--brand3);font-size:13px;font-weight:700;
     padding:6px 13px;border-radius:999px;cursor:pointer;font-family:inherit;box-shadow:none;width:auto}
   .perf-segbtn.on{background:#fff;color:var(--brand3);box-shadow:var(--sh1)}
-  .perf-hero{position:relative;overflow:hidden;border-radius:var(--r-sm);padding:14px 15px;margin:10px 0 14px;
-    background:linear-gradient(135deg,#EAF3EE 0%,#DCEBE1 100%);border:1px solid #DCEBE1}
-  .perf-hero .fire{position:absolute;right:-14px;top:-22px;width:96px;height:96px;border-radius:50%;
-    background:radial-gradient(circle,rgba(47,168,106,.22) 0%,rgba(47,168,106,0) 68%)}
-  .perf-hero .lead{position:relative;font-size:15px;font-weight:700;color:var(--brand3);line-height:1.5}
-  .perf-hero .sub{position:relative;margin-top:5px;font-size:13px;color:var(--ink2);font-weight:600}
+  .perf-hero{position:relative;border-radius:var(--r-sm);padding:13px 15px;margin:6px 0 14px;
+    background:var(--brand-soft);border:1px solid #E0EAE3}
+  .perf-hero .lead{font-size:15.5px;font-weight:700;color:var(--brand3);line-height:1.5}
+  .perf-hero .sub{margin-top:4px;font-size:13px;color:var(--ink2);font-weight:600}
   .perf-stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:4px 0 14px}
   .perf-stat{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:12px 13px}
   .perf-stat .v{font-size:23px;font-weight:750;color:var(--brand3);line-height:1.05}
@@ -420,6 +416,16 @@
   .perf-col.today .perf-col-d{color:var(--brand3);font-weight:700}
   .perf-clabel{font-size:11.5px;color:var(--ink3);margin-top:10px;text-align:center}
   .perf-clabel b{color:var(--ink2)}
+  /* ---------- 收到的卷子 ---------- */
+  .papers-list{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+  .pcard{display:flex;align-items:center;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--surface);cursor:pointer}
+  .pcard:active{transform:translateY(1px)}
+  .pcard-main{flex:1;min-width:0}
+  .pcard-tt{font-weight:650;font-size:15px;color:var(--ink)}
+  .pcard-sub{font-size:12.5px;color:var(--ink3);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pcard-side{display:flex;align-items:center;gap:6px;color:var(--ink3);flex:0 0 auto}
+  .paper-view .pcontent img{max-width:100%;border-radius:12px;display:block;margin-top:8px;border:1px solid var(--line)}
+  .paper-view .panswer{margin-top:8px;padding:10px 12px;background:var(--brand-soft);border-radius:12px}
 </style>
 </head>
 <body>
@@ -446,13 +452,14 @@
 <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 21h18"/><rect x="5" y="11" width="3.6" height="7" rx="1"/><rect x="10.2" y="6" width="3.6" height="12" rx="1"/><rect x="15.4" y="14" width="3.6" height="4" rx="1"/></symbol>
 <symbol id="i-smile" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M8.5 14.5s1.3 2 3.5 2 3.5-2 3.5-2"/><path d="M9 9.5h.01"/><path d="M15 9.5h.01"/></symbol>
 <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M12 7.5v5.5"/><path d="M12 16.5h.01"/></symbol>
+<symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h6"/></symbol>
 </defs></svg>
 <div class="c">
   <div id="login">
     <div class="loginwrap">
       <div class="logo"><svg class="ic"><use href="#i-pen"/></svg></div>
       <h1>错题练习</h1>
-      <div class="sub">每天三道，慢慢就都会了</div>
+      <div class="sub">按老师布置，完成每日错题练习</div>
     </div>
     <div class="card" style="margin-top:18px">
       <label>账号</label>
@@ -469,6 +476,8 @@
     <div class="appbar">
       <div class="who" id="me"></div>
       <div class="acts">
+        <button class="iconbtn" onclick="openPerf()"><svg class="ic"><use href="#i-chart"/></svg>近期表现</button>
+        <button class="iconbtn" onclick="openPapers()"><svg class="ic"><use href="#i-doc"/></svg>收到的卷子</button>
         <button class="iconbtn" onclick="showHelp()"><svg class="ic"><use href="#i-help"/></svg>说明</button>
         <button class="iconbtn" onclick="logout()"><svg class="ic"><use href="#i-exit"/></svg>退出</button>
       </div>
@@ -476,32 +485,7 @@
 
     <div class="card" id="head"></div>
 
-    <div class="card" id="perfCard" style="margin-top:14px">
-      <div class="perf-mhead">
-        <h2><span class="dot"></span>近期表现</h2>
-        <div class="perf-seg">
-          <button class="perf-segbtn on" data-d="7" onclick="setRange(7,this)">近 7 天</button>
-          <button class="perf-segbtn" data-d="14" onclick="setRange(14,this)">近 14 天</button>
-        </div>
-      </div>
-      <div class="perf-hero">
-        <div class="fire"></div>
-        <div class="lead" id="perf-lead">—</div>
-        <div class="sub" id="perf-sub"></div>
-      </div>
-      <div class="perf-stats">
-        <div class="perf-stat"><div class="v" id="s-week">0<small>题</small></div><div class="k">本周练习</div></div>
-        <div class="perf-stat"><div class="v" id="s-acc">0<small>%</small></div><div class="k">平均正确率</div></div>
-        <div class="perf-stat"><div class="v" id="s-streak">0<small>天</small></div><div class="k">连续打卡</div></div>
-        <div class="perf-stat"><div class="v" id="s-total">0<small>次</small></div><div class="k">累计练习</div></div>
-      </div>
-      <div class="perf-goal">
-        <div class="gh"><span>本周目标 <b id="g-goal">5</b> 题</span><span>已完成 <b id="g-done">0</b>（<b id="g-pct">0</b>%）</span></div>
-        <div class="perf-bar"><i id="g-bar" style="width:0%"></i></div>
-      </div>
-      <div class="perf-chart" id="perf-chart"></div>
-      <div class="perf-clabel">柱高 = 当日练习题数 · 颜色 = 正确率（<b style="color:var(--brand3)">绿高</b> / <b style="color:var(--warn)">黄低</b>）· 顶部为当日正确率</div>
-    </div>
+    <!-- 近期表现已移至底部独立弹窗，由顶部「近期表现」按钮唤起，不再与题目堆叠 -->
 
     <div class="card reviewcard hidden" id="reviewCard"></div>
 
@@ -566,6 +550,53 @@
       <li>做错的题过几天还会再出现；每天只练 <b>3 道</b>，花几分钟就好。</li>
       <li>完成练习后可点 <b>下载我的错题本</b> 导出全部错题（含答案）。</li>
     </ol>
+  </div>
+</div>
+
+<!-- 近期表现（独立弹窗：首页不再堆叠，点顶部「近期表现」按钮唤起，避免与题目叠在一起） -->
+<div id="perfMask" class="mask hidden" onclick="if(event.target===this)closePerf()">
+  <div class="sheet">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:4px">
+      <h2>近期表现</h2>
+      <button class="btn3 sm" onclick="closePerf()"><svg class="ic"><use href="#i-close"/></svg>关闭</button>
+    </div>
+    <div id="perfCard">
+      <div class="perf-mhead">
+        <h2><span class="dot"></span>学习概览</h2>
+        <div class="perf-seg">
+          <button class="perf-segbtn on" data-d="7" onclick="setRange(7,this)">近 7 天</button>
+          <button class="perf-segbtn" data-d="14" onclick="setRange(14,this)">近 14 天</button>
+        </div>
+      </div>
+      <div class="perf-hero">
+        <div class="lead" id="perf-lead">—</div>
+        <div class="sub" id="perf-sub"></div>
+      </div>
+      <div class="perf-stats">
+        <div class="perf-stat"><div class="v" id="s-week">0<small>题</small></div><div class="k">本周练习</div></div>
+        <div class="perf-stat"><div class="v" id="s-acc">0<small>%</small></div><div class="k">平均正确率</div></div>
+        <div class="perf-stat"><div class="v" id="s-streak">0<small>天</small></div><div class="k">连续打卡</div></div>
+        <div class="perf-stat"><div class="v" id="s-total">0<small>次</small></div><div class="k">累计练习</div></div>
+      </div>
+      <div class="perf-goal">
+        <div class="gh"><span>本周目标 <b id="g-goal">5</b> 题</span><span>已完成 <b id="g-done">0</b>（<b id="g-pct">0</b>%）</span></div>
+        <div class="perf-bar"><i id="g-bar" style="width:0%"></i></div>
+      </div>
+      <div class="perf-chart" id="perf-chart"></div>
+      <div class="perf-clabel">柱高 = 当日练习题数 · 颜色 = 正确率（<b style="color:var(--brand3)">绿高</b> / <b style="color:var(--warn)">黄低</b>）· 顶部为当日正确率</div>
+    </div>
+  </div>
+</div>
+
+<!-- 收到的卷子（独立弹窗：首页顶部按钮唤起；先列清单，点开看题） -->
+<div id="papersMask" class="mask hidden" onclick="if(event.target===this)closePapers()">
+  <div class="sheet" style="max-width:560px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px">
+      <h2>收到的卷子</h2>
+      <button class="btn3 sm" onclick="closePapers()"><svg class="ic"><use href="#i-close"/></svg>关闭</button>
+    </div>
+    <div id="papersList" class="papers-list"></div>
+    <div id="paperView" class="paper-view hidden"></div>
   </div>
 </div>
 
@@ -642,12 +673,9 @@ function renderPerfStats(days){
   document.getElementById('g-pct').textContent=pct;
   document.getElementById('g-bar').style.width=pct+'%';
   let lead, sub;
-  if(streak>=5) lead='连续打卡 '+streak+' 天，节奏超棒！';
-  else if(streak>=3) lead='连续打卡 '+streak+' 天，别断签～';
-  else lead='最近有点断断续续，今天补上就能连起来！';
-  if(weekAcc>=85) sub='本周正确率 '+weekAcc+'%，稳居高位，保持手感！';
-  else if(weekAcc>=70) sub='本周正确率 '+weekAcc+'%，再细心一点就能上 90%。';
-  else sub='本周正确率 '+weekAcc+'%，多回顾错题本里的老题。';
+  lead = '本周练习 '+weekCount+' 题 · 累计 '+total+' 次';
+  if(streak>0) lead += ' · 连续 '+streak+' 天';
+  sub = (weekAcc>0 ? '本周平均正确率 '+weekAcc+'%' : '本周暂未练习');
   document.getElementById('perf-lead').textContent=lead;
   document.getElementById('perf-sub').textContent=sub;
 }
@@ -1049,6 +1077,78 @@ function updateProgress(){
 function showHelp(){ document.getElementById('helpMask').classList.remove('hidden'); }
 function closeHelp(){ document.getElementById('helpMask').classList.add('hidden'); }
 
+// 近期表现（独立弹窗：与首页题目分离，点顶部「近期表现」按钮唤起）
+function openPerf(){ loadRecent(); document.getElementById('perfMask').classList.remove('hidden'); }
+function closePerf(){ document.getElementById('perfMask').classList.add('hidden'); }
+
+/* ---------- 收到的卷子（云端下发）---------- */
+function _paperDoneKey(id){ return 'paper_done_' + id; }
+async function openPapers(){
+  document.getElementById('papersMask').classList.remove('hidden');
+  document.getElementById('paperView').classList.add('hidden');
+  document.getElementById('papersList').classList.remove('hidden');
+  await loadPapers();
+}
+function closePapers(){ document.getElementById('papersMask').classList.add('hidden'); }
+async function loadPapers(){
+  const box = document.getElementById('papersList');
+  box.innerHTML = '<div class="hint" style="padding:14px 0">加载中…</div>';
+  if(!SID){ box.innerHTML = '<div class="hint" style="padding:14px 0">请先登录</div>'; return; }
+  const {status,j} = await call('/api/train/student/'+encodeURIComponent(SID)+'/papers');
+  if(status!==200 || !j || j.error){ box.innerHTML = '<div class="hint" style="padding:14px 0">暂无可查看的卷子</div>'; return; }
+  const items = j.items || [];
+  if(!items.length){ box.innerHTML = '<div class="hint" style="padding:14px 0">老师还没有发卷给你。收到卷子后会显示在这里。</div>'; return; }
+  box.innerHTML = items.map(p=>{
+    const n = (p.questions && p.questions.length) || 0;
+    const done = localStorage.getItem(_paperDoneKey(p.id)) ? 'ok' : '';
+    return `<div class="pcard" onclick="openPaper('${escHtml(p.id)}')">
+      <div class="pcard-main">
+        <div class="pcard-tt">${escHtml(p.title || '未命名试卷')}</div>
+        <div class="pcard-sub">${n} 道题${p.note ? (' · ' + escHtml(p.note)) : ''}${p.createdBy ? (' · 来自' + escHtml(p.createdBy)) : ''}</div>
+      </div>
+      <div class="pcard-side">${done ? '<span class="pill ok">已做完</span>' : '<span class="pill">未做</span>'}<svg class="ic"><use href="#i-right"/></svg></div>
+    </div>`;
+  }).join('');
+}
+async function openPaper(id){
+  const {status,j} = await call('/api/train/student/'+encodeURIComponent(SID)+'/papers');
+  const p = (j && j.items || []).find(x=>x.id===id);
+  if(!p){ alert('卷子数据缺失'); return; }
+  renderPaper(p);
+}
+function _mediaHtml(h){ return (h||'').replace(/media:\/\/([^"'\s>]+)/g, (m,rel)=>murl('/api/media/'+rel)); }
+function renderPaper(p){
+  document.getElementById('papersList').classList.add('hidden');
+  const v = document.getElementById('paperView'); v.classList.remove('hidden');
+  const showAns = !!p.showAnswer;
+  const qs = p.questions || [];
+  let html = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+    <button class="btn3 sm" onclick="backToPapers()"><svg class="ic"><use href="#i-chevron-down" style="transform:rotate(90deg)"/></svg>返回</button>
+    <div style="font-weight:650">${escHtml(p.title || '未命名试卷')}</div></div>`;
+  if(p.note) html += `<div class="hint" style="margin:0 0 10px">${escHtml(p.note)}</div>`;
+  if(showAns) html += `<button class="btn3 sm" id="paToggle" onclick="togglePaperAns()" style="margin-bottom:10px">显示答案</button>`;
+  html += '<div id="paBody">' + qs.map((q,i)=>{
+    const c = _mediaHtml(q.content);
+    let ansHtml = '';
+    if(showAns){
+      ansHtml = `<div class="panswer hidden" style="margin-top:8px"><div class="kchip" style="margin-bottom:4px">答案</div>${_mediaHtml(q.answer)}</div>`;
+    }
+    return `<div class="q" style="margin-bottom:14px">
+      <div class="qhead"><div class="qno">第${i+1}题</div>${q.type ? ('<span class="kchip">'+escHtml(q.type)+'</span>') : ''}</div>
+      <div class="pcontent">${c}</div>${ansHtml}</div>`;
+  }).join('') + '</div>';
+  html += `<div style="margin-top:14px"><button class="btn2" onclick="markPaperDone('${escHtml(p.id)}')"><svg class="ic"><use href="#i-check"/></svg>我已做完</button></div>`;
+  v.innerHTML = html;
+}
+function togglePaperAns(){
+  const btn = document.getElementById('paToggle');
+  const show = btn.textContent.indexOf('显示') >= 0;
+  document.querySelectorAll('#paBody .panswer').forEach(el=>{ el.classList.toggle('hidden', !show); });
+  btn.textContent = show ? '隐藏答案' : '显示答案';
+}
+function backToPapers(){ document.getElementById('paperView').classList.add('hidden'); document.getElementById('papersList').classList.remove('hidden'); }
+function markPaperDone(id){ localStorage.setItem(_paperDoneKey(id), '1'); alert('已标记为做完'); backToPapers(); loadPapers(); }
+
 /* ---------- 学生端·教师评语（每题后展示）---------- */
 function stuCmtHtml(c){
   let inner='';
@@ -1373,6 +1473,7 @@ if(TOKEN){
     if(status===401){ logout(); return; }
     const me = (j && j.items && j.items[0]) || null;
     setMe(me);
+    loadRecent();
     loadToday().then(updateWeekLock);
   })();
 }

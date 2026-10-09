@@ -19,7 +19,7 @@
     --sh2:inset 0 1px 0 rgba(255,255,255,.7), 0 2px 6px rgba(93,72,50,.06), 0 12px 28px rgba(93,72,50,.07);
     --sh3:0 24px 60px rgba(60,44,28,.22), 0 6px 16px rgba(60,44,28,.10);
     --ring:0 0 0 3px rgba(184,114,72,.15);
-    --grad:linear-gradient(180deg, var(--brand2) 0%, var(--brand) 100%);
+    --grad:var(--brand);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   ::selection{background:var(--brand-soft);color:var(--brand3)}
@@ -28,8 +28,7 @@
     margin:0;background:var(--bg);color:var(--ink);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
     font-size:14.5px;line-height:1.65;-webkit-font-smoothing:antialiased;
-    background-image:radial-gradient(1200px 420px at 50% -140px, #FFF9F1 0%, rgba(255,249,241,0) 70%);
-    background-attachment:fixed;
+    background-image:none;
   }
   .wrap{max-width:1120px;margin:0 auto;padding:14px 18px 64px}
   h3{margin:0 0 10px;font-size:15px;font-weight:650;letter-spacing:.2px;color:var(--ink)}
@@ -1093,6 +1092,7 @@
         <a data-sec="sec-tasks" onclick="goSec('sec-tasks')"><svg class="ic"><use href="#i-tasks"/></svg>每日任务</a>
         <a data-sec="sec-dash" onclick="goSec('sec-dash')"><svg class="ic"><use href="#i-chart"/></svg>完成看板</a>
         <a data-sec="sec-students" onclick="goSec('sec-students')"><svg class="ic"><use href="#i-users"/></svg>学生管理</a>
+        <a data-sec="sec-paper" onclick="goSec('sec-paper')"><svg class="ic"><use href="#i-pen"/></svg>发卷</a>
         <div class="nv-label">工具</div>
         <a onclick="showRules()"><svg class="ic"><use href="#i-help"/></svg>训练规则</a>
       </nav>
@@ -1235,6 +1235,7 @@
 
     <!-- 学生管理 -->
     <div class="sec hidden" id="sec-students"><span><i class="no">4</i>学生管理</span><i class="hr"></i></div>
+    <div class="sec hidden" id="sec-paper"><span><i class="no">5</i>发卷</span><i class="hr"></i></div>
     <div id="t-students" class="hidden">
       <div class="card">
         <div class="entry-layout">
@@ -1249,6 +1250,44 @@
             <div id="clean-msg"></div>
           </aside>
         </div>
+      </div>
+    </div>
+
+    <!-- 发卷：组卷并云端下发给手机端学生 -->
+    <div id="t-paper" class="hidden">
+      <div class="card">
+        <div class="entry-layout">
+          <div class="entry-main">
+            <div style="max-width:520px">
+              <label>试卷标题</label>
+              <input id="pp-title" placeholder="如：10月月考模拟（力学）" style="width:100%">
+            </div>
+            <div style="max-width:520px;margin-top:10px">
+              <label>说明（可选）</label>
+              <textarea id="pp-note" rows="2" placeholder="如：周三晚自习前做完" style="width:100%"></textarea>
+            </div>
+            <div class="tbar" style="margin-top:12px;flex-wrap:wrap">
+              <button class="lg" onclick="sendPaper()"><svg class="ic"><use href="#i-check"/></svg>发卷给学生</button>
+              <button type="button" class="tint sm" onclick="toggleQb()">＋ 从题库选题（已选 <b id="pp-qn">0</b> 题）</button>
+              <label class="chk" style="margin-left:8px"><input type="checkbox" id="pp-ans"> 附答案</label>
+            </div>
+            <div class="hint" style="margin-top:8px">题目来自题库：点「从题库选题」打开题库检索，把题加入右侧「待发列表」即可。发卷后学生会在手机端「收到的卷子」里看到；可勾选「附答案」让学生自行核对。</div>
+          </div>
+          <aside class="entry-side">
+            <div class="side-title">发送对象</div>
+            <label class="chk"><input type="checkbox" id="pp-all" onchange="document.getElementById('pp-sel-list').classList.toggle('hidden', this.checked)"> 全体学生</label>
+            <div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap">
+              <button type="button" class="tint xs" onclick="selPaperStu(true)">全选</button>
+              <button type="button" class="tint xs" onclick="selPaperStu(false)">清空</button>
+              <span id="pp-sel-count" style="color:var(--ink3)"></span>
+            </div>
+            <div id="pp-sel-list" style="display:flex;flex-wrap:wrap;gap:6px 14px;max-height:240px;overflow:auto"></div>
+          </aside>
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <div class="side-title">已发试卷</div>
+        <div id="pp-sent"></div>
       </div>
     </div>
     </div>
@@ -1684,6 +1723,7 @@ function renderBatch(){
   });
   updateSaveBtn();
   const qbn = document.getElementById('qb-batch-n'); if(qbn) qbn.textContent = batchErrs.length;
+  const ppqn = document.getElementById('pp-qn'); if(ppqn) ppqn.textContent = batchErrs.length;
 }
 function delBatch(i){
   batchErrs.splice(i,1);
@@ -1696,6 +1736,52 @@ function delBatch(i){
   }
 }
 function updateSaveBtn(){ document.getElementById('batch-n').textContent = batchErrs.length; }
+/* ---------- 发卷：组卷并云端下发给手机端学生 ---------- */
+async function loadPaperStudents(){
+  try{
+    const {j} = await call('/api/train/students');
+    const items = (j && j.items) || [];
+    const box = document.getElementById('pp-sel-list'); if(!box) return;
+    box.innerHTML = items.map(s=>`<label class="chk"><input type="checkbox" value="${esc(s.id)}"><span>${esc(s.name||s.id)}</span></label>`).join('');
+    const cnt = document.getElementById('pp-sel-count'); if(cnt) cnt.textContent = items.length + ' 名学生';
+  }catch(e){}
+}
+function selPaperStu(on){ document.querySelectorAll('#pp-sel-list input').forEach(c=>c.checked=on); }
+async function loadTeacherPapers(){
+  const box = document.getElementById('pp-sent'); if(!box) return;
+  box.innerHTML = '<div class="hint" style="padding:8px 0">加载中…</div>';
+  try{
+    const {status,j} = await call('/api/train/teacher/papers');
+    if(status!==200 || !j){ box.innerHTML='<div class="hint" style="padding:8px 0">暂无可查看的卷子</div>'; return; }
+    const items = j.items || [];
+    if(!items.length){ box.innerHTML='<div class="hint" style="padding:8px 0">还没有发过卷。</div>'; return; }
+    box.innerHTML = items.map(p=>{
+      const n = (p.questionIds&&p.questionIds.length)||0;
+      const to = (p.assignedTo&&p.assignedTo.length)? (p.assignedTo[0]==='all'?'全体学生':p.assignedTo.length+' 名学生') : '未指定';
+      return `<div class="batch-item"><div><b>${esc(p.title||'未命名试卷')}</b> · ${n} 题 · ${esc(to)}${p.createdBy?(' · '+esc(p.createdBy)):''}</div></div>`;
+    }).join('');
+  }catch(e){ box.innerHTML='<div class="hint" style="padding:8px 0">加载失败</div>'; }
+}
+async function sendPaper(){
+  const title = (document.getElementById('pp-title').value||'').trim();
+  const note = (document.getElementById('pp-note').value||'').trim();
+  if(!title){ alert('请填写试卷标题'); return; }
+  const qids = (batchErrs||[]).map(b=>b.srcId).filter(Boolean);
+  if(!qids.length){ alert('请先从题库选入题目（点「从题库选题」）'); return; }
+  let assignedTo = [];
+  if(document.getElementById('pp-all').checked){ assignedTo = ['all']; }
+  else {
+    assignedTo = Array.from(document.querySelectorAll('#pp-sel-list input:checked')).map(c=>c.value);
+    if(!assignedTo.length){ alert('请选择要发送的学生，或勾选「全体学生」'); return; }
+  }
+  const showAnswer = !!document.getElementById('pp-ans').checked;
+  const {status,j} = await call('/api/train/teacher/papers', {method:'POST', json:{title, note, questionIds:qids, assignedTo, showAnswer}});
+  if(status===200 && j && j.ok){
+    alert('已发卷：'+title+'（'+qids.length+' 题）');
+    document.getElementById('pp-title').value=''; document.getElementById('pp-note').value='';
+    loadTeacherPapers();
+  } else { alert('发卷失败：'+((j&&j.error)||status)); }
+}
 async function saveBatch(){
   const msg = document.getElementById('e-msg'); msg.textContent='';
   if(!batchErrs.length){ msg.textContent='请先录入错题并点「加入待发列表」'; msg.className='err'; return; }
@@ -2723,6 +2809,7 @@ const PAGES = {
   'sec-tasks':['sec-tasks','t-tasks'],
   'sec-dash':['sec-dash','t-dash'],
   'sec-students':['sec-students','t-students'],
+  'sec-paper':['sec-paper','t-paper'],
 };
 function goSec(id){
   if(!PAGES[id]) return;
@@ -2738,6 +2825,7 @@ function goSec(id){
   if(id==='sec-tasks') renderTasks();
   else if(id==='sec-dash') loadDash();
   else if(id==='sec-students') loadStuMgmt();
+  else if(id==='sec-paper'){ loadPaperStudents(); loadTeacherPapers(); }
 }
 
 // 侧栏高亮跟随滚动

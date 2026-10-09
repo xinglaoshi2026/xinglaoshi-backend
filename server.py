@@ -1478,6 +1478,24 @@ def build_paper_docx(paper, questions_map):
     return buf.getvalue()
 
 
+def train_paper_resolve(paper):
+    """把 paper.questionIds 解析成题目明细(content/answer/analysis 含 media:// 引用), 供学生端渲染。"""
+    ids = paper.get("questionIds") or []
+    qmap = {i["id"]: i["body"] for i in store_list("questions", limit=5000)}
+    qs = []
+    for qid in ids:
+        b = qmap.get(qid) or {}
+        qs.append({
+            "id": qid,
+            "type": b.get("type") or "",
+            "content": b.get("content") or "",
+            "answer": b.get("answer") or "",
+            "analysis": b.get("analysis") or "",
+            "kpId": b.get("kpId") or "",
+        })
+    return qs
+
+
 def store_tombstone(module, id, ts=None):
     """记录删除墓碑（用于双向删除同步）。删除时间取 ts 或当前时间。"""
     ts = ts or now_ms()
@@ -1717,6 +1735,33 @@ class H(BaseHTTPRequestHandler):
             if is_student:
                 items = [s for s in items if s.get("id") == eff_sid]
             return send_json(self, {"items": items})
+        # 教师端：列出全部已发试卷（按创建时间倒序）
+        if p == "/api/train/teacher/papers":
+            if u.get("role") not in ("admin", "teacher"):
+                return send_json(self, {"error": "无权限"}, 403)
+            items = [x["body"] for x in store_list("papers", limit=500)]
+            items.sort(key=lambda b: b.get("createdAt", 0) or 0, reverse=True)
+            return send_json(self, {"items": items})
+        # 学生端：列出发给本人的试卷（含已解析的题目明细，student 角色强制只看自己）
+        m_papers = re.match(r"^/api/train/student/([^/]+)/papers$", p)
+        if m_papers:
+            sid = m_papers.group(1)
+            if is_student and eff_sid != sid:
+                return send_json(self, {"error": "无权限"}, 403)
+            out = []
+            for x in store_list("papers", limit=500):
+                pp = x["body"]
+                to = [str(t) for t in (pp.get("assignedTo") or [])]
+                if to and "all" not in to:
+                    stu, _ = store_get("students", sid)
+                    cls = str((stu or {}).get("class") or (stu or {}).get("className") or "")
+                    if (sid not in to) and (not cls or cls not in to):
+                        continue
+                pc = dict(pp)
+                pc["questions"] = train_paper_resolve(pp)
+                out.append(pc)
+            out.sort(key=lambda b: b.get("createdAt", 0) or 0, reverse=True)
+            return send_json(self, {"items": out})
         if p == "/api/train/errors":
             items = [e["body"] for e in store_list("trainErrors", limit=5000)]
             if eff_sid:
@@ -2060,6 +2105,29 @@ class H(BaseHTTPRequestHandler):
             if not sid:
                 return send_json(self, {"error": "缺少 studentId"}, 400)
             return send_json(self, train_submit(sid, body.get("date"), body.get("answers") or []))
+        # 教师端：组卷并发送给学生（云端下发）。assignedTo 可为学生 id 列表或 ["all"]
+        if p == "/api/train/teacher/papers":
+            if not _teacher_only():
+                return
+            body, err = read_body(self)
+            if err:
+                return send_json(self, {"error": err}, 400)
+            pid = (body.get("id") or "").strip()
+            if not pid:
+                pid = "paper_%d" % now_ms()
+            paper = {
+                "id": pid,
+                "title": (body.get("title") or "未命名试卷").strip()[:200],
+                "note": (body.get("note") or "").strip()[:2000],
+                "questionIds": [str(x) for x in (body.get("questionIds") or [])],
+                "assignedTo": [str(x) for x in (body.get("assignedTo") or [])],
+                "showAnswer": bool(body.get("showAnswer")),
+                "createdAt": body.get("createdAt") or now_ms(),
+                "updatedAt": now_ms(),
+                "createdBy": (u.get("name") or u.get("username") or ""),
+            }
+            store_put("papers", pid, paper)
+            return send_json(self, {"ok": True, "paper": paper})
         # 老师「已阅」+ 评语（学生端下次打开即可看到；第二天提交新练习前也一直可见）
         if p == "/api/train/tasks/review":
             if is_student:
