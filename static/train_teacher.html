@@ -396,6 +396,7 @@
   .tl-res.ok{color:var(--ok);background:var(--ok-soft)}
   .tl-res.bad{color:var(--err);background:var(--err-soft)}
   .tl-res.sub{color:var(--ink3);background:rgba(0,0,0,.06)}
+  .tl-pc{font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;color:var(--brand3);background:var(--brand-soft)}
   .tl-stem{font-size:13.5px;line-height:1.65;color:var(--ink);white-space:pre-wrap;word-break:break-word}
   .tl-thumbs{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0}
   .tl-acts{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 2px}
@@ -2389,7 +2390,7 @@ async function viewTaskLogs(tid){
       const rai = aimgs.length ? (zoomReg.push(aimgs.map(u=>murl(u)))-1) : -1;
       const cap = '第'+(i+1)+'题';
       h += '<div class="tl-item">'
-        +   '<div class="tl-hd"><b>第'+(i+1)+'题</b><span class="tl-res '+rCls+'">'+r+'</span></div>'
+        +   '<div class="tl-hd"><b>第'+(i+1)+'题</b><span class="tl-pc">练 '+(l.practiceCount||0)+' 次</span><span class="tl-res '+rCls+'">'+r+'</span></div>'
         +   '<div class="tl-stem">'+esc(l.stem || '（看图题，请看下面的题图）')+'</div>'
         +   (qimgs.length ? '<div class="tl-thumbs">'+qimgs.map((u,k)=>
               '<img class="thumb" src="'+esc(murl(u))+'" onclick="zoomList('+ri+','+k+')" title="点击放大题目">').join('')+'</div>' : '')

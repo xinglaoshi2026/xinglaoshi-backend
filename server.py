@@ -1877,6 +1877,19 @@ class H(BaseHTTPRequestHandler):
                 if eid:
                     logs_by_eid[eid] = b
 
+            # 该生每道错题的「累计练习次数」（跨全部历史，不限今天）。
+            # 用途：老师在「查看当日学生错题」时，能看到每个学生对每道题练过几次，做到心里有数。
+            _tsid = (task or {}).get("studentId")
+            prac_count = {}
+            for lg in store_list("trainLogs", limit=20000):
+                b = lg.get("body") or {}
+                if _tsid is None or b.get("studentId") != _tsid:
+                    continue
+                eid = b.get("errorId")
+                if not eid:
+                    continue
+                prac_count[eid] = prac_count.get(eid, 0) + 1
+
             def _mk_log_item(eid, lb):
                 e, _ = store_get("trainErrors", eid)
                 _e = e or {}
@@ -1892,7 +1905,8 @@ class H(BaseHTTPRequestHandler):
                         "errorNote": lb.get("errorNote") or "",
                         "draftImages": lb.get("draftImages") or ([] if not lb.get("draftImage") else [lb.get("draftImage")]),
                         "submitted": bool(lb),
-                        "date": lb.get("answerDate")}
+                        "date": lb.get("answerDate"),
+                        "practiceCount": prac_count.get(eid, 0)}
 
             # 题目顺序：优先任务自带的 errorIds；没有则退回日志里的题（历史数据兜底）
             eids = [e for e in ((task or {}).get("errorIds") or []) if e]
