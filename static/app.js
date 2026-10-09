@@ -1126,12 +1126,12 @@
   function qSub(s, animate) {
     qSubPane = s;
     document.querySelectorAll("#qSubTabs .subtab").forEach(b => b.classList.toggle("on", b.dataset.sub === s));
-    var idx = SUB_ORDER.indexOf(s); if (idx < 0) idx = 0;
-    var track = document.getElementById("subTrack");
-    if (track) {
-      track.style.transition = animate ? "transform .3s cubic-bezier(.22,1,.36,1)" : "none";
-      track.style.transform = "translateX(" + (-idx * 100) + "%)";
-    }
+    // 直接显示/隐藏各 pane。旧方案用 #subTrack 横向 translateX 位移切换，
+    // 但在手机 WebView 上会把活动 pane 推出可视区（表现为「tab 高亮变了、内容全空白」），
+    // 故改为 display 显隐，稳妥兼容所有浏览器。
+    document.querySelectorAll("#subTrack > .subpane").forEach(function (p) {
+      p.classList.toggle("hidden", p.id !== "sub-" + s);
+    });
     if (s === "q") applyFilter();
     else if (s === "fav") renderFavView();
     else if (s === "compose") renderMyPapers();
