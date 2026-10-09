@@ -482,6 +482,29 @@
     var ov = document.getElementById("lightbox"); if (ov) ov.classList.add("hidden");
     try { document.documentElement.style.overflow = ""; document.body.style.overflow = ""; } catch (e) {}
   }
+  // 点灯箱空白处关闭后，浏览器合成的 click 会"穿透"到下层按钮/图片（用户反馈的 bug）。
+  // 在捕获阶段吞掉紧随其后的那一次 click，避免误触下层元素。
+  var _lbClickGuard = false;
+  function lbSwallowClick() {
+    if (_lbClickGuard) return;
+    _lbClickGuard = true;
+    var tid = null;
+    function cleanup() {
+      _lbClickGuard = false;
+      try { clearTimeout(tid); } catch (_) {}
+      document.removeEventListener("click", swallow, true);
+    }
+    function swallow(ev) {
+      try {
+        if (ev.cancelable) ev.preventDefault();
+        ev.stopPropagation();
+        if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
+      } catch (_) {}
+      cleanup();
+    }
+    tid = setTimeout(cleanup, 450);
+    document.addEventListener("click", swallow, true);
+  }
   function lbBind() {
     if (LB.bound) return; LB.bound = true;
     var ov = document.getElementById("lightbox"), stage = document.getElementById("lbStage");
@@ -550,8 +573,9 @@
         LB.lastTap = now;
         return;
       }
-      // 点图片外的空白处 → 关闭（不依赖 click 事件，兼容各 WebView / 微信内核）
+      // 点图片外的空白处 → 关闭（并吞掉会穿透到下层的 click，兼容各 WebView / 微信内核）
       LB.quiet = Date.now();
+      lbSwallowClick();
       lbHide();
     }
     stage.addEventListener("pointerup", endPt);
@@ -2255,38 +2279,85 @@
   // 全局事件委托：题库卡片（详情/答案/组卷/错题/知识点/图片放大）
   document.getElementById("qList").addEventListener("click", qListClick);
   // 顶部菜单左右滑动切换（题库 / 好题 / 组卷 / 试卷 / 添加题目）
+  // 挂在整个内容区 #body 上（含四周留白，空白处也能滑），跟手拖动 + 松手滑入，手感更灵动
   (function () {
-    const sec = document.getElementById("view-questions");
-    if (!sec) return;
-    const order = ["q", "fav", "compose", "paper", "add"];
-    let sx = 0, sy = 0, tracking = false;
+    var area = document.getElementById("body");
+    var sec = document.getElementById("view-questions");
+    if (!area || !sec) return;
+    var order = ["q", "fav", "compose", "paper", "add"];
+    var sx = 0, sy = 0, tracking = false, decided = false, horiz = false, curPane = null;
     function inHScroll(el) {
       while (el && el !== document.body && el !== document.documentElement) {
-        const cs = getComputedStyle(el);
+        var cs = getComputedStyle(el);
         if ((cs.overflowX === "auto" || cs.overflowX === "scroll") && el.scrollWidth > el.clientWidth + 4) return true;
         el = el.parentElement;
       }
       return false;
     }
-    sec.addEventListener("touchstart", function (e) {
+    function paneOf(s) { return document.getElementById("sub-" + s); }
+    function clearPane(el) {
+      if (!el) return;
+      el.style.transition = ""; el.style.transform = ""; el.style.opacity = ""; el.style.willChange = "";
+    }
+    area.addEventListener("touchstart", function (e) {
+      if (typeof mainTab !== "undefined" && mainTab !== "questions") { tracking = false; return; }
       if (e.touches.length !== 1) { tracking = false; return; }
-      const t = e.target;
-      // 顶部 tab 自身、弹窗/抽屉/灯箱、以及可横向滚动区域上不响应切换，避免误触
-      if (t && t.closest && (t.closest(".subtabs") || t.closest(".modal") ||
-          t.closest(".sheet-overlay") || t.closest(".lightbox") || t.closest("select") || inHScroll(t))) {
+      var t = e.target;
+      // 弹窗/抽屉/灯箱、输入框/下拉框、以及可横向滚动区域上不响应切换，避免误触
+      if (t && t.closest && (t.closest(".modal") || t.closest(".sheet-overlay") ||
+          t.closest(".lightbox") || t.closest("select") || t.closest("input") ||
+          t.closest("textarea") || inHScroll(t))) {
         tracking = false; return;
       }
-      sx = e.touches[0].clientX; sy = e.touches[0].clientY; tracking = true;
+      sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+      tracking = true; decided = false; horiz = false;
+      curPane = paneOf(qSubPane);
     }, { passive: true });
-    sec.addEventListener("touchend", function (e) {
+    area.addEventListener("touchmove", function (e) {
+      if (!tracking) return;
+      var p = e.touches[0], dx = p.clientX - sx, dy = p.clientY - sy;
+      if (!decided) {
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+        decided = true;
+        horiz = Math.abs(dx) > Math.abs(dy) * 1.25;   // 明显偏水平才算滑动换页
+        if (!horiz) { tracking = false; return; }
+      }
+      if (curPane) {
+        var i0 = order.indexOf(qSubPane);
+        var atEnd = (dx < 0 && i0 >= order.length - 1) || (dx > 0 && i0 <= 0);
+        var d = dx * 0.34 * (atEnd ? 0.35 : 1);       // 到边界时阻尼
+        curPane.style.transition = "none";
+        curPane.style.willChange = "transform,opacity";
+        curPane.style.transform = "translateX(" + d + "px)";
+        curPane.style.opacity = String(Math.max(0.6, 1 - Math.abs(d) / 420));
+      }
+      if (e.cancelable) e.preventDefault();
+    }, { passive: false });
+    area.addEventListener("touchend", function (e) {
       if (!tracking) return; tracking = false;
-      const t = e.changedTouches && e.changedTouches[0]; if (!t) return;
-      const dx = t.clientX - sx, dy = t.clientY - sy;
-      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.4) return;   // 太短或偏竖直＝滚动，忽略
-      let i = order.indexOf(qSubPane); if (i < 0) i = 0;
-      if (dx < 0 && i < order.length - 1) qSub(order[i + 1]);               // 左滑 → 下一个
-      else if (dx > 0 && i > 0) qSub(order[i - 1]);                          // 右滑 → 上一个
+      var cp = curPane;
+      if (cp) {                                       // 回弹复位
+        cp.style.transition = "transform .2s cubic-bezier(.22,.61,.36,1),opacity .2s";
+        cp.style.transform = ""; cp.style.opacity = "";
+        setTimeout(function () { clearPane(cp); }, 230);
+      }
+      if (!horiz) return;
+      var t = e.changedTouches && e.changedTouches[0]; if (!t) return;
+      var dx = t.clientX - sx;
+      if (Math.abs(dx) < 52) return;                  // 太短＝不换页
+      var i = order.indexOf(qSubPane); if (i < 0) i = 0;
+      var ni = dx < 0 ? i + 1 : i - 1;
+      if (ni < 0 || ni >= order.length) return;
+      var nxt = paneOf(order[ni]);
+      qSub(order[ni]);
+      if (nxt) {                                      // 新面板从滑动方向滑入
+        nxt.classList.remove("in-l", "in-r");
+        void nxt.offsetWidth;
+        nxt.classList.add(dx < 0 ? "in-r" : "in-l");
+        setTimeout(function () { nxt.classList.remove("in-l", "in-r"); }, 260);
+      }
     }, { passive: true });
+    area.addEventListener("touchcancel", function () { tracking = false; clearPane(curPane); }, { passive: true });
   })();
   const _favList = document.getElementById("favList");
   if (_favList) _favList.addEventListener("click", qListClick);

@@ -8,7 +8,7 @@
 <link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
 <link rel="icon" type="image/png" href="/static/icon-192.png">
-<meta name="theme-color" content="#4F46E5">
+<meta name="theme-color" content="#FF2442">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -16,13 +16,14 @@
 <style>
   /* ===== 与桌面版一致的配色与组件体系 ===== */
   :root{
-    --primary:#4F46E5; --primary-light:#818CF8; --primary-dark:#3730A3; --primary-bg:#EEF2FF;
-    --bg:#F3F4F6; --card-bg:#FFFFFF; --text:#1F2937; --text-muted:#6B7280;
-    --border:#E5E7EB; --border-dark:#D1D5DB;
+    /* 小红书风：白底 + 品牌红点缀，简约大方 */
+    --primary:#FF2442; --primary-light:#FF8497; --primary-dark:#D81E39; --primary-bg:#FFF0F3;
+    --bg:#F5F5F7; --card-bg:#FFFFFF; --text:#1A1A1A; --text-muted:#8A8A8E;
+    --border:#EFEFF2; --border-dark:#E3E3E8;
     --success:#10B981; --success-bg:#ECFDF5; --warning:#F59E0B; --warning-bg:#FFFBEB;
     --danger:#EF4444; --danger-bg:#FEF2F2; --info:#3B82F6; --info-bg:#EFF6FF;
     --radius:12px; --radius-sm:8px; --radius-lg:16px;
-    --shadow-sm:0 1px 2px rgba(0,0,0,.06); --shadow:0 1px 3px rgba(0,0,0,.1),0 1px 2px rgba(0,0,0,.04);
+    --shadow-sm:0 1px 2px rgba(0,0,0,.05); --shadow:0 2px 12px rgba(0,0,0,.06);
     --shadow-lg:0 10px 30px rgba(0,0,0,.08),0 4px 12px rgba(0,0,0,.04);
     --tabbar-h:56px;
   }
@@ -95,26 +96,27 @@
   .seg button{flex:1;background:#fff;border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;font-size:14px}
   .seg button.on{background:var(--primary);color:#fff;border-color:var(--primary)}
 
-  /* ===== 题目卡片 ===== */
-  .card.q{border-left:none;border-radius:0;box-shadow:none;margin:0 -12px 10px;padding:6px 0}
+  /* ===== 题目卡片（小红书笔记卡：白底圆角 + 柔和阴影） ===== */
+  .card.q{border-radius:14px;box-shadow:0 1px 3px rgba(0,0,0,.04),0 1px 10px rgba(0,0,0,.05);
+    margin:0 0 10px;padding:0;background:#fff;overflow:hidden}
   .q-content{font-size:14px;line-height:1.7;margin:4px 4px;white-space:pre-wrap;word-break:break-word}
-  .q-answer{font-size:13px;color:var(--text-muted);background:#F9FAFB;padding:10px 14px;border-radius:var(--radius-sm);
+  .q-answer{font-size:13px;color:var(--text-muted);background:#FAFAFB;padding:10px 14px;border-radius:var(--radius-sm);
     margin-top:8px;white-space:pre-wrap;border:1px dashed var(--border)}
-  .q-head{display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap;padding:12px 14px 2px}
+  .q-head{display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap;padding:12px 12px 2px}
   .q-head .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .q-kp-line{padding:2px 14px 0}
+  .q-kp-line{padding:2px 12px 0}
   .q-kp{display:inline-flex;align-items:center;gap:3px;font-size:12px;color:var(--primary);
     background:var(--primary-bg);padding:2px 9px;border-radius:6px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .q-kp:active{background:#E0E7FF}
-  .q-body-wrap{padding:4px 8px 0;cursor:pointer}
-  .q-ans-box{margin:6px 14px 0;display:none;border-left:3px solid var(--info);background:var(--info-bg);
-    border-radius:0 8px 8px 0;padding:8px 12px;font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-word}
+  .q-kp:active{background:#FFE3E8}
+  .q-body-wrap{padding:12px 12px 0;cursor:pointer}
+  .q-ans-box{margin:8px 12px 0;display:none;border-left:3px solid #FFD4DB;background:#FAFAFB;
+    border-radius:0 10px 10px 0;padding:9px 12px;font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-word}
   .q-ans-box.open{display:block;animation:fadeIn .18s ease}
-  .q-ans-box .ans-label{font-weight:600;color:var(--info);margin-bottom:2px;line-height:1.25}
+  .q-ans-box .ans-label{font-weight:600;color:var(--primary);margin-bottom:2px;line-height:1.25}
   /* 题卡操作行：无边框纯文字链接，简约小巧，给题目内容腾空间 */
-  .q-actions{display:flex;align-items:center;gap:4px;margin-top:2px;padding:2px 14px 2px}
+  .q-actions{display:flex;align-items:center;gap:4px;margin-top:2px;padding:5px 12px 9px}
   .q-link{background:none;border:none;box-shadow:none;padding:4px 6px;font-size:11px;line-height:1;
-    color:#7A7F8A;white-space:nowrap;-webkit-tap-highlight-color:transparent}
+    color:#8A8A8E;white-space:nowrap;-webkit-tap-highlight-color:transparent}
   .q-link:active{color:var(--primary)}
   .q-link.on{color:var(--primary);font-weight:600}
   .q-link.danger.on{color:var(--danger)}
@@ -218,17 +220,22 @@
   #view-train iframe{display:block;width:100%;border:0;background:#fff;border-radius:12px;
     height:calc(100vh - var(--tabbar-h) - 24px - env(safe-area-inset-bottom))}
 
-  /* ===== 主视图内的 sub-tab 条（顶部平铺） ===== */
-  .subtabs{position:sticky;top:0;z-index:25;display:flex;gap:26px;overflow-x:auto;padding:10px 4px 8px;
+  /* ===== 主视图内的 sub-tab 条（居中 · 红下划线） ===== */
+  .subtabs{position:sticky;top:0;z-index:25;display:flex;gap:24px;justify-content:center;overflow-x:auto;padding:12px 4px 10px;
     background:var(--bg);-webkit-overflow-scrolling:touch;scrollbar-width:none}
   .subtabs::-webkit-scrollbar{display:none}
   .subtab{flex-shrink:0;position:relative;padding:4px 2px;border:none;background:none;
-    font-size:14px;font-weight:600;color:var(--text-muted);transition:color .15s}
-  .subtab:active{opacity:.7}
-  .subtab.on{color:var(--primary)}
-  .subtab.on::after{content:'';position:absolute;left:50%;transform:translateX(-50%);bottom:-3px;
+    font-size:15px;font-weight:500;color:var(--text-muted);transition:color .18s}
+  .subtab:active{opacity:.6}
+  .subtab.on{color:var(--primary);font-weight:600}
+  .subtab.on::after{content:'';position:absolute;left:50%;transform:translateX(-50%);bottom:-4px;
     width:18px;height:3px;border-radius:2px;background:var(--primary)}
-  .subpane{}
+  /* 子面板：跟手拖动 + 换页滑入动画（更灵动） */
+  .subpane{will-change:transform,opacity}
+  @keyframes paneInL{from{transform:translateX(-22px);opacity:0}to{transform:none;opacity:1}}
+  @keyframes paneInR{from{transform:translateX(22px);opacity:0}to{transform:none;opacity:1}}
+  .subpane.in-l{animation:paneInL .22s cubic-bezier(.22,.61,.36,1)}
+  .subpane.in-r{animation:paneInR .22s cubic-bezier(.22,.61,.36,1)}
 
   /* ===== 组卷底部浮条 ===== */
   .compose-bar{position:fixed;left:0;right:0;bottom:var(--tabbar-h);z-index:41;
