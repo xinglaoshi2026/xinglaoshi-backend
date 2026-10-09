@@ -1185,7 +1185,7 @@ def train_submit(student_id, date_str, answers):
         train_on_answer(c, result)
         lid = "log_%s_%s_%d" % (student_id, eid, now_ms())
         log = {"id": lid, "studentId": student_id, "errorId": eid, "taskId": tid,
-               "answerDate": date_str, "result": result,
+               "answerDate": date_str, "date": _date_today(), "result": result,
                "submittedAnswer": a.get("submittedAnswer") or "",
                "draftImage": (a.get("draftImage") or "").strip(),
                "draftImages": a.get("draftImages") or [],
@@ -2195,6 +2195,8 @@ class H(BaseHTTPRequestHandler):
                 return send_json(self, {"error": err}, 400)
             lid = body.get("id") or ("logm_" + uuid.uuid4().hex[:12])
             body["id"] = lid; body["updatedAt"] = now_ms()
+            if not body.get("date"):
+                body["date"] = _date_today()
             store_put("trainLogs", lid, body)
             # 同步更新卡片(老师手动登记结果)
             if body.get("errorId") and body.get("studentId"):
@@ -2770,6 +2772,35 @@ def purge_plaintext_student_pw():
         print("[security] 已清理 %d 条历史明文学生密码(spw)" % n)
 
 
+def _backfill_trainlog_dates():
+    """存量 trainLogs 补 date(练习日期)字段, 便于以后核查规则是否执行。
+    优先用已有的 answerDate; 没有则按 updatedAt(北京时间)反推; 已含 date 的跳过。幂等。"""
+    from datetime import datetime, timezone, timedelta
+    n = 0
+    for l in store_list("trainLogs", limit=20000):
+        if not isinstance(l, dict):
+            continue
+        b = l.get("body")
+        if not isinstance(b, dict):
+            continue
+        if b.get("date"):
+            continue
+        d = b.get("answerDate") or ""
+        if not d and b.get("updatedAt"):
+            try:
+                d = datetime.fromtimestamp(b["updatedAt"] / 1000,
+                                           timezone(timedelta(hours=8))).date().isoformat()
+            except Exception:
+                d = ""
+        if not d:
+            continue
+        b["date"] = d
+        store_put("trainLogs", l.get("id"), b)
+        n += 1
+    if n:
+        print(f"[backfill] 为 {n} 条旧练习记录补上了日期")
+
+
 def _maybe_automigrate():
     """部署且对象存储已配置时, 后台把本地媒体一次性搬上云并清本地盘, 只跑一次
     (meta 标记 s3_migrated 控制)。无需人工触发; 迁移期间读取由 _cos_has 自动路由。"""
@@ -2809,6 +2840,7 @@ def main():
     migrate_ts()
     purge_plaintext_student_pw()
     _disk_watchdog()  # 后台自动清理孤儿媒体, 防云端盘被撑满
+    _backfill_trainlog_dates()  # 存量练习记录补日期(幂等)
     _maybe_automigrate()  # 对象存储就绪后自动把本地媒体搬上云并清本地盘
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), H)
     print(f"[server] 云端同步后端已启动: http://0.0.0.0:{PORT}  (数据目录 {DATA_DIR})")
