@@ -232,10 +232,10 @@
     width:18px;height:3px;border-radius:2px;background:var(--primary)}
   /* 子面板：跟手拖动 + 换页滑入动画（更灵动） */
   .subpane{will-change:transform,opacity}
-  @keyframes paneInL{from{transform:translateX(-22px);opacity:0}to{transform:none;opacity:1}}
-  @keyframes paneInR{from{transform:translateX(22px);opacity:0}to{transform:none;opacity:1}}
-  .subpane.in-l{animation:paneInL .22s cubic-bezier(.22,.61,.36,1)}
-  .subpane.in-r{animation:paneInR .22s cubic-bezier(.22,.61,.36,1)}
+  @keyframes paneInL{from{transform:translateX(-92%);opacity:0}to{transform:none;opacity:1}}
+  @keyframes paneInR{from{transform:translateX(92%);opacity:0}to{transform:none;opacity:1}}
+  .subpane.in-l{animation:paneInL .28s cubic-bezier(.22,1,.36,1)}
+  .subpane.in-r{animation:paneInR .28s cubic-bezier(.22,1,.36,1)}
 
   /* ===== 组卷底部浮条 ===== */
   .compose-bar{position:fixed;left:0;right:0;bottom:var(--tabbar-h);z-index:41;
