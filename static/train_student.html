@@ -501,7 +501,7 @@
         <div class="pv" id="shared-pv"></div>
         <input id="shared-ph" type="file" accept="image/*" multiple class="hidden" onchange="addSharedPhotos(this)">
         <button class="btn3 sm" onclick="document.getElementById('shared-ph').click()"><svg class="ic"><use href="#i-camera"/></svg>拍照 / 选照片</button>
-        <button class="btn3 sm" id="upBtn" style="display:none" onclick="revealAll()"><svg class="ic"><use href="#i-eye"/></svg>上传并查看答案</button>
+        <button class="btn3 sm" id="upBtn" style="display:none" onclick="revealAll()"><svg class="ic"><use href="#i-camera"/></svg>上传照片</button>
       </div>
       <div id="rvHint" class="statusline"></div>
     </div>
@@ -543,7 +543,7 @@
     <ol>
       <li><b>第1步</b>：点最上面 <b>打印题目</b>，把题目打印出来（也可以直接看屏幕），把今天<b>所有题目</b>的答案/计算过程写在<b>同一张纸</b>上。</li>
       <li><b>第2步</b>：翻到题目下面的「<b>做完拍照上传</b>」，点「<b>拍照 / 选照片</b>」选中照片——可一次选多张、也可分几次拍。选好后会先在本页预览，<b>拍糊的可点 × 删掉重拍</b>，此时还没上传。</li>
-      <li><b>第3步</b>：确认照片没问题后，点「<b>上传并查看答案</b>」，照片才真正上传；随后每道题会<b>自动显示答案与解析</b>，不用逐题点。</li>
+      <li><b>第3步</b>：确认照片没问题后，点「<b>上传照片</b>」，照片才真正上传；上传成功后每道题会<b>自动显示答案与解析</b>，无需再点「查看答案」。</li>
       <li><b>第4步</b>：对照答案给自己打分：做对了 / 半对 / 做错了。</li>
       <li><b>第5步</b>：如果自评是<b>半对或做错了</b>，请写下<b>错误原因</b>（必填）；自评<b>做对了</b>可不填。</li>
       <li>所有题目都填完后，点最下方 <b>提交今日练习</b>。</li>
@@ -859,7 +859,7 @@ async function loadToday(){
   }
   const box=document.getElementById('items');
   if(fin){
-    // 今天已全部提交：不再显示填写表单，否则底部"本次已填写 0/3"会和顶部"已完成"矛盾
+    // 今天已全部提交：隐藏提交表单，但「题目 + 答案」仍保留在练习界面，供学生复习对照
     document.getElementById('sharedCard').classList.add('hidden');
     document.getElementById('afterHint').classList.add('hidden');
     bb.classList.add('hidden');
@@ -869,9 +869,26 @@ async function loadToday(){
       + '<h3 style="font-size:17px">今天已完成</h3>'
       + '<div class="hint" style="margin-top:6px">共 '+(j.total||j.items.length)+' 道题'
       + (sc!=null? (' · 自评正确率 '+sc+'%') : '') + '</div>'
-      + '<div class="hint" style="margin-top:10px">想复习可以看下面「最近一周错题」，'
+      + '<div class="hint" style="margin-top:10px">下面保留着今天的题目和答案，可对照复习；'
       + '也可以点上面的按钮下载错题本，打印出来在纸上再练一遍。</div>'
       + '</div>';
+    // 每题：题目 + 答案与解析（提交后自动展示，无需再点）
+    const ansBlocks = j.items.map((e,idx)=>{
+      const imgs = (e.images&&e.images.length)?e.images:(e.image?[e.image]:[]);
+      const imgHtml = imgs.map(u=>`<img class="qi" src="${murl(u)}" onclick="zoomImg('${murl(u)}')">`).join('');
+      const ansImgs=(e.answerImages&&e.answerImages.length)?e.answerImages.map(u=>`<img class="qi" src="${murl(u)}" onclick="zoomImg('${murl(u)}')">`).join(''):'';
+      return `<div class="q" id="q_${idx}" data-idx="${idx}" data-eid="${e.id}">
+        <div class="qhead"><div class="qno">第${idx+1}题</div>${e.knowledgePoint?('<span class="kchip">'+escHtml(e.knowledgePoint)+'</span>'):''}<span class="pill ok">已完成</span></div>
+        ${stemHtml(e.stem,imgs.length)}${imgHtml}
+        <div class="ansbox">
+          <div class="lb"><svg class="ic"><use href="#i-bulb"/></svg>答案与解析</div>
+          ${e.answer?('<div class="txt">'+e.answer+'</div>'):''}
+          <div class="ana">${e.analysis||'（无文字解析）'}</div>
+          ${ansImgs?('<div class="tbs">'+ansImgs+'</div>'):''}
+        </div>
+      </div>`;
+    }).join('');
+    box.insertAdjacentHTML('beforeend', ansBlocks);
     ST={};
     updateProgress();
     TASK_DONE=true; updateWeekLock();
@@ -928,7 +945,7 @@ function addSharedPhotos(inp){
   // 只做本地预览，不自动上传；确认没拍糊后再点「上传并查看答案」
   const hint=document.getElementById('rvHint');
   if(hint && n){
-    hint.textContent='已选 '+SHARED.photos.length+' 张，确认没拍糊后点「上传并查看答案」';
+    hint.textContent='已选 '+SHARED.photos.length+' 张，确认没拍糊后点「上传照片」（上传成功后答案自动显示）';
     hint.className='statusline warn';
   }
 }
@@ -943,7 +960,7 @@ function renderShared(){
   if(upBtn){
     const hasAny = SHARED.photos.length || SHARED.urls.length;
     upBtn.style.display = hasAny ? '' : 'none';
-    const lb = SHARED.photos.length ? '上传并查看答案' : '继续查看答案';
+    const lb = SHARED.photos.length ? '上传照片' : '继续上传';
     if(upBtn.dataset.lb !== lb){
       upBtn.dataset.lb = lb;
       upBtn.innerHTML = '<svg class="ic"><use href="#i-eye"/></svg>' + lb;
@@ -989,7 +1006,7 @@ async function revealAll(){
     return;
   }
   if(upBtn) upBtn.disabled=true;
-  if(hint){ hint.textContent='正在上传并显示答案…'; hint.className='statusline'; }
+  if(hint){ hint.textContent='等待上传成功自动显示答案…'; hint.className='statusline'; }
   try{ await uploadShared(); }catch(e){}
   if(upBtn) upBtn.disabled=false;
   if(!SHARED.urls.length){

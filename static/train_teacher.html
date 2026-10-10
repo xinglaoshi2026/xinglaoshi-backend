@@ -1870,7 +1870,8 @@ async function showPractices(eid){
       const r = l.result==='right'||l.result==='self_right'?'✓ 做对':l.result==='half'?'半对':'✗ 做错';
       const nm = stuName(l.studentId);
       const imgs = (l.draftImages&&l.draftImages.length)?l.draftImages:[];
-      const ph = imgs.length?('<button class="ghost sm" onclick="zoomDrafts('+JSON.stringify(JSON.stringify(imgs))+')"><svg class="ic"><use href="#i-photo-stack"/></svg>看过程</button>'):'';
+      const di = imgs.length ? (zoomReg.push(imgs.map(u=>murl(u))) - 1) : -1;
+      const ph = di>=0?('<button class="ghost sm" onclick="zoomList('+di+')"><svg class="ic"><use href="#i-photo-stack"/></svg>看过程</button>'):'';
       h += '<tr><td>'+(l.date||'')+'</td><td>'+nm+'</td><td>'+r+'</td><td>'+(l.errorNote||'')+'</td><td>'+ph+'</td></tr>';
     });
     h += '</table>';
@@ -1879,13 +1880,8 @@ async function showPractices(eid){
   showModalHtml(h);
 }
 function stuName(sid){ return (window._STU_MAP&&window._STU_MAP[sid])||sid||''; }
-/* 统一图片查看器：多图翻页（左右滑动/缩略图）+ 放大（双指/双击/滚轮）+ 拖动 + 旋转
-   错题图、答案图、作答照片共用；交互参照学生端。 */
 let _ZD = null;
 const ZD = { scale:1, tx:0, ty:0, rot:0, natW:0, natH:0, baseW:0, baseH:0, moved:false, lastTap:0, quiet:0 };
-function zoomDrafts(urlsJson, caption){
-  openPhotoViewer((JSON.parse(urlsJson) || []).filter(Boolean), 0, caption || '');
-}
 function openPhotoViewer(urls, start, caption){
   if(!urls || !urls.length) return;
   let ov = document.getElementById('zd-mask');
@@ -2512,7 +2508,7 @@ async function viewTaskLogs(tid){
         +   (qimgs.length ? '<div class="tl-thumbs">'+qimgs.map((u,k)=>
               '<img class="thumb" src="'+esc(murl(u))+'" onclick="zoomList('+ri+','+k+')" title="点击放大题目">').join('')+'</div>' : '')
         +   '<div class="tl-acts">'
-        +     (drafts.length ? '<button class="pillbtn" onclick=\'zoomDrafts('+JSON.stringify(JSON.stringify(drafts))+',"'+cap+' · 学生作答")\'><svg class="ic"><use href="#i-photo-stack"/></svg>看学生作答（'+drafts.length+'张）</button>' : '<span class="tl-none">'+(submitted?'未传作答照片':'学生尚未提交')+'</span>')
+        +     (drafts.length ? '<button class="pillbtn" onclick="zoomList('+(zoomReg.push(drafts.map(u=>murl(u)))-1)+')"><svg class="ic"><use href="#i-photo-stack"/></svg>看学生作答（'+drafts.length+'张）</button>' : '<span class="tl-none">'+(submitted?'未传作答照片':'学生尚未提交')+'</span>')
         +     ((l.answer||l.analysis||aimgs.length) ? '<button class="ghost sm" onclick="tlToggleAnswer('+i+',this)">看答案 / 解析</button>' : '')
         +   '</div>'
         +   '<div class="tl-ans hidden" id="tlans_'+i+'">'

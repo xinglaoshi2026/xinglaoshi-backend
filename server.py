@@ -1135,6 +1135,11 @@ def train_student_today(student_id, date_str=None):
         # 学生端不下发答案/解析/答案图(答案在上传计算过程后通过 /reveal 获取)
         pub = {k: v for k, v in e.items() if k not in ("answer", "analysis", "answerImages")}
         pub["answered"] = eid in done_ids   # 今天这题是否已交过（中途退出再进来时无需重填）
+        # 任务已完成：把答案/解析/答案图一并下发，学生提交后仍可在今日任务里看到题目和答案
+        if finished:
+            pub["answer"] = e.get("answer") or ""
+            pub["analysis"] = e.get("analysis") or ""
+            pub["answerImages"] = e.get("answerImages") or []
         items.append(pub)
     return {"task": task, "items": items,
             "answered": answered_n, "total": len(need),
