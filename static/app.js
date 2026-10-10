@@ -1124,6 +1124,7 @@
   }
   var SUB_ORDER = ["q", "fav", "compose", "paper", "add"];
   function qSub(s, animate) {
+    var _prev = qSubPane;
     qSubPane = s;
     document.querySelectorAll("#qSubTabs .subtab").forEach(b => b.classList.toggle("on", b.dataset.sub === s));
     // 直接显示/隐藏各 pane。旧方案用 #subTrack 横向 translateX 位移切换，
@@ -1132,6 +1133,19 @@
     document.querySelectorAll("#subTrack > .subpane").forEach(function (p) {
       p.classList.toggle("hidden", p.id !== "sub-" + s);
     });
+    // 保险：清掉 #subTrack 上任何残留的 translateX（旧滑动方案遗留），
+    // 否则它会把当前唯一可见的 pane 推出视口 → 内容全空白。
+    var _tr = document.getElementById("subTrack");
+    if (_tr) { _tr.style.transition = ""; _tr.style.transform = ""; }
+    // 轻量滑入动画（替代原整页位移轮播）：按切换方向给新 pane 加 in-r / in-l
+    if (animate && _prev && _prev !== s) {
+      var _cur = document.getElementById("sub-" + s);
+      if (_cur) {
+        _cur.classList.remove("in-l", "in-r");
+        void _cur.offsetWidth;   // 强制重排以重启动画
+        _cur.classList.add(SUB_ORDER.indexOf(s) > SUB_ORDER.indexOf(_prev) ? "in-r" : "in-l");
+      }
+    }
     if (s === "q") applyFilter();
     else if (s === "fav") renderFavView();
     else if (s === "compose") renderMyPapers();
@@ -2350,7 +2364,10 @@
       sx = e.touches[0].clientX; sy = e.touches[0].clientY; st = Date.now();
       idx = order.indexOf(qSubPane); if (idx < 0) idx = 0;
       tracking = true; decided = false; horiz = false;
+      // 现改用 display 显隐切换，不再位移 track；顺手清掉任何历史残留 transform，
+      // 否则残留的 translateX 会把唯一可见的 pane 推出视口（表现为「切几次后全空白」）。
       tr.style.transition = "none";
+      tr.style.transform = "";
     }
     function onMove(e) {
       if (!tracking) return;
@@ -2362,16 +2379,15 @@
         horiz = Math.abs(dx) > Math.abs(dy) * 1.15;   // 明显偏水平 → 切换；否则放手让页面纵向滚动
         if (!horiz) { tracking = false; return; }
       }
-      var w = tr.clientWidth || window.innerWidth;
-      var atEdge = (dx < 0 && idx >= order.length - 1) || (dx > 0 && idx <= 0);
-      var d = dx * (atEdge ? 0.3 : 1);                 // 整页 1:1 跟手；到头加阻尼
-      tr.style.transform = "translateX(" + (-idx * 100 + d / w * 100) + "%)";
+      // 不再位移 track（display 显隐切换下，track 只剩一个可见 pane，位移会把页面推出屏幕）。
+      // 仅阻止页面横滚，切换在 onEnd 里由 qSub 完成。
       if (e.cancelable) e.preventDefault();
     }
     function snapBack() {
+      // 不再位移 track；确保无残留 transform（这是「切几次后空白」的根因）
       var tr = getTrack(); if (!tr) return;
-      tr.style.transition = "transform .28s cubic-bezier(.22,1,.36,1)";
-      tr.style.transform = "translateX(" + (-idx * 100) + "%)";
+      tr.style.transition = "";
+      tr.style.transform = "";
     }
     function onEnd(e) {
       if (!tracking) return; tracking = false;
