@@ -1182,6 +1182,10 @@
         <div id="errlist-body" class="hidden" style="margin-top:10px">
           <div class="row2">
             <select id="f-student" onchange="loadErrors()"><option value="">全部学生</option></select>
+            <select id="dl-answers" title="导出是否包含答案" style="flex:0 0 auto;width:auto;min-width:0">
+              <option value="full">含答案</option>
+              <option value="noanswer">不含答案</option>
+            </select>
             <button type="button" class="ghost sm" style="flex:0 0 auto" onclick="downloadFilteredErrors()"><svg class="ic"><use href="#i-download"/></svg>下载错题本(Word)</button>
           </div>
           <div id="err-list"></div>
@@ -2469,7 +2473,8 @@ async function downloadDocx(url, fallbackName){
 function downloadFilteredErrors(){
   const sid = document.getElementById('f-student').value;
   if(!sid){ alert('请先在上方选择一名学生'); return; }
-  downloadStuErrors(sid, '');   // 不带日期 = 该生全部错题本
+  const noAns = (document.getElementById('dl-answers')||{}).value === 'noanswer';
+  downloadStuErrors(sid, '', noAns);   // 不带日期 = 该生全部错题本；noAns=只印题目不含答案
 }
 function downloadStuErrors(sid, date, questionsOnly){
   const url = '/api/train/errors/export.docx?studentId='+encodeURIComponent(sid)

@@ -360,6 +360,37 @@ def _media_file(src):
     return _safe_media_path(rel)
 
 
+def _media_bytes(src):
+    """取媒体字节：本地盘优先，缺失则回退到对象存储(COS/R2)下载。返回 bytes 或 None。
+    导出 Word 时题图/答案图都靠它取字节；之前只查本地盘，媒体上云后全部落空（图片丢）。"""
+    if not src:
+        return None
+    rel = src.split("?")[0]            # 去掉 ?tk=&e= 查询串（若有）
+    for pre in ("media://", "/api/media/"):
+        if rel.startswith(pre):
+            rel = rel[len(pre):]
+            break
+    # 1) 本地盘（已兼容超长名哈希、url 编码落盘路径）
+    fp = _safe_media_path(rel)
+    if fp:
+        try:
+            with open(fp, "rb") as f:
+                return f.read()
+        except Exception:
+            pass
+    # 2) 对象存储回退（迁移期旧图在本地、新图在云，自动路由）
+    cl = _s3_client()
+    cfg = _s3_conf()
+    if cl and cfg:
+        for key in (rel, urlunquote(rel)):   # url 编码路径也试一次
+            try:
+                r = cl.get_object(Bucket=cfg["bucket"], Key=key)
+                return r["Body"].read()
+            except Exception:
+                continue
+    return None
+
+
 # ---------------- 对象存储(R2) + 图片压缩 + 自动清理 ----------------
 def _s3_conf():
     """通用 S3 兼容对象存储配置。支持 腾讯云 COS 与 Cloudflare R2 两套环境变量。
@@ -1304,16 +1335,16 @@ def train_dashboard(date_str=None):
 
 
 def _content_segments(html):
-    """题干 HTML -> [("text", s) | ("img", 本地路径)] 序列。"""
+    """题干 HTML -> [("text", s) | ("img", 原始src)] 序列。
+    img 段保留原始 src（media:// 或 /api/media/），由 build_paper_docx 统一解析取字节，
+    以便对象存储启用时也能从云端取到图（旧写法只查本地盘 → 上云后图片全丢）。"""
     segs = []
     pos = 0
     for m in IMG_TAG_RE.finditer(html or ""):
         before = html_mod_unescape(HTML_TAG_RE.sub("", (html or "")[pos:m.start()])).strip()
         if before:
             segs.append(("text", before))
-        fp = _media_file(m.group(1))
-        if fp:
-            segs.append(("img", fp))
+        segs.append(("img", m.group(1)))
         pos = m.end()
     tail = html_mod_unescape(HTML_TAG_RE.sub("", (html or "")[pos:])).strip()
     if tail:
@@ -1414,12 +1445,10 @@ def build_paper_docx(paper, questions_map):
             if kind == "text":
                 paras.append(_p_text(val))
             else:
-                try:
-                    with open(val, "rb") as f:
-                        data = f.read()
-                except Exception:
+                data = _media_bytes(val)   # 本地盘优先，缺失则从对象存储取
+                if not data:
                     continue
-                ext = os.path.splitext(val)[1].lstrip(".").lower() or "png"
+                ext = os.path.splitext(val.split("?")[0])[1].lstrip(".").lower() or "png"
                 if ext == "jpg":
                     ext = "jpeg"
                 img_idx += 1
@@ -1795,25 +1824,46 @@ class H(BaseHTTPRequestHandler):
             mode = (q.get("mode", [None])[0] or "").strip().lower()
             questions_only = mode in ("questions", "stem", "print")
             if questions_only:
-                # 只印题目：不含任何答案，学生做题前即可下载打印
-                d = date_arg or _date_today()
-                task, _ = store_get("trainTasks", "t_%s_%s" % (eff_sid, d))
-                ids = set(task.get("errorIds") or []) if task else set()
-                if not ids:
-                    return send_json(self, {"error": "当天没有练习任务"}, 400)
-                errs = [e["body"] for e in store_list("trainErrors", limit=5000)
-                        if e["id"] in ids]
-                order = {eid: i for i, eid in enumerate(task.get("errorIds") or [])}
-                errs.sort(key=lambda e: order.get(e.get("id"), 999))
-                stu, _ = store_get("students", eff_sid)
-                nm = ((stu.get("name") if stu else "") or eff_sid)
-                data = build_train_errors_docx(
-                    nm, errs,
-                    title="%s %s 练习题" % (nm, d),
-                    note="共 %d 道题　请打印后在纸上作答" % len(errs),
-                    with_answers=False, blank_lines=6,
-                    header="姓名：______________　　日期：______________")
-                fname = urlquote("%s %s 练习题.docx" % (nm, d))
+                # 只印题目：不含任何答案/解析/答案图
+                if date_arg:
+                    # 当天练习任务内的题（带姓名/日期表头 + 留白，供打印到纸上作答）
+                    d = date_arg
+                    task, _ = store_get("trainTasks", "t_%s_%s" % (eff_sid, d))
+                    ids = set(task.get("errorIds") or []) if task else set()
+                    if not ids:
+                        return send_json(self, {"error": "当天没有练习任务"}, 400)
+                    errs = [e["body"] for e in store_list("trainErrors", limit=5000)
+                            if e["id"] in ids]
+                    order = {eid: i for i, eid in enumerate(task.get("errorIds") or [])}
+                    errs.sort(key=lambda e: order.get(e.get("id"), 999))
+                    stu, _ = store_get("students", eff_sid)
+                    nm = ((stu.get("name") if stu else "") or eff_sid)
+                    data = build_train_errors_docx(
+                        nm, errs,
+                        title="%s %s 练习题" % (nm, d),
+                        note="共 %d 道题　请打印后在纸上作答" % len(errs),
+                        with_answers=False, blank_lines=6,
+                        header="姓名：______________　　日期：______________")
+                    fname = urlquote("%s %s 练习题.docx" % (nm, d))
+                else:
+                    # 该生「全部错题」：只印题目（不含答案），供打印到纸上作答
+                    errs = [e["body"] for e in store_list("trainErrors", limit=5000)
+                            if (e["body"] or {}).get("studentId") == eff_sid]
+                    if is_student:
+                        practiced = _student_practiced_ids(eff_sid)
+                        errs = [e for e in errs if e.get("id") in practiced]
+                    if not errs:
+                        return send_json(self, {"error": "还没有错题可以导出"}, 400)
+                    errs.sort(key=lambda e: (e.get("wrongDate") or "",
+                                             e.get("createdAt") or 0))
+                    stu, _ = store_get("students", eff_sid)
+                    nm = ((stu.get("name") if stu else "") or eff_sid)
+                    data = build_train_errors_docx(
+                        nm, errs,
+                        title="%s 错题本（不含答案）" % nm,
+                        note="共 %d 道错题　导出日期 %s" % (len(errs), _date_today()),
+                        with_answers=False)
+                    fname = urlquote("%s 错题本（不含答案）.docx" % nm)
                 self.send_response(200)
                 self.send_header("Content-Type", DOCX_CTYPE)
                 self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + fname)
