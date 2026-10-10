@@ -1483,10 +1483,12 @@ def build_paper_docx(paper, questions_map):
     return buf.getvalue()
 
 
-def train_paper_resolve(paper):
-    """把 paper.questionIds 解析成题目明细(content/answer/analysis 含 media:// 引用), 供学生端渲染。"""
+def train_paper_resolve(paper, qmap=None):
+    """把 paper.questionIds 解析成题目明细(content/answer/analysis 含 media:// 引用), 供学生端渲染。
+    qmap 可传入复用（一次读取全部题目），避免逐卷重复读库导致学生端「收到的卷子」加载超时。"""
     ids = paper.get("questionIds") or []
-    qmap = {i["id"]: i["body"] for i in store_list("questions", limit=5000)}
+    if qmap is None:
+        qmap = {i["id"]: i["body"] for i in store_list("questions", limit=5000)}
     qs = []
     for qid in ids:
         b = qmap.get(qid) or {}
@@ -1753,17 +1755,23 @@ class H(BaseHTTPRequestHandler):
             sid = m_papers.group(1)
             if is_student and eff_sid != sid:
                 return send_json(self, {"error": "无权限"}, 403)
+            # 题目表只读一次、复用到每份卷（否则逐卷 store_list 会拖慢到超时）
+            qmap = {i["id"]: i["body"] for i in store_list("questions", limit=5000)}
             out = []
             for x in store_list("papers", limit=500):
                 pp = x["body"]
                 to = [str(t) for t in (pp.get("assignedTo") or [])]
-                if to and "all" not in to:
+                # 只下发「老师明确发送」的卷子：assignedTo 为空 = 未发送（如桌面组卷同步过来的草稿卷），
+                # 不下发给任何学生，避免未发送的卷子泄漏到学生端「收到的卷子」。
+                if not to:
+                    continue
+                if "all" not in to:
                     stu, _ = store_get("students", sid)
                     cls = str((stu or {}).get("class") or (stu or {}).get("className") or "")
                     if (sid not in to) and (not cls or cls not in to):
                         continue
                 pc = dict(pp)
-                pc["questions"] = train_paper_resolve(pp)
+                pc["questions"] = train_paper_resolve(pp, qmap)
                 out.append(pc)
             out.sort(key=lambda b: b.get("createdAt", 0) or 0, reverse=True)
             return send_json(self, {"items": out})
