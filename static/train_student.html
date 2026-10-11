@@ -523,6 +523,16 @@
         <div class="hint" style="margin-top:8px">把全部错题（含答案）导成 Word 文档，可打印出来在纸上练。</div>
       </div>
     </div>
+
+    <!-- 老师发来的卷子：直接出现在每日错题页，学生可一键下载 Word 打印 -->
+    <div class="card hidden" id="papersCard" style="margin-top:14px">
+      <div class="weekhead">
+        <div class="tt"><svg class="ic"><use href="#i-doc"/></svg>老师发来的卷子</div>
+        <button class="btn3 sm" onclick="openPapers()">在线查看全部</button>
+      </div>
+      <div id="papersHome" class="papers-list"></div>
+      <div class="hint" style="margin-top:8px">点「下载」把卷子存成 Word 打印出来做（不含答案）；「含答案」用于做完后订正。</div>
+    </div>
   </div>
 </div>
 
@@ -719,6 +729,7 @@ async function doLogin(){
   loadRecent();                // 近期表现（不阻塞今日任务加载）
   await loadToday();
   updateWeekLock();
+  loadHomePapers();            // 每日错题页内嵌「老师发来的卷子」（可下载 Word）
 }
 
 // 顶部问候语：老师写的鼓励语优先显示；没写就显示「你好，姓名」
@@ -1123,7 +1134,9 @@ async function loadPapers(){
         <div class="pcard-tt">${escHtml(p.title || '未命名试卷')}</div>
         <div class="pcard-sub">${n} 道题${p.note ? (' · ' + escHtml(p.note)) : ''}${p.createdBy ? (' · 来自' + escHtml(p.createdBy)) : ''}</div>
       </div>
-      <div class="pcard-side">${done ? '<span class="pill ok">已做完</span>' : '<span class="pill">未做</span>'}<svg class="ic"><use href="#i-right"/></svg></div>
+      <div class="pcard-side">${done ? '<span class="pill ok">已做完</span>' : '<span class="pill">未做</span>'}
+        <button class="btn3 sm" title="下载题目(Word)" onclick="event.stopPropagation();downloadPaper('${escHtml(p.id)}')"><svg class="ic"><use href="#i-download"/></svg></button>
+        <svg class="ic"><use href="#i-right"/></svg></div>
     </div>`;
   }).join('');
 }
@@ -1154,7 +1167,10 @@ function renderPaper(p){
       <div class="qhead"><div class="qno">第${i+1}题</div>${q.type ? ('<span class="kchip">'+escHtml(q.type)+'</span>') : ''}</div>
       <div class="pcontent">${c}</div>${ansHtml}</div>`;
   }).join('') + '</div>';
-  html += `<div style="margin-top:14px"><button class="btn2" onclick="markPaperDone('${escHtml(p.id)}')"><svg class="ic"><use href="#i-check"/></svg>我已做完</button></div>`;
+  html += `<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn2" onclick="downloadPaper('${escHtml(p.id)}')"><svg class="ic"><use href="#i-download"/></svg>下载题目(Word)</button>
+    <button class="btn3" onclick="downloadPaper('${escHtml(p.id)}','all')"><svg class="ic"><use href="#i-download"/></svg>下载含答案</button>
+    <button class="btn2" onclick="markPaperDone('${escHtml(p.id)}')"><svg class="ic"><use href="#i-check"/></svg>我已做完</button></div>`;
   v.innerHTML = html;
 }
 function togglePaperAns(){
@@ -1165,6 +1181,51 @@ function togglePaperAns(){
 }
 function backToPapers(){ document.getElementById('paperView').classList.add('hidden'); document.getElementById('papersList').classList.remove('hidden'); }
 function markPaperDone(id){ localStorage.setItem(_paperDoneKey(id), '1'); alert('已标记为做完'); backToPapers(); loadPapers(); }
+
+/* 每日错题页内嵌「老师发来的卷子」：有卷子才显示卡片，学生可一键下载 Word */
+async function loadHomePapers(){
+  const card = document.getElementById('papersCard');
+  const box = document.getElementById('papersHome');
+  if(!card || !box) return;
+  if(!SID){ card.classList.add('hidden'); return; }
+  try{
+    const {status,j} = await call('/api/train/student/'+encodeURIComponent(SID)+'/papers');
+    if(status!==200 || !j || j.error){ card.classList.add('hidden'); return; }
+    const items = j.items || [];
+    if(!items.length){ card.classList.add('hidden'); return; }
+    box.innerHTML = items.map(p=>{
+      const n = (p.questions && p.questions.length) || 0;
+      return `<div class="pcard">
+        <div class="pcard-main" style="cursor:pointer" onclick="openPapers()">
+          <div class="pcard-tt">${escHtml(p.title || '未命名试卷')}</div>
+          <div class="pcard-sub">${n} 道题${p.note ? (' · ' + escHtml(p.note)) : ''}${p.createdBy ? (' · 来自' + escHtml(p.createdBy)) : ''}</div>
+        </div>
+        <div class="pcard-side">
+          <button class="btn3 sm" title="下载题目(Word，不含答案)" onclick="downloadPaper('${escHtml(p.id)}')"><svg class="ic"><use href="#i-download"/></svg>下载</button>
+          <button class="btn3 sm" title="下载含答案(Word，订正用)" onclick="downloadPaper('${escHtml(p.id)}','all')">含答案</button>
+        </div>
+      </div>`;
+    }).join('');
+    card.classList.remove('hidden');
+  }catch(e){ card.classList.add('hidden'); }
+}
+/* 下载「老师发来的卷子」为 Word：mode 省略=只含题目(downloadPaper)，mode='all'=含答案 */
+async function downloadPaper(pid, mode){
+  try{
+    const url = API + '/api/train/student/'+encodeURIComponent(SID)+'/papers/'+encodeURIComponent(pid)+'/docx' + (mode==='all' ? '?mode=all' : '');
+    const r = await fetch(url, {headers: TOKEN?{'Authorization':'Bearer '+TOKEN}:{}});
+    if(!r.ok){ let m='下载失败'; try{ const j=await r.json(); m=j.error||m; }catch(e){} alert(m); return; }
+    const blob = await r.blob();
+    let fname = '试卷.docx';
+    const cd = r.headers.get('Content-Disposition') || '';
+    const mm = cd.match(/filename\*=UTF-8''([^;]+)/i);
+    if(mm){ try{ fname = decodeURIComponent(mm[1]); }catch(e){} }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = fname;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+  }catch(e){ alert('下载失败，请重试'); }
+}
 
 /* ---------- 学生端·教师评语（每题后展示）---------- */
 function stuCmtHtml(c){

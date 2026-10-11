@@ -1826,6 +1826,40 @@ class H(BaseHTTPRequestHandler):
                 out.append(pc)
             out.sort(key=lambda b: b.get("createdAt", 0) or 0, reverse=True)
             return send_json(self, {"items": out})
+        # 学生端：把「老师发来的卷子」下载成 Word（默认只含题目，做题前打印用；
+        #  ?mode=all 时含答案/解析，便于订正）。权限：该卷必须下发给本人（或全体/本班）。
+        m_pdocx = re.match(r"^/api/train/student/([^/]+)/papers/([^/]+)/docx$", p)
+        if m_pdocx:
+            sid, pid = m_pdocx.group(1), m_pdocx.group(2)
+            if is_student and eff_sid != sid:
+                return send_json(self, {"error": "无权限"}, 403)
+            pp, _ = store_get("papers", pid)
+            if not pp:
+                return send_json(self, {"error": "卷子不存在"}, 404)
+            to = [str(t) for t in (pp.get("assignedTo") or [])]
+            allowed = ("all" in to) or (sid in to)
+            if not allowed:
+                stu, _ = store_get("students", sid)
+                cls = str((stu or {}).get("class") or (stu or {}).get("className") or "")
+                allowed = bool(cls and (cls in to))
+            if not allowed:
+                return send_json(self, {"error": "无权限"}, 403)
+            mode = (q.get("mode", ["questions"])[0] or "questions").strip()
+            qmap = {i["id"]: (i["body"] or {}) for i in store_list("questions", limit=5000)}
+            if mode != "all":
+                # 只印题目：清掉答案/解析字段，学生先做题、对答案另用「收到的卷子」在线看
+                qmap = {k: dict(v, answer="", analysis="") for k, v in qmap.items()}
+            data = build_paper_docx(pp, qmap)
+            fname = urlquote((pp.get("title") or "试卷") + ".docx")
+            self.send_response(200)
+            self.send_header("Content-Type", DOCX_CTYPE)
+            self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + fname)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_cors()
+            self.end_headers()
+            self.wfile.write(data)
+            self._responded = True
+            return
         if p == "/api/train/errors":
             items = [e["body"] for e in store_list("trainErrors", limit=5000)]
             if eff_sid:

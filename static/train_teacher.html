@@ -1276,6 +1276,13 @@
               <button type="button" class="tint sm" onclick="openPaperPicker()">📄 从试卷库导入</button>
               <label class="chk" style="margin-left:8px"><input type="checkbox" id="pp-ans"> 附答案</label>
             </div>
+            <!-- 试卷库导入选择器：点击「从试卷库导入」就地展开，置于按钮下方更醒目 -->
+            <div id="pp-picker" class="hidden" style="margin-top:12px">
+              <div class="card">
+                <div class="side-title">从试卷库选卷子导入 <button type="button" class="tint xs" style="float:right" onclick="document.getElementById('pp-picker').classList.add('hidden')">关闭</button></div>
+                <div id="pp-picker-list" style="display:flex;flex-direction:column;gap:8px;max-height:320px;overflow:auto"></div>
+              </div>
+            </div>
             <div class="hint" style="margin-top:8px">题目来自题库：点「从题库选题」打开题库检索，把题加入右侧「待发列表」即可。发卷后学生会在手机端「收到的卷子」里看到；可勾选「附答案」让学生自行核对。</div>
             <div id="pp-result" class="hidden" style="margin-top:10px;padding:10px 12px;border-radius:10px;background:#eafaf0;border:1px solid #bfe6cf;color:#1f7a47;line-height:1.7"></div>
           </div>
@@ -1294,13 +1301,6 @@
       <div class="card" style="margin-top:14px">
         <div class="side-title">已发试卷</div>
         <div id="pp-sent"></div>
-      </div>
-      <!-- 试卷库导入选择器（隐藏） -->
-      <div id="pp-picker" class="hidden" style="margin-top:14px">
-        <div class="card">
-          <div class="side-title">从试卷库选卷子导入 <button type="button" class="tint xs" style="float:right" onclick="document.getElementById('pp-picker').classList.add('hidden')">关闭</button></div>
-          <div id="pp-picker-list" style="display:flex;flex-direction:column;gap:8px;max-height:320px;overflow:auto"></div>
-        </div>
       </div>
     </div>
     </div>
@@ -1549,7 +1549,15 @@ async function pasteClip(zone){
 });
 
 function toggleQb(){
+  // 题库检索面板(#qb)在「错题录入」与「发卷」两区共用；
+  // 切到当前可见区再展开，避免点在发卷区却把面板打开到了隐藏的错题录入区（看起来像没反应）
   const box = document.getElementById('qb');
+  const visible = !document.getElementById('t-errors').classList.contains('hidden') ? 't-errors'
+                : !document.getElementById('t-paper').classList.contains('hidden') ? 't-paper' : null;
+  if(visible){
+    const main = document.querySelector('#'+visible+' .entry-main');
+    if(main && box.parentElement !== main) main.appendChild(box);
+  }
   box.classList.toggle('hidden');
   if(!box.classList.contains('hidden') && !qbKpLoaded){ loadQbKp(); }
 }
