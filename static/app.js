@@ -361,13 +361,32 @@
       }
       return true;
     });
-    // 新题置顶：按 updated_at 倒序（毫秒），秒级时间戳归一为毫秒，再按 id 稳定排序
+    // 排序：先按「题型顺序」升序（题型一 < 题型二 < 题型三 …；选择题等标准题型随后；
+    // 无题型排在最后），同题型内再按 updated_at 倒序（新题在前）。
     const tsOf = it => {
       let t = it.updated_at || (it.body && (it.body.updatedAt || it.body.createdAt)) || 0;
       if (t && t < 1e11) t *= 1000; // 秒 → 毫秒
       return t;
     };
-    qFiltered.sort((a, b) => tsOf(b) - tsOf(a) || String(a.id).localeCompare(String(b.id)));
+    const CN_NUM = { "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10 };
+    // 题型顺序：优先取题的 type 字段里的「题型N」，其次取【知识点名】里的「题型N」
+    // （选修一等章节把题型写进知识点名，如"题型1 "一板+一块"模型"），
+    // 再其次标准题型(选择题…)随后，无题型排最后。同题型内按 updated_at 倒序。
+    const typeRank = b0 => {
+      b0 = b0 || {};
+      const t = ((b0.type || "") + " " + (kpName(b0.kpId) || ""));
+      let m = /题型\s*([0-9]+)/.exec(t);
+      if (m) return parseInt(m[1], 10);
+      m = /题型\s*([一二三四五六七八九十]+)/.exec(t);
+      if (m && CN_NUM[m[1]]) return CN_NUM[m[1]];
+      const i = Q_TYPE_CHIPS.indexOf((b0.type || "").trim());
+      return 100 + (i >= 0 ? i : 999);
+    };
+    qFiltered.sort((a, b) => {
+      const ra = typeRank(a.body), rb = typeRank(b.body);
+      if (ra !== rb) return ra - rb;
+      return tsOf(b) - tsOf(a) || String(a.id).localeCompare(String(b.id));
+    });
     qShown = 0;
     renderFilterBar();
     $("#qList").innerHTML = "";

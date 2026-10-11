@@ -779,6 +779,12 @@ def train_error_to_bank(rec):
     answer_images = rec.get("answerImages") or []
     if not (stem or images or answer or answer_images):
         return None, 0
+    # 若错题直接携带已有题库题 id（如从题库选题转错题），直接复用，绝不重复建题
+    src = rec.get("srcId")
+    if src:
+        ex, _ = store_get("questions", src)
+        if ex:
+            return src, 0
     key = _bank_key(stem, images, answer, answer_images)
     # 已存在同题则直接复用，建立链接
     for q in store_list("questions", limit=5000):

@@ -1273,6 +1273,7 @@
             <div class="tbar" style="margin-top:12px;flex-wrap:wrap">
               <button class="lg" onclick="sendPaper()"><svg class="ic"><use href="#i-check"/></svg>发卷给学生</button>
               <button type="button" class="tint sm" onclick="toggleQb()">＋ 从题库选题（已选 <b id="pp-qn">0</b> 题）</button>
+              <button type="button" class="tint sm" onclick="openPaperPicker()">📄 从试卷库导入</button>
               <label class="chk" style="margin-left:8px"><input type="checkbox" id="pp-ans"> 附答案</label>
             </div>
             <div class="hint" style="margin-top:8px">题目来自题库：点「从题库选题」打开题库检索，把题加入右侧「待发列表」即可。发卷后学生会在手机端「收到的卷子」里看到；可勾选「附答案」让学生自行核对。</div>
@@ -1292,6 +1293,13 @@
       <div class="card" style="margin-top:14px">
         <div class="side-title">已发试卷</div>
         <div id="pp-sent"></div>
+      </div>
+      <!-- 试卷库导入选择器（隐藏） -->
+      <div id="pp-picker" class="hidden" style="margin-top:14px">
+        <div class="card">
+          <div class="side-title">从试卷库选卷子导入 <button type="button" class="tint xs" style="float:right" onclick="document.getElementById('pp-picker').classList.add('hidden')">关闭</button></div>
+          <div id="pp-picker-list" style="display:flex;flex-direction:column;gap:8px;max-height:320px;overflow:auto"></div>
+        </div>
       </div>
     </div>
     </div>
@@ -1758,13 +1766,73 @@ async function loadTeacherPapers(){
     const {status,j} = await call('/api/train/teacher/papers');
     if(status!==200 || !j){ box.innerHTML='<div class="hint" style="padding:8px 0">暂无可查看的卷子</div>'; return; }
     const items = j.items || [];
-    if(!items.length){ box.innerHTML='<div class="hint" style="padding:8px 0">还没有发过卷。</div>'; return; }
-    box.innerHTML = items.map(p=>{
-      const n = (p.questionIds&&p.questionIds.length)||0;
-      const to = (p.assignedTo&&p.assignedTo.length)? (p.assignedTo[0]==='all'?'全体学生':p.assignedTo.length+' 名学生') : '未指定';
-      return `<div class="batch-item"><div><b>${esc(p.title||'未命名试卷')}</b> · ${n} 题 · ${esc(to)}${p.createdBy?(' · '+esc(p.createdBy)):''}</div></div>`;
-    }).join('');
+    // 只显示真正下发过的卷（assignedTo 非空）；桌面端组卷但未发送的「草稿」不混入"已发"
+    const sent = items.filter(p => (p.assignedTo&&p.assignedTo.length));
+    const drafts = items.filter(p => !(p.assignedTo&&p.assignedTo.length));
+    if(!sent.length){
+      box.innerHTML='<div class="hint" style="padding:8px 0">还没有发过卷。</div>';
+    } else {
+      box.innerHTML = sent.map((p,idx)=>{
+        const n = (p.questionIds&&p.questionIds.length)||0;
+        const to = (p.assignedTo[0]==='all'?'全体学生':p.assignedTo.length+' 名学生');
+        return `<div class="batch-item" style="cursor:pointer" onclick="toggleSent(${idx})">
+          <div><b>${esc(p.title||'未命名试卷')}</b> · ${n} 题 · ${esc(to)}${p.createdBy?(' · '+esc(p.createdBy)):''}</div>
+          <div id="sent-${idx}" class="hidden" style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--line)"></div>
+        </div>`;
+      }).join('');
+      window.__sentPapers = sent;
+    }
+    if(drafts.length){
+      const dbox = document.createElement('div');
+      dbox.className='hint';
+      dbox.style.marginTop='8px';
+      dbox.textContent = '（另有 '+drafts.length+' 套桌面端组卷草稿未发送，不计入「已发」）';
+      box.appendChild(dbox);
+    }
   }catch(e){ box.innerHTML='<div class="hint" style="padding:8px 0">加载失败</div>'; }
+}
+function toggleSent(idx){
+  const p = (window.__sentPapers||[])[idx]; if(!p) return;
+  const el = document.getElementById('sent-'+idx);
+  if(!el) return;
+  if(!el.classList.contains('hidden')){ el.classList.add('hidden'); return; }
+  const ids = p.questionIds||[];
+  el.innerHTML = '题目 ID：' + (ids.length? ids.map(i=>'<code style="font-size:11px">'+esc(i)+'</code>').join(' ') : '（空）');
+  el.classList.remove('hidden');
+}
+/* 从试卷库导入：列出试卷中心已存的卷子，选一份把它的题目加入「待发列表」 */
+async function openPaperPicker(){
+  const picker = document.getElementById('pp-picker');
+  const list = document.getElementById('pp-picker-list');
+  picker.classList.remove('hidden');
+  list.innerHTML = '<div class="hint">加载试卷库…</div>';
+  try{
+    const {status,j} = await call('/api/papers');
+    const items = (j&&j.items) || [];
+    if(!items.length){ list.innerHTML='<div class="hint">试卷库还没有卷子。</div>'; return; }
+    list.innerHTML = items.map(p=>{
+      const n = (p.questionIds&&p.questionIds.length)||0;
+      return `<div class="batch-item"><div><b>${esc(p.title||'未命名试卷')}</b> · ${n} 题</div>
+        <button type="button" class="tint sm" onclick="importPaper('${esc(p.id)}')">导入这 ${n} 题</button></div>`;
+    }).join('');
+  }catch(e){ list.innerHTML='<div class="hint">加载失败</div>'; }
+}
+async function importPaper(pid){
+  try{
+    const {status,j} = await call('/api/papers/'+encodeURIComponent(pid));
+    const p = j&&j.body ? j.body : j;
+    const ids = (p&&p.questionIds) || [];
+    if(!ids.length){ alert('该卷子没有题目'); return; }
+    const have = new Set((batchErrs||[]).map(b=>b.srcId).filter(Boolean));
+    let added = 0;
+    for(const qid of ids){
+      if(have.has(qid)) continue;
+      batchErrs.push({ srcId: qid });
+      have.add(qid); added++;
+    }
+    renderBatch();
+    alert('已导入 '+added+' 题到待发列表（共 '+batchErrs.length+' 题）');
+  }catch(e){ alert('导入失败：'+e); }
 }
 async function sendPaper(){
   const title = (document.getElementById('pp-title').value||'').trim();
@@ -1793,6 +1861,8 @@ async function saveBatch(){
   if(!ids.length){ msg.textContent='请先在上方选择要发送的学生'; msg.className='err'; return; }
   let ok = 0;
   for(const b of batchErrs){
+    // 跳过「从试卷库导入」的纯 srcId 条目（无题面内容，不入库为错题；它们只用于发卷）
+    if(!b.stem && !b.analysis && !(b.pickedI&&b.pickedI.length) && !(b.pendS&&b.pendS.length) && !(b.files&&b.files.length)) continue;
     const images = b.pickedI.slice();
     for(const it of b.pendS){
       const fj = await uploadMedia(it.file, 'trainErrors');
