@@ -21,6 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote as urlquote, unquote as urlunquote
 from datetime import datetime, timezone
 from xml.sax.saxutils import escape as xesc
+from concurrent.futures import ThreadPoolExecutor
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(BASE, "data"))
@@ -1435,6 +1436,21 @@ def build_paper_docx(paper, questions_map):
 
     blank_lines = int(paper.get("blankLines") or 0)  # 每题下方留白，供打印后在纸上作答
     ids = paper.get("questionIds") or []
+    # 收集全部图片源，并行预取到缓存：对象存储逐张串行太慢（99 张可拖到 5 分钟，手机端点了像卡死）。
+    _srcs = []
+    for _qid in ids:
+        _qb = questions_map.get(_qid) or {}
+        for _field in ("content", "answer", "analysis"):
+            for _k, _v in _content_segments(_qb.get(_field) or ""):
+                if _k == "img" and _v:
+                    _srcs.append(_v)
+    _uniq = list(dict.fromkeys(_srcs))
+    _cache = {}
+    if _uniq:
+        with ThreadPoolExecutor(max_workers=16) as _pool:
+            for _s, _b in _pool.map(lambda x: (x, _media_bytes(x)), _uniq):
+                if _b:
+                    _cache[_s] = _b
     for i, qid in enumerate(ids, 1):
         qb = questions_map.get(qid) or {}
         head = "%d. %s%s" % (i, qb.get("type") or "", ("　" + qb["qid"]) if qb.get("qid") else "")
@@ -1445,7 +1461,7 @@ def build_paper_docx(paper, questions_map):
             if kind == "text":
                 paras.append(_p_text(val))
             else:
-                data = _media_bytes(val)   # 本地盘优先，缺失则从对象存储取
+                data = _cache.get(val) or _media_bytes(val)   # 优先用并行预取缓存
                 if not data:
                     continue
                 ext = os.path.splitext(val.split("?")[0])[1].lstrip(".").lower() or "png"

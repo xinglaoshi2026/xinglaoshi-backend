@@ -2449,6 +2449,7 @@ function _ab2b64(buf){
 // 在电脑端工作台里（内嵌 iframe）浏览器不支持 blob 下载 → 交给本机保存并用 Word 打开。
 async function downloadDocx(url, fallbackName){
   try{
+    if(window.toastMsg) toastMsg('正在生成文档，请稍候…');
     const r = await fetch(API+url, {headers: TOKEN?{'Authorization':'Bearer '+TOKEN}:{}});
     if(!r.ok){ let m='下载失败'; try{ const j=await r.json(); m=j.error||m; }catch(e){} toastMsg(m); return; }
     let fname = fallbackName || '错题.docx';
