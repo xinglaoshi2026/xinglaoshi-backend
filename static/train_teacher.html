@@ -1817,30 +1817,51 @@ async function openPaperPicker(){
   list.innerHTML = '<div class="hint">加载试卷库…</div>';
   try{
     const {status,j} = await call('/api/papers');
-    const items = (j&&j.items) || [];
+    // /api/papers 返回 [{id,updated_at,body:{...}}]：卷子字段在 body 里（此处兼容已被拍平的旧结构）。
+    // 之前直接读顶层 p.title / p.questionIds，全部取不到 → 每份都显示「未命名试卷 · 0 题」。
+    const items = (((j&&j.items)||[])).map(x=>{
+      const b = (x && x.body) ? x.body : x;
+      return Object.assign({}, b, { id: (b && b.id) || (x && x.id) });
+    }).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
     if(!items.length){ list.innerHTML='<div class="hint">试卷库还没有卷子。</div>'; return; }
     list.innerHTML = items.map(p=>{
       const n = (p.questionIds&&p.questionIds.length)||0;
+      if(!n){
+        return `<div class="batch-item"><div class="hint" style="margin:0"><b>${esc(p.title||'未命名试卷')}</b> · 0 题（无题目，不可导入）</div></div>`;
+      }
       return `<div class="batch-item"><div><b>${esc(p.title||'未命名试卷')}</b> · ${n} 题</div>
         <button type="button" class="tint sm" onclick="importPaper('${esc(p.id)}')">导入这 ${n} 题</button></div>`;
     }).join('');
   }catch(e){ list.innerHTML='<div class="hint">加载失败</div>'; }
 }
+// 一次性把全量题库灌进 qbCache（按 id 取题面/答案用）；多份卷子导入只拉一次。
+let _qbAllLoaded = false;
+async function _ensureAllQb(){
+  if(_qbAllLoaded) return;
+  const {j} = await call('/api/questions?limit=5000');
+  (((j&&j.items)||[])).forEach(x=>{ if(x&&x.id) qbCache[x.id] = x.body||{}; });
+  _qbAllLoaded = true;
+}
 async function importPaper(pid){
   try{
     const {status,j} = await call('/api/papers/'+encodeURIComponent(pid));
-    const p = j&&j.body ? j.body : j;
+    const p = (j&&j.body) ? j.body : j;
     const ids = (p&&p.questionIds) || [];
     if(!ids.length){ alert('该卷子没有题目'); return; }
-    const have = new Set((batchErrs||[]).map(b=>b.srcId).filter(Boolean));
-    let added = 0;
+    // 先把题目本体（题面/答案/配图）取到 qbCache，再用 _pushToBatch 生成完整待发项。
+    // 之前只 push {srcId}，缺 pickedI/pendS/files 等字段 → renderBatch 读 .length 直接抛错，
+    // 表现为「导入后待发列表空/报导入失败」。
+    await _ensureAllQb();
+    let added=0, dup=0, missing=0;
     for(const qid of ids){
-      if(have.has(qid)) continue;
-      batchErrs.push({ srcId: qid });
-      have.add(qid); added++;
+      const r = _pushToBatch(qid);
+      if(r>0) added++; else if(r===0) dup++; else missing++;
     }
     renderBatch();
-    alert('已导入 '+added+' 题到待发列表（共 '+batchErrs.length+' 题）');
+    let msg = '已导入 '+added+' 题到待发列表（共 '+batchErrs.length+' 题）';
+    if(dup) msg += '，'+dup+' 题已在列表中';
+    if(missing) msg += '，'+missing+' 题在题库中找不到（可能已删除）';
+    alert(msg);
   }catch(e){ alert('导入失败：'+e); }
 }
 async function sendPaper(){
