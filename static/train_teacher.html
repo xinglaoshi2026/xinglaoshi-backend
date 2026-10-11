@@ -1277,6 +1277,7 @@
               <label class="chk" style="margin-left:8px"><input type="checkbox" id="pp-ans"> 附答案</label>
             </div>
             <div class="hint" style="margin-top:8px">题目来自题库：点「从题库选题」打开题库检索，把题加入右侧「待发列表」即可。发卷后学生会在手机端「收到的卷子」里看到；可勾选「附答案」让学生自行核对。</div>
+            <div id="pp-result" class="hidden" style="margin-top:10px;padding:10px 12px;border-radius:10px;background:#eafaf0;border:1px solid #bfe6cf;color:#1f7a47;line-height:1.7"></div>
           </div>
           <aside class="entry-side">
             <div class="side-title">发送对象</div>
@@ -1849,7 +1850,11 @@ async function sendPaper(){
   const showAnswer = !!document.getElementById('pp-ans').checked;
   const {status,j} = await call('/api/train/teacher/papers', {method:'POST', json:{title, note, questionIds:qids, assignedTo, showAnswer}});
   if(status===200 && j && j.ok){
-    alert('已发卷：'+title+'（'+qids.length+' 题）');
+    const link = API + '/train_student';
+    const box = document.getElementById('pp-result');
+    box.className = '';
+    box.style.display = 'block';
+    box.innerHTML = '✅ 已发卷：'+esc(title)+'（'+qids.length+' 题）<br>把下面链接发给学生，学生在手机或电脑浏览器打开即可做题：<br><code style="user-select:all;background:#fff;padding:2px 6px;border-radius:4px">'+esc(link)+'</code> <button type="button" onclick="copyText(\''+esc(link)+'\')">复制链接</button>';
     document.getElementById('pp-title').value=''; document.getElementById('pp-note').value='';
     loadTeacherPapers();
   } else { alert('发卷失败：'+((j&&j.error)||status)); }
@@ -2347,6 +2352,11 @@ async function resetStuPw(sid){
   await loadStuMgmt();
   document.getElementById('mgmt-stu').value = sid;
   renderMgmt();
+}
+function copyText(t){
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(()=>toastMsg('链接已复制 ✓', true), ()=>alert(t));
+  } else alert(t);
 }
 function copyStuPw(){
   const L = window._LASTPW; if(!L) return;
