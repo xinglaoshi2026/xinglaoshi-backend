@@ -1551,6 +1551,8 @@ if(TOKEN){
     if(status===401){ logout(); return; }
     const me = (j && j.items && j.items[0]) || null;
     setMe(me);
+    SID = (me && me.id) || '';          // 启动恢复会话时也要拿到 SID，否则每日错题页的「老师发来的卷子」卡片拉不到
+    loadHomePapers();                   // 每日错题页内嵌「老师发来的卷子」（可下载 Word）
     loadRecent();
     loadToday().then(updateWeekLock);
   })();
