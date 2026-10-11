@@ -5,3 +5,4 @@ pull_*.json
 *.docx
 __pycache__/
 *.pyc
+__pycache__/
