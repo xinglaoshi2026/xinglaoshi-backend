@@ -29,12 +29,14 @@
     --fill:rgba(120,120,128,.12); /* systemFill */
     --fill2:rgba(120,120,128,.20);
 
-    /* —— 品牌色（沿用青竹绿「抹茶绿」色系，符合原设计资产） —— */
-    --brand:#6B8A72; --brand2:#8FAE94; --brand3:#54705C; --brand-soft:#E7EFE9;
+    /* —— 品牌色：石墨蓝（iOS 深空灰蓝，沉稳商务、久看不累） ——
+       brand 用于按钮/强调条(需与白字对比≥4.5:1)；brand3 用于文字(需与白底对比≥4.5:1)；
+       brand2 用于描边/次级填充；brand-soft 为极浅填充底。 */
+    --brand:#3A4A5C; --brand2:#7C8CA0; --brand3:#2C3A49; --brand-soft:#EAEEF3;
 
     /* —— 功能色 —— */
-    --ok:#2E7D5B; --ok-soft:#E6F2EA;
-    --warn:#B07C22; --warn-soft:#FAF1DF;
+    --ok:#2F6B63; --ok-soft:#E6EFED;
+    --warn:#8F6414; --warn-soft:#FAF1DF;
     --err:#C0392B; --err-soft:#FDECEA;
     --blue:#007AFF;
 
@@ -45,11 +47,11 @@
     --sh1:0 1px 1.5px rgba(0,0,0,.04), 0 3px 10px rgba(0,0,0,.045);
     --sh2:0 1px 2px rgba(0,0,0,.05), 0 10px 26px rgba(0,0,0,.09);
     --sh3:0 16px 40px rgba(0,0,0,.16);
-    --focus:0 0 0 4px rgba(107,138,114,.18);
+    --focus:0 0 0 4px rgba(58,74,92,.20);
     --grad:linear-gradient(135deg,var(--brand2) 0%,var(--brand) 72%,var(--brand3) 132%);
 
     /* 顶部状态卡渐变端点（保留原语义） */
-    --hero-from:#FFFFFF; --hero-to:#E7EFE9;
+    --hero-from:#FFFFFF; --hero-to:#EAEEF3;
     --surface:#FFFFFF;
 
     /* —— 弹性曲线（Apple 官方弹簧映射） —— */
@@ -120,7 +122,7 @@
   button:disabled{opacity:.45;filter:grayscale(.15);transform:none;box-shadow:none;pointer-events:none}
   /* tinted：品牌淡底 */
   .btn2{background:var(--brand-soft);color:var(--brand3);box-shadow:none}
-  .btn2:active{background:#DCE7DF}
+  .btn2:active{background:#DCE2E9}
   /* plain bordered：白底描边 */
   .btn3{background:var(--card);color:var(--brand3);box-shadow:none;
     border:0;box-shadow:inset 0 0 0 1px var(--line2)}
@@ -164,7 +166,7 @@
   .logo{
     width:80px;height:80px;border-radius:22px;margin:0 auto 18px;
     background:var(--grad);display:flex;align-items:center;justify-content:center;color:#fff;
-    box-shadow:0 10px 26px rgba(84,112,92,.28), inset 0 1px 0 rgba(255,255,255,.28);
+    box-shadow:0 10px 26px rgba(58,74,92,.28), inset 0 1px 0 rgba(255,255,255,.28);
   }
   .logo .ic{width:37px;height:37px}
   .loginwrap h1{font-size:28px;font-weight:700;letter-spacing:-.03em}
@@ -178,15 +180,15 @@
   /* ---------- 顶部状态卡 ---------- */
   .topbar-card{
     padding:14px;border-radius:var(--r);margin-bottom:16px;overflow:hidden;
-    background:linear-gradient(150deg,var(--hero-from,#fff) 0%,var(--hero-to,#E7EFE9) 100%);
+    background:linear-gradient(150deg,var(--hero-from,#fff) 0%,var(--hero-to,#EAEEF3) 100%);
     box-shadow:var(--sh1);
   }
   .topbar-card::before{
     content:"";position:absolute;right:-34px;top:-42px;width:124px;height:124px;border-radius:50%;
-    background:radial-gradient(circle,rgba(84,112,92,.18) 0%,rgba(84,112,92,0) 68%);pointer-events:none
+    background:radial-gradient(circle,rgba(58,74,92,.18) 0%,rgba(58,74,92,0) 68%);pointer-events:none
   }
-  .topbar-card.done{background:linear-gradient(150deg,#F0F8F3 0%,#DFEFE6 100%)}
-  .topbar-card.done::before{background:radial-gradient(circle,rgba(46,125,91,.22) 0%,rgba(46,125,91,0) 68%)}
+  .topbar-card.done{background:linear-gradient(150deg,#F3F6F9 0%,#E1E7EE 100%)}
+  .topbar-card.done::before{background:radial-gradient(circle,rgba(47,107,99,.22) 0%,rgba(47,107,99,0) 68%)}
   .tb-note{
     position:relative;z-index:1;display:flex;align-items:center;gap:8px;
     font-size:13.5px;font-weight:600;color:var(--brand3);letter-spacing:-.01em;
@@ -219,7 +221,7 @@
 
   /* ---------- 上传后提示 ---------- */
   .hintbox{
-    background:linear-gradient(180deg,#F1F8F3,#E8F3EC);
+    background:linear-gradient(180deg,#F3F6F9,#E9EEF3);
     padding:14px 16px;border-radius:var(--r);box-shadow:var(--sh1);
   }
   .hintbox .hb-tt{display:flex;align-items:center;gap:7px;font-size:15px;font-weight:700;color:var(--ok);
@@ -237,7 +239,7 @@
     flex:0 0 auto;width:26px;height:26px;border-radius:9px;background:var(--grad);color:#fff;
     display:flex;align-items:center;justify-content:center;font-size:13.5px;font-weight:700;
     letter-spacing:-.02em;
-    box-shadow:0 2px 8px rgba(84,112,92,.24), inset 0 1px 0 rgba(255,255,255,.28);
+    box-shadow:0 2px 8px rgba(58,74,92,.24), inset 0 1px 0 rgba(255,255,255,.28);
   }
   .stephead .st{font-size:16px;font-weight:700;letter-spacing:-.022em}
   .stephead .sd{color:var(--ink3);font-size:12.5px;font-weight:400;margin-top:0;margin-left:2px}
@@ -264,7 +266,7 @@
   .tick{
     position:absolute;top:-8px;right:-8px;width:24px;height:24px;border-radius:50%;background:var(--ok);
     color:#fff;font-size:12px;line-height:24px;text-align:center;width:24px;
-    box-shadow:0 2px 8px rgba(46,125,91,.42)
+    box-shadow:0 2px 8px rgba(47,107,99,.42)
   }
   .statusline{font-size:13.5px;margin-top:12px;color:var(--ok);font-weight:600;
     display:flex;align-items:center;gap:6px;letter-spacing:-.01em}
@@ -355,9 +357,9 @@
   .seg button:active{transform:scale(.96);background:var(--fill)}
   .seg button.on{transform:scale(1.015)}
   .seg button.on[data-v="self_right"]{background:var(--ok-soft);color:var(--ok);
-    box-shadow:inset 0 0 0 2px var(--ok), 0 4px 14px rgba(46,125,91,.16)}
+    box-shadow:inset 0 0 0 2px var(--ok), 0 4px 14px rgba(47,107,99,.16)}
   .seg button.on[data-v="half"]{background:var(--warn-soft);color:var(--warn);
-    box-shadow:inset 0 0 0 2px var(--warn), 0 4px 14px rgba(176,124,34,.16)}
+    box-shadow:inset 0 0 0 2px var(--warn), 0 4px 14px rgba(143,100,20,.16)}
   .seg button.on[data-v="self_wrong"]{background:var(--err-soft);color:var(--err);
     box-shadow:inset 0 0 0 2px var(--err), 0 4px 14px rgba(192,57,43,.16)}
   .fb{font-size:13.5px;margin-top:11px;color:var(--ok);font-weight:600;display:flex;align-items:center;gap:6px;
@@ -390,7 +392,7 @@
 
   /* ---------- 结果 ---------- */
   .score{
-    text-align:center;background:linear-gradient(160deg,#FFFFFF,#F3F7F4);border:0;
+    text-align:center;background:linear-gradient(160deg,#FFFFFF,#F5F7F9);border:0;
     border-radius:var(--r);padding:26px 20px;margin-bottom:16px;box-shadow:var(--sh1)
   }
   .score .big{font-size:44px;font-weight:750;color:var(--brand3);line-height:1.05;
@@ -430,7 +432,7 @@
   .bottombar .pbar i{display:block;height:100%;width:0;border-radius:999px;background:var(--grad);
     transition:width .42s var(--spring-soft)}
   .bottombar button{flex:1;margin:0;height:52px;font-size:17px;border-radius:15px;
-    box-shadow:0 2px 10px rgba(84,112,92,.22)}
+    box-shadow:0 2px 10px rgba(58,74,92,.22)}
 
   /* ---------- Sheet 弹窗（iOS 底部抽屉：弹簧入场 + 可下拉关闭） ---------- */
   .mask{
@@ -490,7 +492,7 @@
     letter-spacing:-.01em}
   .perf-segbtn.on{background:var(--card);color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.12)}
   .perf-hero{position:relative;border-radius:var(--r-sm);padding:15px 17px;margin:8px 0 16px;
-    background:linear-gradient(150deg,#F1F8F3,#E7EFE9);border:0}
+    background:linear-gradient(150deg,#F2F5F8,#EAEEF3);border:0}
   .perf-hero .lead{font-size:16.5px;font-weight:700;color:var(--brand3);line-height:1.4;letter-spacing:-.02em}
   .perf-hero .sub{margin-top:5px;font-size:13.5px;color:var(--ink2);font-weight:600;letter-spacing:-.01em}
   .perf-stats{display:grid;grid-template-columns:repeat(2,1fr);gap:11px;margin:6px 0 16px}
@@ -512,7 +514,7 @@
   .perf-col-fill{width:74%;max-width:24px;border-radius:7px 7px 4px 4px;background:var(--brand2);
     transition:height .42s var(--spring-soft)}
   .perf-col-fill.c-hi{background:linear-gradient(180deg,var(--brand) 0%,var(--brand3) 100%)}
-  .perf-col-fill.c-mid{background:linear-gradient(180deg,#A6C6AD 0%,var(--brand) 100%)}
+  .perf-col-fill.c-mid{background:linear-gradient(180deg,#96A6B8 0%,var(--brand) 100%)}
   .perf-col-fill.c-lo{background:linear-gradient(180deg,#E6C57A 0%,var(--warn) 100%)}
   .perf-col-fill.c-zero{background:var(--fill2)}
   .perf-col-d{font-size:10.5px;color:var(--ink3);margin-top:7px;line-height:1}
@@ -714,7 +716,7 @@
         <div class="perf-bar"><i id="g-bar" style="width:0%"></i></div>
       </div>
       <div class="perf-chart" id="perf-chart"></div>
-      <div class="perf-clabel">柱高 = 当日练习题数 · 颜色 = 正确率（<b style="color:var(--brand3)">绿高</b> / <b style="color:var(--warn)">黄低</b>）· 顶部为当日正确率</div>
+      <div class="perf-clabel">柱高 = 当日练习题数 · 颜色 = 正确率（<b style="color:var(--brand3)">深色高</b> / <b style="color:var(--warn)">浅色低</b>）· 顶部为当日正确率</div>
     </div>
   </div>
 </div>
