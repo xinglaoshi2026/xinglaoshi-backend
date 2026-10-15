@@ -1950,11 +1950,13 @@ async function loadErrors(){
     const files = (e.files&&e.files.length)?(' <span class="pill m">'+e.files.length+'附件</span>'):'';
     const ai = (e.answerImages&&e.answerImages.length) ? (zoomReg.push(e.answerImages.map(u=>murl(u)))-1) : -1;
     const ans = ai>=0?` <button class="pillbtn" onclick="zoomList(${ai},0)"><svg class="ic"><use href="#i-photo-stack"/></svg>答案图 <b>${e.answerImages.length}</b> 张</button>`:'';
+    const noAns = !((e.answer||'').trim() || (e.analysis||'').trim() || (e.answerImages&&e.answerImages.length));
+    const noAnsTag = noAns?` <span class="pill warn" title="这道题没有答案/解析，学生做完看不到答案；建议补上答案或从今日任务移除">缺答案</span>`:'';
     const n = counts[e.id]||0;
     box.insertAdjacentHTML('beforeend',`<div class="err-row">
       ${img?('<div class="er-thumb">'+img+'</div>'):''}
       <div class="er-main">
-        <div class="er-line1">${e.knowledgePoint?('<b>'+esc(e.knowledgePoint)+'</b>'):'<b>错题</b>'}${e.errorReason?('<span class="pill">'+esc(e.errorReason)+'</span>'):''}${e.source?('<span class="pill m">'+esc(e.source)+'</span>'):''}${files}${ans}</div>
+        <div class="er-line1">${e.knowledgePoint?('<b>'+esc(e.knowledgePoint)+'</b>'):'<b>错题</b>'}${e.errorReason?('<span class="pill">'+esc(e.errorReason)+'</span>'):''}${e.source?('<span class="pill m">'+esc(e.source)+'</span>'):''}${files}${ans}${noAnsTag}</div>
         <div class="er-line2">${esc(e.studentName||e.studentId)} · ${esc(e.wrongDate||'')}</div>
         <div class="er-stem">${esc(e.stem||'（图片题）')}</div>
       </div>
