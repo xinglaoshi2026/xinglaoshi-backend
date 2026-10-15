@@ -501,7 +501,7 @@
         <div class="pv" id="shared-pv"></div>
         <input id="shared-ph" type="file" accept="image/*" multiple class="hidden" onchange="addSharedPhotos(this)">
         <button class="btn3 sm" onclick="document.getElementById('shared-ph').click()"><svg class="ic"><use href="#i-camera"/></svg>拍照 / 选照片</button>
-        <button class="btn3 sm" id="upBtn" style="display:none" onclick="revealAll()"><svg class="ic"><use href="#i-camera"/></svg>上传照片</button>
+        <button class="btn3 sm" id="upBtn" style="display:none" onclick="revealAll()"><svg class="ic"><use href="#i-eye"/></svg>上传照片并查看答案</button>
       </div>
       <div id="rvHint" class="statusline"></div>
     </div>
@@ -888,14 +888,18 @@ async function loadToday(){
       const imgs = (e.images&&e.images.length)?e.images:(e.image?[e.image]:[]);
       const imgHtml = imgs.map(u=>`<img class="qi" src="${murl(u)}" onclick="zoomImg('${murl(u)}')">`).join('');
       const ansImgs=(e.answerImages&&e.answerImages.length)?e.answerImages.map(u=>`<img class="qi" src="${murl(u)}" onclick="zoomImg('${murl(u)}')">`).join(''):'';
+      const hasAnyAns = !!(e.answer || (e.analysis||'').trim() || ansImgs);
+      const ansInner = hasAnyAns ? `
+          ${e.answer?('<div class="txt">'+e.answer+'</div>'):''}
+          <div class="ana">${e.analysis||'（无文字解析）'}</div>
+          ${ansImgs?('<div class="tbs">'+ansImgs+'</div>'):''}` : `
+          <div class="fb pending" style="margin-top:6px"><svg class="ic"><use href="#i-alert"/></svg>这道题暂时没有答案/解析（老师录入时未附答案）。</div>`;
       return `<div class="q" id="q_${idx}" data-idx="${idx}" data-eid="${e.id}">
         <div class="qhead"><div class="qno">第${idx+1}题</div>${e.knowledgePoint?('<span class="kchip">'+escHtml(e.knowledgePoint)+'</span>'):''}<span class="pill ok">已完成</span></div>
         ${stemHtml(e.stem,imgs.length)}${imgHtml}
         <div class="ansbox">
           <div class="lb"><svg class="ic"><use href="#i-bulb"/></svg>答案与解析</div>
-          ${e.answer?('<div class="txt">'+e.answer+'</div>'):''}
-          <div class="ana">${e.analysis||'（无文字解析）'}</div>
-          ${ansImgs?('<div class="tbs">'+ansImgs+'</div>'):''}
+          ${ansInner}
         </div>
       </div>`;
     }).join('');
@@ -971,7 +975,7 @@ function renderShared(){
   if(upBtn){
     const hasAny = SHARED.photos.length || SHARED.urls.length;
     upBtn.style.display = hasAny ? '' : 'none';
-    const lb = SHARED.photos.length ? '上传照片' : '继续上传';
+    const lb = SHARED.photos.length ? '上传照片并查看答案' : '继续上传';
     if(upBtn.dataset.lb !== lb){
       upBtn.dataset.lb = lb;
       upBtn.innerHTML = '<svg class="ic"><use href="#i-eye"/></svg>' + lb;
@@ -989,19 +993,43 @@ function delSharedPhoto(i){
   if(SHARED.urls.length){ alert('已提交的过程照片不能删除'); return; }
   SHARED.photos.splice(i,1); renderShared();
 }
+/* 单张照片上传：带超时（默认 45 秒），失败抛错以便上层计数/保留重试 */
+function _uploadOne(f, timeoutMs){
+  timeoutMs = timeoutMs || 45000;
+  const uniq = Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+  const ctl = (typeof AbortController!=='undefined') ? new AbortController() : null;
+  const timer = ctl ? setTimeout(()=>{ try{ ctl.abort(); }catch(e){} }, timeoutMs) : null;
+  return fetch(API+'/api/train/media?sub=drafts&name='+encodeURIComponent(uniq+'_'+(f.name||'photo.jpg')),
+      {method:'POST',headers:{'Authorization':'Bearer '+TOKEN},body:f,signal:ctl?ctl.signal:undefined})
+    .then(fr=>fr.json().then(fj=>({ok:fr.ok&&fj&&fj.ok, url:(fj&&fj.url)||'', err:(fj&&fj.error)||('HTTP '+fr.status)})))
+    .finally(()=>{ if(timer) clearTimeout(timer); });
+}
+/* 上传全部待传照片：并发（最多 3 张同时传，弱网下比一张张串行快很多），
+   成功的收进 SHARED.urls，失败的留在 SHARED.photos 供重试。返回 (成功数, 失败数)。 */
 async function uploadShared(){
-  for(const f of SHARED.photos){
-    const uniq = Date.now().toString(36) + Math.random().toString(36).slice(2,7);
-    try{
-      const fr = await fetch(API+'/api/train/media?sub=drafts&name='+encodeURIComponent(uniq+'_'+(f.name||'photo.jpg')),
-        {method:'POST',headers:{'Authorization':'Bearer '+TOKEN},body:f});
-      const fj = await fr.json();
-      if(fj.ok) SHARED.urls.push(fj.url.replace(API,''));
-    }catch(e){}
+  const pending = SHARED.photos.slice();
+  if(!pending.length) return {ok:0, fail:0};
+  const results = [];
+  const CONC = 3;
+  for(let i=0;i<pending.length;i+=CONC){
+    const chunk = pending.slice(i, i+CONC);
+    const rs = await Promise.all(chunk.map(f=>_uploadOne(f).catch(e=>({ok:false,url:'',err:'网络异常'}))));
+    results.push(...rs);
   }
-  SHARED.photos = [];
+  const failed = [];
+  let okn = 0;
+  results.forEach((r,idx)=>{
+    if(r.ok && r.url){ SHARED.urls.push(r.url.replace(API,'')); okn++; }
+    else failed.push(pending[idx]);
+  });
+  SHARED.photos = failed;          // 只保留失败的，供学生重试（不再无条件清空）
   renderShared();
-  persistDrafts();   // 记到本地，退出再进来还能接着用（未提交前）
+  persistDrafts();                 // 记到本地，退出再进来还能接着用（未提交前）
+  if(failed.length){
+    const hint=document.getElementById('rvHint');
+    if(hint){ hint.textContent='有 '+failed.length+' 张照片没传上去（可能网络不稳），请点「上传照片」重试'; hint.className='statusline warn'; }
+  }
+  return {ok:okn, fail:failed.length};
 }
 // 每题状态: revealed(答案是否已展开) result note
 let ST={};
@@ -1017,33 +1045,53 @@ async function revealAll(){
     return;
   }
   if(upBtn) upBtn.disabled=true;
-  if(hint){ hint.textContent='等待上传成功自动显示答案…'; hint.className='statusline'; }
-  try{ await uploadShared(); }catch(e){}
+  if(hint){ hint.textContent='正在上传照片，请稍候…'; hint.className='statusline'; }
+  let up={ok:0,fail:0};
+  try{ up = await uploadShared(); }catch(e){}
   if(upBtn) upBtn.disabled=false;
   if(!SHARED.urls.length){
-    if(hint){ hint.textContent='上传失败，请重试'; hint.className='statusline warn'; }
+    if(hint){ hint.textContent='照片上传失败，请检查网络后点「上传照片」重试'; hint.className='statusline warn'; }
     return;
   }
   for(const q of qs){
     await revealOne(q.dataset.idx);
   }
-  if(hint){ hint.textContent='答案已显示，请完成下面每道题的第 3、4 步'; hint.className='statusline'; }
+  const stillFail = SHARED.photos.length;
+  if(stillFail){
+    if(hint){ hint.textContent='部分照片没传上（'+stillFail+' 张），可点「上传照片」重试；已上传的照片对应答案已显示'; hint.className='statusline warn'; }
+  }else{
+    if(hint){ hint.textContent='答案已显示，请完成下面每道题的第 3、4 步'; hint.className='statusline'; }
+  }
 }
 async function revealOne(idx){
   const st=ST[idx]=ST[idx]||{revealed:false,result:'',note:''};
   if(st.revealed) return;
   const eid=document.getElementById('q_'+idx).dataset.eid;
-  const {status,j}=await call('/api/train/errors/'+eid+'/reveal');
+  const rvBox=document.getElementById('rv_'+idx);
+  const err=(msg)=>{ if(rvBox){ rvBox.classList.remove('hidden'); rvBox.innerHTML='<div class="fb pending" style="margin-top:8px"><svg class="ic"><use href="#i-alert"/></svg>'+msg+'</div>'; } };
+  let status,j;
+  try{ ({status,j}=await call('/api/train/errors/'+eid+'/reveal')); }
+  catch(e){ err('答案加载失败（网络不稳），请点上方「上传照片」重试'); return; }
   if(status===401){ logout(); return; }
-  if(!j||j.error) return;
+  if(status===403){
+    // 服务端守卫：未上传作答照片 / 该题未排进今日练习
+    err((j&&j.error)||'暂时无法显示这道题的答案（请确认已上传作答照片）');
+    return;
+  }
+  if(status!==200 || !j || j.error){ err((j&&j.error)||'答案加载失败，请点上方「上传照片」重试'); return; }
   st.revealed=true;
   const ansImgs=(j.answerImages&&j.answerImages.length)?j.answerImages.map(u=>`<img class="qi" src="${murl(u)}" onclick="zoomImg('${murl(u)}')">`).join(''):'';
+  const hasAnyAns = !!(j.answer || (j.analysis||'').trim() || ansImgs);
+  const ansBlock = hasAnyAns ? `
+      ${j.answer?('<div class="txt">'+j.answer+'</div>'):''}
+      <div class="ana">${j.analysis||'（无文字解析）'}</div>
+      ${ansImgs?('<div class="tbs">'+ansImgs+'</div>'):''}` : `
+      <div class="fb pending" style="margin-top:6px"><svg class="ic"><use href="#i-alert"/></svg>
+        这道题暂时没有答案/解析（老师录入时未附答案）。请先凭自己的判断作答，答案缺失不影响你提交练习。</div>`;
   document.getElementById('rv_'+idx).innerHTML=`
     <div class="ansbox">
       <div class="lb"><svg class="ic"><use href="#i-bulb"/></svg>答案与解析</div>
-      ${j.answer?('<div class="txt">'+j.answer+'</div>'):''}
-      <div class="ana">${j.analysis||'（无文字解析）'}</div>
-      ${ansImgs?('<div class="tbs">'+ansImgs+'</div>'):''}
+      ${ansBlock}
     </div>
     <div class="step3">
       <div class="stephead"><div class="stepno">3</div><div class="st">对照答案，给自己打分</div></div>
@@ -1396,10 +1444,17 @@ async function submit(){
   if(!qs.length) return;
   const btn=document.getElementById('submitBtn');
   const fail = m => { btn.disabled=false; btn.textContent='提交今日练习'; alert(m); };
-  if(!SHARED.photos.length && !SHARED.urls.length){ alert('请先在第1步「拍照 / 选照片」，选好后点「上传并查看答案」'); return; }
-  btn.disabled=true; btn.textContent='上传中…';
-  try{ await uploadShared(); }
-  catch(e){ btn.disabled=false; btn.textContent='提交今日练习'; alert('答案照片上传失败，请重试'); return; }
+  if(!SHARED.photos.length && !SHARED.urls.length){ alert('请先在第1步「拍照 / 选照片」，选好后点「上传照片」'); return; }
+  if(SHARED.photos.length){
+    btn.disabled=true; btn.textContent='上传中…';
+    try{ await uploadShared(); }
+    catch(e){ btn.disabled=false; btn.textContent='提交今日练习'; alert('答案照片上传失败，请检查网络后重试'); return; }
+    if(SHARED.photos.length){
+      btn.disabled=false; btn.textContent='提交今日练习';
+      alert('还有 '+SHARED.photos.length+' 张照片没传上去，请点上方「上传照片」重试后再提交');
+      return;
+    }
+  }
   const shared = SHARED.urls.slice();   // 一张纸写多题：这些图每题都会带上
   if(!shared.length){ fail('答案照片还没上传成功，请重新上传'); return; }
   const answers=[];
@@ -1409,7 +1464,7 @@ async function submit(){
     const st=ST[idx]||{revealed:false,result:'',note:''};
     // 今天已经交过的题（中途退出后再进来）：不用重填，直接跳过（服务端不会重复记分）
     if(q.dataset.answered==='1' && !st.result){ answers.push({errorId:eid}); continue; }
-    if(!st.revealed){ fail('第'+n+'题的答案还没显示，请先点「上传并查看答案」'); return; }
+    if(!st.revealed){ fail('第'+n+'题的答案还没显示，请先点上方「上传照片并查看答案」'); return; }
     if(!st.result){ fail('第'+n+'题还没自评对错，请完成第3步'); return; }
     const needNote = (st.result==='half' || st.result==='self_wrong');
     if(needNote && !(st.note||'').trim()){ fail('第'+n+'题（'+(st.result==='half'?'半对':'做错')+'）还没写错误原因，请完成第4步'); return; }

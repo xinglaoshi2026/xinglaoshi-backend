@@ -904,6 +904,14 @@ def _student_uploaded_today(student_id, date_str=None):
     hit = _UPLOADED_CACHE.get(key)
     if hit and now - hit[0] < 60:
         return True
+    # ① 首选：上传接口写入的数据库标记（与对象存储 List 权限无关，最可靠）
+    try:
+        rec, _ = store_get("trainUploads", "up_%s_%s" % (student_id, date_str))
+        if rec:
+            _UPLOADED_CACHE[key] = (now, True)
+            return True
+    except Exception:
+        pass
     ok = False
     rel = "train/%s/drafts/%s" % (student_id, date_str)
     try:
@@ -2295,6 +2303,16 @@ class H(BaseHTTPRequestHandler):
             ok, url, code = _put_media(rel, raw, name)
             if not ok:
                 return send_json(self, {"error": url}, code)
+            # 记录「该生今天已上传作答照片」到数据库（不依赖对象存储的 List 权限，
+            # 因为线上用腾讯云 COS 子账号密钥常常没有 ListBucket 权限，
+            # 过去 /reveal 靠 list_objects_v2 判断会导致「明明传了却提示请先上传」）。
+            if sub == "drafts":
+                try:
+                    store_put("trainUploads", "up_%s_%s" % (sid, d),
+                              {"studentId": sid, "date": d, "count": 1, "updatedAt": now_ms()})
+                    _UPLOADED_CACHE[(sid, d)] = (time.time(), True)
+                except Exception as _e:
+                    print("record trainUploads failed:", _e)
             return send_json(self, {"ok": True, "url": url})
         if p == "/api/train/student/account":
             # 老师(管理员)给学生设置/修改账号密码
