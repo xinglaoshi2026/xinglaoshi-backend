@@ -616,12 +616,25 @@ let TOKEN = localStorage.getItem('tt_token') || '';
 let ME = '';
 let SID = '';
 
-async function call(p, opts={}){
+/* 统一请求：带超时、永不抛错（网络异常返回 status:-1）。
+   学生端在 4G/弱网下很常见，任何未捕获的 fetch 异常都会让按钮卡死或页面白屏，
+   所以这里保证调用方永远拿到一个 {status,j} 对象。 */
+async function call(p, opts={}, timeoutMs){
+  timeoutMs = timeoutMs || 20000;
   opts.headers = Object.assign({'Content-Type':'application/json'}, opts.headers||{});
   if(TOKEN) opts.headers['Authorization'] = 'Bearer ' + TOKEN;
-  const r = await fetch(API+p, opts);
-  let j=null; try{j=await r.json()}catch(e){}
-  return {status:r.status, j};
+  const ctl = (typeof AbortController!=='undefined') ? new AbortController() : null;
+  if(ctl) opts.signal = ctl.signal;
+  const timer = ctl ? setTimeout(()=>{ try{ ctl.abort(); }catch(e){} }, timeoutMs) : null;
+  try{
+    const r = await fetch(API+p, opts);
+    let j=null; try{j=await r.json()}catch(e){}
+    return {status:r.status, j, net:false};
+  }catch(e){
+    return {status:-1, j:null, net:true};   // 网络异常 / 超时 / 主动中断
+  }finally{
+    if(timer) clearTimeout(timer);
+  }
 }
 
 // 图片签名：图片接口需要限时票据，登录后领一张拼到 <img src> 上（24 小时有效）
@@ -633,10 +646,38 @@ async function loadMediaTicket(){
   }catch(e){ MT=''; }
 }
 // 服务端给的媒体路径(/api/media/xxx) → 带签名的完整地址
+// 注意：票据(MT)为空时绝不能拼出「url?」这种空参（会 401），此时直接触发一次补领票据。
 function murl(u){
   u = (u==null ? '' : String(u));
   if(!u || /^https?:/i.test(u)) return u;
-  return API + u + (u.indexOf('?')>=0 ? '&' : '?') + MT;
+  const sep = u.indexOf('?')>=0 ? '&' : '?';
+  return API + u + (MT ? (sep + MT) : '');
+}
+// 图片加载失败（多为票据缺失/过期或网络抖动）：补领一次票据并给用户一个可点击的刷新提示，
+// 避免"题目图片一片空白、学生不知道怎么救"。
+let _ticketRetryAt = 0;
+function imgErr(el){
+  try{
+    const now = Date.now();
+    if(now - _ticketRetryAt > 8000){ _ticketRetryAt = now; loadMediaTicket(); }
+  }catch(e){}
+  const box = el && el.parentElement;
+  if(box && !box.querySelector('.imgfail')){
+    const d = document.createElement('div');
+    d.className='imgfail';
+    d.style.cssText='font-size:12.5px;color:var(--warn);margin-top:6px';
+    d.innerHTML='图片没能加载（网络或票据过期）。<b style="cursor:pointer;text-decoration:underline" onclick="refreshImages()">点这里刷新</b>';
+    box.appendChild(d);
+  }
+}
+function refreshImages(){
+  loadMediaTicket().then(()=>{
+    document.querySelectorAll('img.qi, .qbody img, .tw img').forEach(im=>{
+      const src = im.getAttribute('src');
+      if(src && src.indexOf('/api/media/')>=0){ im.setAttribute('src', src.split('?')[0] + (MT?('?'+MT):'')); }
+    });
+    document.querySelectorAll('.imgfail').forEach(x=>x.remove());
+  });
 }
 document.addEventListener('visibilitychange', function(){ if(!document.hidden) loadMediaTicket(); });
 
@@ -715,9 +756,14 @@ async function doLogin(){
   const pw=document.getElementById('password').value;
   document.getElementById('lmsg').textContent='';
   if(!u||!pw){ document.getElementById('lmsg').textContent='请输入账号和密码'; return; }
-  const {status,j}=await call('/api/auth/login',{method:'POST',body:JSON.stringify({username:u,password:pw})});
+  const btn = document.querySelector('#login button');
+  if(btn){ btn.disabled=true; }
+  const {status,j,net}=await call('/api/auth/login',{method:'POST',body:JSON.stringify({username:u,password:pw})});
+  if(btn){ btn.disabled=false; }
+  if(net){ document.getElementById('lmsg').textContent='网络连接失败，请检查网络后重试'; return; }
   if(status!==200||!j||!j.token){ document.getElementById('lmsg').textContent=(j&&j.error)||'登录失败'; return; }
   TOKEN=j.token; ME=(j.user&&j.user.username)||u; SID=(j.user&&j.user.studentId)||'';
+  if(!SID){ document.getElementById('lmsg').textContent='这个账号不是学生账号，请用老师发的学生账号登录'; return; }
   localStorage.setItem('tt_token', TOKEN);
   show(true);
   setMe(null);
@@ -819,8 +865,19 @@ function animateIn(){
   });
 }
 async function loadToday(){
-  const {status,j}=await call('/api/train/today');
+  const {status,j,net}=await call('/api/train/today');
   if(status===401){ logout(); return; }
+  if(net || !j){                       // 网络异常/超时：不要白屏，给出可重试提示
+    const head=document.getElementById('head');
+    if(head && !head.querySelector('.tb-meta')){
+      head.className='card';
+      head.innerHTML='<div class="empty"><div class="eic"><svg class="ic"><use href="#i-alert"/></svg></div>'
+        +'<div style="font-size:16px;font-weight:700">网络不太好，没能加载今天的练习</div>'
+        +'<div class="hint" style="margin-top:6px">请检查网络后点下面按钮重试</div>'
+        +'<button class="btn2" style="margin-top:12px" onclick="loadToday()">重新加载</button></div>';
+    }
+    return;
+  }
   renderReview(j && j.review);
   const task=j.task;
   const head=document.getElementById('head');
@@ -886,8 +943,8 @@ async function loadToday(){
     // 每题：题目 + 答案与解析（提交后自动展示，无需再点）
     const ansBlocks = j.items.map((e,idx)=>{
       const imgs = (e.images&&e.images.length)?e.images:(e.image?[e.image]:[]);
-      const imgHtml = imgs.map(u=>`<img class="qi" src="${murl(u)}" onclick="zoomImg('${murl(u)}')">`).join('');
-      const ansImgs=(e.answerImages&&e.answerImages.length)?e.answerImages.map(u=>`<img class="qi" src="${murl(u)}" onclick="zoomImg('${murl(u)}')">`).join(''):'';
+      const imgHtml = imgs.map(u=>`<img class="qi" src="${murl(u)}" onclick="zoomImg('${murl(u)}')" onerror="imgErr(this)">`).join('');
+      const ansImgs=(e.answerImages&&e.answerImages.length)?e.answerImages.map(u=>`<img class="qi" src="${murl(u)}" onclick="zoomImg('${murl(u)}')" onerror="imgErr(this)">`).join(''):'';
       const hasAnyAns = !!(e.answer || (e.analysis||'').trim() || ansImgs);
       const ansInner = hasAnyAns ? `
           ${e.answer?('<div class="txt">'+e.answer+'</div>'):''}
@@ -923,7 +980,7 @@ async function loadToday(){
   box.innerHTML=''; ST={};
   j.items.forEach((e,idx)=>{
     const imgs = (e.images&&e.images.length)?e.images:(e.image?[e.image]:[]);
-    const imgHtml = imgs.map(u=>`<img class="qi" src="${murl(u)}" onclick="zoomImg('${murl(u)}')">`).join('');
+    const imgHtml = imgs.map(u=>`<img class="qi" src="${murl(u)}" onclick="zoomImg('${murl(u)}')" onerror="imgErr(this)">`).join('');
     const files = (e.files&&e.files.length)? e.files.map(f=>{
       const fu = (typeof f==='string')?f:(f.url||''); const fn=(typeof f==='string')?'附件':(f.name||'附件');
       return `<a class="filetag" href="${murl(fu)}" target="_blank" rel="noopener">附件 · ${fn}</a>`;
@@ -960,16 +1017,36 @@ function addSharedPhotos(inp){
   // 只做本地预览，不自动上传；确认没拍糊后再点「上传并查看答案」
   const hint=document.getElementById('rvHint');
   if(hint && n){
-    hint.textContent='已选 '+SHARED.photos.length+' 张，确认没拍糊后点「上传照片」（上传成功后答案自动显示）';
-    hint.className='statusline warn';
+    const total = SHARED.photos.length + SHARED.urls.length;
+    if(total > 12){
+      hint.textContent='现在共 '+total+' 张，照片较多上传会慢一些；建议一张纸拍全，多余的可点 × 删掉';
+      hint.className='statusline warn';
+    }else{
+      hint.textContent='已选 '+total+' 张，确认没拍糊后点「上传照片并查看答案」（上传成功后答案自动显示）';
+      hint.className='statusline warn';
+    }
   }
+}
+// 本地预览用的 objectURL 缓存：同一个 File 只建一次，避免反复渲染时泄漏内存
+let _pvCache = (typeof WeakMap!=='undefined') ? new WeakMap() : null;
+function _pvUrl(f){
+  try{
+    if(_pvCache){
+      const hit = _pvCache.get(f);
+      if(hit) return hit;
+      const u = URL.createObjectURL(f);
+      _pvCache.set(f, u);
+      return u;
+    }
+  }catch(e){}
+  try{ return URL.createObjectURL(f); }catch(e){ return ''; }
 }
 function renderShared(){
   document.getElementById('shared-pv').innerHTML =
     SHARED.urls.map(u=>`<span class="tw"><img src="${murl(u)}" onclick="zoomImg('${murl(u)}')">`
       + `<span class="tick" style="display:flex;align-items:center;justify-content:center"><svg class="ic" style="width:12px;height:12px"><use href="#i-check"/></svg></span></span>`).join('')
     + SHARED.photos.map((f,i)=>
-      `<span class="tw"><img src="${URL.createObjectURL(f)}"><button class="x" onclick="delSharedPhoto(${i})">×</button></span>`).join('');
+      `<span class="tw"><img src="${_pvUrl(f)}"><button class="x" onclick="delSharedPhoto(${i})">×</button></span>`).join('');
   // 有待上传的照片 → 显示按钮；已上传但未提交（重进页面恢复）→ 显示「继续查看答案」
   const upBtn=document.getElementById('upBtn');
   if(upBtn){
@@ -990,18 +1067,33 @@ function renderShared(){
   }
 }
 function delSharedPhoto(i){
-  if(SHARED.urls.length){ alert('已提交的过程照片不能删除'); return; }
+  if(SHARED.urls.length){ alert('照片已经上传到服务器了，不能单独删除；如需重拍，请把全部照片删掉后重新上传。'); return; }
   SHARED.photos.splice(i,1); renderShared();
 }
-/* 单张照片上传：带超时（默认 45 秒），失败抛错以便上层计数/保留重试 */
+/* 单张照片上传：带超时（默认 45 秒），失败抛错以便上层计数/保留重试。
+   返回 {ok,url,err,status}；401（登录过期）单独标记，便于上层引导重新登录。 */
 function _uploadOne(f, timeoutMs){
   timeoutMs = timeoutMs || 45000;
   const uniq = Date.now().toString(36) + Math.random().toString(36).slice(2,7);
   const ctl = (typeof AbortController!=='undefined') ? new AbortController() : null;
   const timer = ctl ? setTimeout(()=>{ try{ ctl.abort(); }catch(e){} }, timeoutMs) : null;
-  return fetch(API+'/api/train/media?sub=drafts&name='+encodeURIComponent(uniq+'_'+(f.name||'photo.jpg')),
+  const name = (f && f.name) || 'photo.jpg';
+  return fetch(API+'/api/train/media?sub=drafts&name='+encodeURIComponent(uniq+'_'+name),
       {method:'POST',headers:{'Authorization':'Bearer '+TOKEN},body:f,signal:ctl?ctl.signal:undefined})
-    .then(fr=>fr.json().then(fj=>({ok:fr.ok&&fj&&fj.ok, url:(fj&&fj.url)||'', err:(fj&&fj.error)||('HTTP '+fr.status)})))
+    .then(fr=>{
+      const st = fr.status;
+      // 响应体可能不是 JSON（网关 502/超时页），json() 会抛错 → 兜底成空对象
+      return fr.json().catch(()=>({})).then(fj=>({
+        ok: !!(fr.ok && fj && fj.ok),
+        url: (fj && fj.url) || '',
+        status: st,
+        err: (fj && fj.error) || ('HTTP '+st)
+      }));
+    }, e=>{
+      // 网络错误 / 主动中断
+      const aborted = e && (e.name==='AbortError');
+      throw aborted ? new Error('上传超时') : e;
+    })
     .finally(()=>{ if(timer) clearTimeout(timer); });
 }
 /* 上传全部待传照片：并发（最多 3 张同时传，弱网下比一张张串行快很多），
@@ -1018,8 +1110,10 @@ async function uploadShared(){
   }
   const failed = [];
   let okn = 0;
+  let got401 = false;
   results.forEach((r,idx)=>{
-    if(r.ok && r.url){ SHARED.urls.push(r.url.replace(API,'')); okn++; }
+    if(r && r.status===401) got401 = true;
+    if(r.ok && r.url){ SHARED.urls.push(String(r.url).replace(API,'')); okn++; }
     else failed.push(pending[idx]);
   });
   SHARED.photos = failed;          // 只保留失败的，供学生重试（不再无条件清空）
@@ -1027,9 +1121,14 @@ async function uploadShared(){
   persistDrafts();                 // 记到本地，退出再进来还能接着用（未提交前）
   if(failed.length){
     const hint=document.getElementById('rvHint');
-    if(hint){ hint.textContent='有 '+failed.length+' 张照片没传上去（可能网络不稳），请点「上传照片」重试'; hint.className='statusline warn'; }
+    if(hint){
+      hint.textContent = got401
+        ? '登录已过期，照片没能上传，请退出后重新登录再试'
+        : ('有 '+failed.length+' 张照片没传上去（可能网络不稳），请点上面按钮重试');
+      hint.className='statusline warn';
+    }
   }
-  return {ok:okn, fail:failed.length};
+  return {ok:okn, fail:failed.length, unauth:got401};
 }
 // 每题状态: revealed(答案是否已展开) result note
 let ST={};
@@ -1080,7 +1179,7 @@ async function revealOne(idx){
   }
   if(status!==200 || !j || j.error){ err((j&&j.error)||'答案加载失败，请点上方「上传照片」重试'); return; }
   st.revealed=true;
-  const ansImgs=(j.answerImages&&j.answerImages.length)?j.answerImages.map(u=>`<img class="qi" src="${murl(u)}" onclick="zoomImg('${murl(u)}')">`).join(''):'';
+  const ansImgs=(j.answerImages&&j.answerImages.length)?j.answerImages.map(u=>`<img class="qi" src="${murl(u)}" onclick="zoomImg('${murl(u)}')" onerror="imgErr(this)">`).join(''):'';
   const hasAnyAns = !!(j.answer || (j.analysis||'').trim() || ansImgs);
   const ansBlock = hasAnyAns ? `
       ${j.answer?('<div class="txt">'+j.answer+'</div>'):''}
@@ -1257,22 +1356,42 @@ async function loadHomePapers(){
     card.classList.remove('hidden');
   }catch(e){ card.classList.add('hidden'); }
 }
-/* 下载「老师发来的卷子」为 Word：mode 省略=只含题目(downloadPaper)，mode='all'=含答案 */
-async function downloadPaper(pid, mode){
+/* 统一的文件下载：带 60 秒超时、401 引导重新登录、失败有明确提示。
+   原来三个下载函数各写一份裸 fetch（无超时、token 过期时只弹"下载失败"），
+   弱网/过期状态下学生只会看到一句无用的报错，这里统一收敛。 */
+async function _downloadDocx(url, defaultName){
+  const ctl = (typeof AbortController!=='undefined') ? new AbortController() : null;
+  const timer = ctl ? setTimeout(()=>{ try{ ctl.abort(); }catch(e){} }, 60000) : null;
   try{
-    const url = API + '/api/train/student/'+encodeURIComponent(SID)+'/papers/'+encodeURIComponent(pid)+'/docx' + (mode==='all' ? '?mode=all' : '');
-    const r = await fetch(url, {headers: TOKEN?{'Authorization':'Bearer '+TOKEN}:{}});
-    if(!r.ok){ let m='下载失败'; try{ const j=await r.json(); m=j.error||m; }catch(e){} alert(m); return; }
+    const r = await fetch(url, {headers: TOKEN?{'Authorization':'Bearer '+TOKEN}:{}, signal: ctl?ctl.signal:undefined});
+    if(r.status===401){ alert('登录已过期，请退出后重新登录再下载'); try{ logout(); }catch(e){} return; }
+    if(!r.ok){
+      let m = '下载失败（'+r.status+'）';
+      try{ const j = await r.json(); m = j.error || m; }catch(e){}
+      alert(m); return;
+    }
     const blob = await r.blob();
-    let fname = '试卷.docx';
-    const cd = r.headers.get('Content-Disposition') || '';
-    const mm = cd.match(/filename\*=UTF-8''([^;]+)/i);
-    if(mm){ try{ fname = decodeURIComponent(mm[1]); }catch(e){} }
+    let fname = defaultName;
+    try{
+      const cd = r.headers.get('Content-Disposition') || '';
+      const mm = cd.match(/filename\*=UTF-8''([^;]+)/i);
+      if(mm) fname = decodeURIComponent(mm[1]);
+    }catch(e){}
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = fname;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
-  }catch(e){ alert('下载失败，请重试'); }
+  }catch(e){
+    alert(e && e.name==='AbortError' ? '下载超时了，请检查网络后重试' : '下载失败，请检查网络后重试');
+  }finally{
+    if(timer) clearTimeout(timer);
+  }
+}
+/* 下载「老师发来的卷子」为 Word：mode 省略=只含题目(downloadPaper)，mode='all'=含答案 */
+async function downloadPaper(pid, mode){
+  if(!SID){ alert('请先登录'); return; }
+  const url = API + '/api/train/student/'+encodeURIComponent(SID)+'/papers/'+encodeURIComponent(pid)+'/docx' + (mode==='all' ? '?mode=all' : '');
+  await _downloadDocx(url, '试卷.docx');
 }
 
 /* ---------- 学生端·教师评语（每题后展示）---------- */
@@ -1323,7 +1442,24 @@ function zoomImg(url){
   const img = ZV.img;
   img.style.width=''; img.style.height=''; img.style.transform='';
   img.onload = ()=>{ ZV._autoDone=false; layoutZoom(true); };
-  img.src = url;
+  img.onerror = ()=>{
+    // 图片地址为空 / 票据过期 / 网络失败：给一句看得懂的提示，别让学生对着白框发愣
+    const hint = ZV.mask && ZV.mask.querySelector('.zm-hint');
+    if(hint){
+      hint.innerHTML = '图片没能加载。<b style="cursor:pointer;text-decoration:underline" onclick="refreshImages();closeZoom();">关闭后点此刷新</b>';
+      hint.style.color = 'var(--warn)';
+    }
+  };
+  const src = (url==null ? '' : String(url));
+  if(!src || src.replace(API,'')==='' || /\/(?:\?.*)?$/.test(src)){
+    img.removeAttribute('src');
+    const hint = ZV.mask && ZV.mask.querySelector('.zm-hint');
+    if(hint){ hint.textContent='这张图暂时打不开（可能网络不稳），请稍后再试'; hint.style.color='var(--warn)'; }
+  }else{
+    const hint = ZV.mask && ZV.mask.querySelector('.zm-hint');
+    if(hint){ hint.textContent='双指放大 · 双击缩放 · 拖动查看'; hint.style.color=''; }
+    img.src = src;
+  }
   if(img.complete && img.naturalWidth){ ZV._autoDone=false; layoutZoom(true); }
   ZV.mask.style.display='flex';
 }
@@ -1439,24 +1575,30 @@ function bindZoom(m){
   window.addEventListener('resize', ()=>{ if(ZV.mask && ZV.mask.style.display!=='none') layoutZoom(false); });
 }
 
+let _submitting = false;
 async function submit(){
+  if(_submitting) return;                       // 防止连点两次重复提交
   const qs=[...document.querySelectorAll('#items .q')];
-  if(!qs.length) return;
+  if(!qs.length){ alert('今天没有需要提交的题目'); return; }
   const btn=document.getElementById('submitBtn');
-  const fail = m => { btn.disabled=false; btn.textContent='提交今日练习'; alert(m); };
-  if(!SHARED.photos.length && !SHARED.urls.length){ alert('请先在第1步「拍照 / 选照片」，选好后点「上传照片」'); return; }
+  if(!btn) return;
+  const needPhoto = qs.some(q=>q.dataset.answered!=='1');   // 还有没交过的题才需要照片
+  const fail = m => { _submitting=false; btn.disabled=false; btn.textContent='提交今日练习'; alert(m); };
+  if(needPhoto && !SHARED.photos.length && !SHARED.urls.length){
+    alert('请先在第1步「拍照 / 选照片」，选好后点「上传照片并查看答案」'); return;
+  }
+  _submitting = true;
   if(SHARED.photos.length){
     btn.disabled=true; btn.textContent='上传中…';
     try{ await uploadShared(); }
-    catch(e){ btn.disabled=false; btn.textContent='提交今日练习'; alert('答案照片上传失败，请检查网络后重试'); return; }
+    catch(e){ fail('答案照片上传失败，请检查网络后重试'); return; }
     if(SHARED.photos.length){
-      btn.disabled=false; btn.textContent='提交今日练习';
-      alert('还有 '+SHARED.photos.length+' 张照片没传上去，请点上方「上传照片」重试后再提交');
+      fail('还有 '+SHARED.photos.length+' 张照片没传上去，请点上方「上传照片」重试后再提交');
       return;
     }
   }
   const shared = SHARED.urls.slice();   // 一张纸写多题：这些图每题都会带上
-  if(!shared.length){ fail('答案照片还没上传成功，请重新上传'); return; }
+  if(needPhoto && !shared.length){ fail('答案照片还没上传成功，请重新上传'); return; }
   const answers=[];
   for(let i=0;i<qs.length;i++){
     const q=qs[i], n=i+1;
@@ -1470,17 +1612,25 @@ async function submit(){
     if(needNote && !(st.note||'').trim()){ fail('第'+n+'题（'+(st.result==='half'?'半对':'做错')+'）还没写错误原因，请完成第4步'); return; }
     answers.push({errorId:eid, result:st.result,
                   draftImage:shared[0]||'', draftImages:shared,
-                  errorNote:st.note.trim()});
+                  errorNote:(st.note||'').trim()});
   }
+  btn.disabled=true;
   btn.textContent='提交中…';
-  const {status,j}=await call('/api/train/submit',{method:'POST',body:JSON.stringify({answers})});
-  btn.disabled=false; btn.textContent='提交今日练习';
+  const {status,j,net}=await call('/api/train/submit',{method:'POST',body:JSON.stringify({answers})}, 60000);
+  _submitting=false; btn.disabled=false; btn.textContent='提交今日练习';
   if(status===401){ logout(); return; }
-  if(!j||!j.ok){ document.getElementById('result').textContent=(j&&j.error)||'提交失败'; return; }
+  if(net){
+    document.getElementById('result').innerHTML='<div class="card" style="border-color:#EFD9D5">'
+      +'<div style="font-weight:700;color:var(--err)">提交时网络中断，没有提交成功</div>'
+      +'<div class="hint" style="margin-top:6px">你的照片和自评都还在，请检查网络后点下面按钮再提交一次。</div>'
+      +'<button class="btn2" style="margin-top:10px" onclick="submit()">重新提交</button></div>';
+    return;
+  }
+  if(!j||!j.ok){ document.getElementById('result').textContent=(j&&j.error)||'提交失败，请稍后重试'; return; }
   let h='<div class="score"><div class="big">'+j.right+' / '+j.total+'</div><div class="lb">本次自评做对 '+j.right+' 道，继续加油</div></div>';
   (j.results||[]).forEach((r,i)=>{
     const ok=r.result==='right'||r.result==='self_right';
-    const ansImgs=(r.answerImages&&r.answerImages.length)?r.answerImages.map(u=>`<img class="qi" src="${murl(u)}" onclick="zoomImg('${murl(u)}')">`).join(''):'';
+    const ansImgs=(r.answerImages&&r.answerImages.length)?r.answerImages.map(u=>`<img class="qi" src="${murl(u)}" onclick="zoomImg('${murl(u)}')" onerror="imgErr(this)">`).join(''):'';
     h+=`<div class="rescard"><div class="qi"><svg class="ic" style="width:15px;height:15px;color:${ok?'var(--ok)':'var(--err)'}"><use href="#i-${ok?'check':'x'}"/></svg>第${i+1}题 · <b style="color:${ok?'var(--ok)':'var(--err)'}">${ok?'做对了':'做错了'}</b></div>
       <div style="color:var(--ink2);margin-top:4px">${r.analysis||'（无解析）'}</div>${ansImgs?('<div>'+ansImgs+'</div>'):''}</div>`;
   });
@@ -1505,12 +1655,13 @@ function updateWeekLock(){
   const lock = document.getElementById('weekLock');
   const btn = document.getElementById('weekBtn');
   const dl = document.getElementById('dlBox');
+  if(!lock || !btn || !dl) return;
   if(TASK_DONE){
     lock.classList.add('hidden');
     btn.classList.remove('hidden'); btn.disabled = false;
     dl.classList.remove('hidden');
   }else{
-    document.getElementById('weekList').classList.add('hidden');
+    const wl = document.getElementById('weekList'); if(wl) wl.classList.add('hidden');
     btn.classList.add('hidden');
     dl.classList.add('hidden');
     lock.classList.remove('hidden');
@@ -1526,23 +1677,32 @@ function toggleWeek(){
   if(!hidden && !WEEK_LOADED) loadWeek();
 }
 async function loadWeek(){
-  const {status,j}=await call('/api/train/errors');
+  const box = document.getElementById('weekList');
+  const {status,j,net}=await call('/api/train/errors');
   if(status===401){ logout(); return; }
+  if(net || !j || status!==200){
+    // 网络异常/超时：不要标记成"已加载"，否则学生之后点「展开」会一直是空白；
+    // 这里给一个可点击重试的提示。
+    if(box) box.innerHTML = '<div class="hint" style="padding:8px 0">错题加载失败（可能网络不稳）。'
+      + '<b style="cursor:pointer;text-decoration:underline" onclick="WEEK_LOADED=false;loadWeek()">点这里重试</b></div>';
+    return;
+  }
   WEEK_LOADED = true;
   const items = (j&&j.items)||[];
   const cutoff = Date.now() - 7*24*3600*1000;
   const recent = items.filter(e=>{
+    if(!e) return false;
     if(e.createdAt) return e.createdAt >= cutoff;
-    if(e.wrongDate) return new Date(e.wrongDate.replace(/-/g,'/')).getTime() >= cutoff;
+    if(e.wrongDate){ const t = new Date(String(e.wrongDate).replace(/-/g,'/')).getTime(); return isFinite(t) && t >= cutoff; }
     return false;
   }).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-  const box = document.getElementById('weekList');
+  if(!box) return;
   if(!recent.length){ box.innerHTML = '<div class="hint" style="padding:8px 0">最近一周还没有错题记录</div>'; return; }
   box.innerHTML = recent.map((e,i)=>{
     const imgs = ((e.images&&e.images.length)?e.images:(e.image?[e.image]:[]))
-      .map(u=>`<img class="qi" src="${murl(u)}" onclick="zoomImg('${murl(u)}')">`).join('');
+      .map(u=>`<img class="qi" src="${murl(u)}" onclick="zoomImg('${murl(u)}')" onerror="imgErr(this)">`).join('');
     const ansImgs = (e.answerImages&&e.answerImages.length)
-      ? e.answerImages.map(u=>`<img class="qi" src="${murl(u)}" onclick="zoomImg('${murl(u)}')">`).join('') : '';
+      ? e.answerImages.map(u=>`<img class="qi" src="${murl(u)}" onclick="zoomImg('${murl(u)}')" onerror="imgErr(this)">`).join('') : '';
     const files = (e.files&&e.files.length)? e.files.map(f=>{
       const fu=(typeof f==='string')?f:(f.url||''); const fn=(typeof f==='string')?'附件':(f.name||'附件');
       return `<a class="filetag" href="${murl(fu)}" target="_blank" rel="noopener">附件 · ${fn}</a>`;
@@ -1560,58 +1720,40 @@ async function loadWeek(){
 
 // 打印版：只含今天要做的题目（不含答案/解析），做题前就能下载打印，方便在纸上作答
 async function downloadTodayQuestions(){
-  try{
-    const r = await fetch(API+'/api/train/errors/export.docx?mode=questions',
-      {headers: TOKEN?{'Authorization':'Bearer '+TOKEN}:{}});
-    if(!r.ok){ let m='下载失败'; try{ const j=await r.json(); m=j.error||m; }catch(e){} alert(m); return; }
-    const blob = await r.blob();
-    let fname = '今天的题目.docx';
-    const cd = r.headers.get('Content-Disposition') || '';
-    const mm = cd.match(/filename\*=UTF-8''([^;]+)/i);
-    if(mm){ try{ fname = decodeURIComponent(mm[1]); }catch(e){} }
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob); a.download = fname;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
-  }catch(e){ alert('下载失败，请重试'); }
+  await _downloadDocx(API + '/api/train/errors/export.docx?mode=questions', '今天的题目.docx');
 }
 // 下载错题本（Word）：与「组卷下载」同一套排版，后端导出全部错题（含答案）
 async function downloadErrors(){
-  try{
-    const r = await fetch(API+'/api/train/errors/export.docx', {headers: TOKEN?{'Authorization':'Bearer '+TOKEN}:{}});
-    if(!r.ok){
-      let m = '下载失败';
-      try{ const j = await r.json(); m = j.error || m; }catch(e){}
-      alert(m); return;
-    }
-    const blob = await r.blob();
-    let fname = '错题本.docx';
-    const cd = r.headers.get('Content-Disposition') || '';
-    const mm = cd.match(/filename\*=UTF-8''([^;]+)/i);
-    if(mm){ try{ fname = decodeURIComponent(mm[1]); }catch(e){} }
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = fname;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
-  }catch(e){ alert('下载失败，请重试'); }
+  await _downloadDocx(API + '/api/train/errors/export.docx', '错题本.docx');
 }
 
 // 启动时若有 token 尝试直接进入(后端会校验有效性)
-if(TOKEN){
+async function bootWithToken(){
   show(true);
-  (async()=>{
-    await loadMediaTicket();
-    const {status,j} = await call('/api/train/students');
-    if(status===401){ logout(); return; }
-    const me = (j && j.items && j.items[0]) || null;
-    setMe(me);
-    SID = (me && me.id) || '';          // 启动恢复会话时也要拿到 SID，否则每日错题页的「老师发来的卷子」卡片拉不到
-    loadHomePapers();                   // 每日错题页内嵌「老师发来的卷子」（可下载 Word）
-    loadRecent();
-    loadToday().then(updateWeekLock);
-  })();
+  await loadMediaTicket();
+  const {status,j,net} = await call('/api/train/students');
+  if(status===401){ logout(); return; }                // token 失效 → 回登录
+  if(net){                                             // 网络异常：不清 token，提示重试
+    const head=document.getElementById('head');
+    if(head){
+      head.className='card';
+      head.innerHTML='<div class="empty"><div class="eic"><svg class="ic"><use href="#i-alert"/></svg></div>'
+        +'<div style="font-size:16px;font-weight:700">网络连接失败</div>'
+        +'<div class="hint" style="margin-top:6px">请检查网络后重试，或退出重新登录</div>'
+        +'<button class="btn2" style="margin-top:12px" onclick="bootWithToken()">重新加载</button>'
+        +'<button class="btn3" style="margin-top:8px" onclick="logout()">退出登录</button></div>';
+    }
+    return;
+  }
+  const me = (j && j.items && j.items[0]) || null;
+  setMe(me);
+  SID = (me && me.id) || '';          // 启动恢复会话时也要拿到 SID，否则每日错题页的「老师发来的卷子」卡片拉不到
+  if(!SID){ logout(); return; }       // 拿不到学生身份 → 当作登录失效，回到登录页（避免空白）
+  loadHomePapers();                   // 每日错题页内嵌「老师发来的卷子」（可下载 Word）
+  loadRecent();
+  loadToday().then(updateWeekLock);
 }
+if(TOKEN){ bootWithToken(); }
 </script>
 </body>
 </html>
