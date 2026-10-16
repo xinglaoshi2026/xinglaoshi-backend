@@ -758,9 +758,12 @@
   </div>
 </div>
 
-<!-- 微信/QQ 内置浏览器既不支持调起打印、也不允许下载文件：改成「复制一条链接 → 到浏览器打开」。
-     直链自带 30 分钟有效的短时票据，到浏览器后不用重新登录。
-     打印场景给的是「打印页」链接：浏览器打开会直接弹出打印面板，页面上另有「下载 Word」兜底。 -->
+<!-- 微信/QQ 内置浏览器不允许下载文件（<a download> / blob 都被拦），
+     所以「下载 Word」这类入口改成「复制一条链接 → 到浏览器打开」，直链自带 30 分钟有效的短时票据，
+     到浏览器后不用重新登录。
+     「打印题目」不走这里：微信/QQ 里能正常显示网页、也能弹出系统打印面板，
+     所以直接进打印页（load 后自动 print）；万一没弹出来，打印页顶部有「开始打印」补救条，
+     另有「复制本页链接 → 在浏览器打开」和「下载 Word」两条退路。 -->
 <div id="wxMask" class="mask hidden" onclick="if(event.target===this)closeWx()">
   <div class="sheet">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
@@ -1585,17 +1588,17 @@ async function loadHomePapers(){
 }
 /* ---------- 微信 / QQ 里下载文件 ----------
    微信、QQ 的内置浏览器不允许直接下载文件（<a download> 与 blob 下载都被拦），
-   学生点了「打印题目」要么没反应、要么弹"无法下载"，只能把链接复制到系统浏览器里打开；
+   学生点了下载只会看到"无法下载"，只能把链接复制到系统浏览器里打开；
    而系统浏览器没有这边的登录态，又要重新登录一次。
-   所以：检测到微信/QQ 环境时，改向后端领一条 10 分钟有效的下载直链（票据写在 URL 里，
-   免登录），引导复制到浏览器打开即可直接下载。 */
+   所以：检测到微信/QQ 环境时，改向后端领一条 30 分钟有效的免登录直链（票据写在 URL 里），
+   引导复制到浏览器打开即可直接下载。
+   （「打印题目」不用这条路 —— 微信里也能直接弹系统打印面板，直接进打印页更省事。） */
 let WXDL = '';       // 当前待打开的直链
 function isWechat(){
   try{ return /micromessenger|qq\/[\d.]+/i.test(navigator.userAgent || ''); }catch(e){ return false; }
 }
-/* 领一条免登录直链并弹出引导层。forPrint=true 时引导的是「打印页」
-   （浏览器打开即弹系统打印；页面上另有「下载 Word」兜底）。 */
-async function wxDownload(ticketQuery, btnName, forPrint){
+/* 领一条免登录直链并弹出「复制到浏览器下载」引导层 */
+async function wxDownload(ticketQuery){
   const got = await call('/api/train/dl.ticket?' + ticketQuery);
   const j = got.j;
   if(got.status !== 200 || !j || !j.url){
@@ -1607,16 +1610,10 @@ async function wxDownload(ticketQuery, btnName, forPrint){
   WXDL = url;
   document.getElementById('wxLink').value = url;
   const setTxt = (id, html)=>{ const el = document.getElementById(id); if(el) el.innerHTML = html; };
-  setTxt('wxTitle', forPrint ? '在浏览器里打印' : '在浏览器里下载');
-  setTxt('wxDesc', forPrint
-    ? '微信 / QQ 里不能直接打印，也不能下载文件。已为你生成一条<b>打印链接</b>（<b>30 分钟内有效</b>），复制后到浏览器打开，会直接弹出打印。'
-    : '微信 / QQ 里不能直接下载 Word，已为你生成一条下载链接（<b>30 分钟内有效</b>），复制后到浏览器打开就会自动下载。');
-  setTxt('wxStep3', forPrint
-    ? '在地址栏<b>长按 → 粘贴 → 前往</b>，浏览器会弹出打印（手机会列出你连的无线打印机，电脑会列出本机打印机）'
-    : '在地址栏<b>长按 → 粘贴 → 前往</b>，就会自动下载 Word 文件');
-  setTxt('wxTip', forPrint
-    ? '打开后如果没有自动弹出打印窗口，页面上还有「<b>打印</b>」按钮；<br>这台设备没有连打印机的话，点页面上的「<b>下载 Word</b>」，到有打印机的电脑上打开再打印。<br>链接过期了也不要紧，回到本页重新点一次，会给你一条新的。'
-    : '另一个办法：点右上角 <b>⋯</b> → <b>在浏览器打开</b>，回到本页再点一次。<br>链接过期了也不要紧，回到本页重新点一次，会给你一条新的。');
+  setTxt('wxTitle', '在浏览器里下载');
+  setTxt('wxDesc', '微信 / QQ 里不能直接下载 Word，已为你生成一条下载链接（<b>30 分钟内有效</b>），复制后到浏览器打开就会自动下载。');
+  setTxt('wxStep3', '在地址栏<b>长按 → 粘贴 → 前往</b>，就会自动下载 Word 文件');
+  setTxt('wxTip', '另一个办法：点右上角 <b>⋯</b> → <b>在浏览器打开</b>，回到本页再点一次。<br>链接过期了也不要紧，回到本页重新点一次，会给你一条新的。');
   document.getElementById('wxMask').classList.remove('hidden');
   wxCopy(true);      // 尽力自动复制一次（复制不到也不打扰，学生点按钮即可）
 }
@@ -1682,8 +1679,7 @@ async function _downloadDocx(url, defaultName){
 async function downloadPaper(pid, mode){
   if(!SID){ alert('请先登录'); return; }
   if(isWechat()){   // 微信/QQ 里下不了文件，改为领直链去浏览器打开
-    await wxDownload('kind=paper&pid=' + encodeURIComponent(pid) + (mode==='all' ? '&mode=all' : ''),
-                     mode==='all' ? '下载含答案' : '下载题目');
+    await wxDownload('kind=paper&pid=' + encodeURIComponent(pid) + (mode==='all' ? '&mode=all' : ''));
     return;
   }
   const url = API + '/api/train/student/'+encodeURIComponent(SID)+'/papers/'+encodeURIComponent(pid)+'/docx' + (mode==='all' ? '?mode=all' : '');
@@ -2023,29 +2019,34 @@ async function loadWeek(){
 /* 打印题目：打开服务端渲染的 A4 打印页 → 浏览器自动调起系统打印面板。
    手机的系统打印能连家里无线打印机、电脑直接连本机打印机，一步就能打出纸来，
    不必先下 Word、再用 Word 打开着打印。
-   打不了的情况（弹窗被拦 / 打印页打不开）才退回下载 Word。 */
+   ★ 微信 / QQ 里的处理：这里**不弹「复制链接」引导层**，直接把当前页导航到打印页 ——
+     学生实测微信里也能弹出系统打印面板（iPhone 走 AirPrint 连无线打印机），
+     所以自动打印照常；万一没弹出来（部分安卓内核不支持 window.print），
+     打印页顶部会出现一条「开始打印」补救条，点一下即用手势内的 print 再试一次，
+     还不行就照提示「⋯ → 在浏览器打开」（打开的正是这一页）。
+   真打不开（网络异常/领票失败）才退回下载 Word。 */
 async function printTodayQuestions(){
   if(!SID){ alert('请先登录'); return; }
   const dq = TODAY_DATE ? '&date=' + encodeURIComponent(TODAY_DATE) : '';
-  if(isWechat()){   // 微信/QQ 内置浏览器不支持调起打印、也不允许下载 → 引导到浏览器
-    await wxDownload('kind=print' + dq, '打印题目', true);
-    return;
-  }
-  // 先同步开一个占位窗口：等网络请求回来再开，浏览器会当成弹窗拦截
+  const wx = isWechat();
+  // 普通浏览器先在用户手势里同步开一个占位窗口：等请求回来再开，会被当成弹窗拦掉
   let w = null;
-  try{ w = window.open('', '_blank'); }catch(e){}
-  if(w){
-    try{
-      w.document.write('<!doctype html><meta charset="utf-8"><title>正在准备打印…</title>'
-        +'<body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;'
-        +'background:#F2F2F7;color:#1C1C1E;font:16px/1.7 -apple-system,BlinkMacSystemFont,'
-        +"'PingFang SC','Microsoft YaHei',sans-serif\"><div>正在准备打印…</div>");
-      w.document.close();
-    }catch(e){}
+  if(!wx){
+    try{ w = window.open('', '_blank'); }catch(e){}
+    if(w){
+      try{
+        w.document.write('<!doctype html><meta charset="utf-8"><title>正在准备打印…</title>'
+          +'<body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;'
+          +'background:#F2F2F7;color:#1C1C1E;font:16px/1.7 -apple-system,BlinkMacSystemFont,'
+          +"'PingFang SC','Microsoft YaHei',sans-serif\"><div>正在准备打印…</div>");
+        w.document.close();
+      }catch(e){}
+    }
   }
   const got = await call('/api/train/dl.ticket?kind=print' + dq);
   const j = got.j;
   if(got.status === 200 && j && j.url){
+    if(wx){ location.href = j.url; return; }   // 微信/QQ 里也直接进打印页：页面会自动调起系统打印面板
     if(w){ try{ w.location.replace(j.url); w.focus(); return; }catch(e){} }
     location.href = j.url;   // 占位窗被浏览器拦下 → 就在当前页打开打印页
     return;
@@ -2063,7 +2064,7 @@ async function printTodayQuestions(){
 async function downloadTodayQuestions(){
   const dq = TODAY_DATE ? '&date=' + encodeURIComponent(TODAY_DATE) : '';
   if(isWechat()){   // 微信/QQ 里下不了文件，改为领直链去浏览器打开
-    await wxDownload('kind=errors&mode=questions' + dq, '打印题目');
+    await wxDownload('kind=errors&mode=questions' + dq);
     return;
   }
   const url = API + '/api/train/errors/export.docx?mode=questions' + dq
@@ -2073,7 +2074,7 @@ async function downloadTodayQuestions(){
 // 下载错题本（Word）：与「组卷下载」同一套排版，后端导出全部错题（含答案）
 async function downloadErrors(){
   if(isWechat()){   // 微信/QQ 里下不了文件，改为领直链去浏览器打开
-    await wxDownload('kind=errors', '下载错题本');
+    await wxDownload('kind=errors');
     return;
   }
   await _downloadDocx(API + '/api/train/errors/export.docx?_=' + Date.now(), '错题本.docx');

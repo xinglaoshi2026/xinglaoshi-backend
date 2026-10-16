@@ -1737,6 +1737,14 @@ body{background:#F2F2F7;color:#111;
 .q .ans{margin-top:10px;padding:10px 12px;background:#F5F7FA;border-radius:8px;font-size:14px}
 .q .ans .lb{font-weight:700;color:#2F5C8F;margin-bottom:4px}
 .q .ans img{max-width:100%;height:auto;display:block;margin:8px 0}
+.btn.sm{padding:8px 13px;font-size:14px}
+/* 打印面板没弹出来时的补救条：给一个显眼的「开始打印」按钮（用户手势里的 print 最可靠），
+   以及「复制链接去浏览器」的备选。平时隐藏，只在微信/QQ 里 1.6s 后仍没弹出打印面板时才打开。 */
+.inapp{display:none;padding:13px 16px;background:#FFF6DE;border-bottom:1px solid #EEDFB0;
+ color:#5A4310;font-size:14px;line-height:1.7}
+.inapp.on{display:block}
+.inapp b{color:#8A5B06}
+.inapp .btn{margin:9px 8px 0 0}
 .empty{max-width:520px;margin:44px auto;background:#fff;border-radius:18px;padding:26px 22px;
  box-shadow:0 6px 24px rgba(69,120,179,.12)}
 .empty h2{margin:0 0 10px;font-size:19px}
@@ -1747,10 +1755,12 @@ body{background:#F2F2F7;color:#111;
  .tip{margin:10px 10px 0;border-radius:12px}
  .bar{padding:8px 10px;gap:6px}
  .bar .bt{width:100%;margin:0 0 2px}
+ /* 手机上按钮要够大好点：最小 40px 触控高度 */
+ .btn{padding:11px 15px}
 }
 @media print{
  body{background:#fff}
- .bar,.hint,.tip{display:none!important}
+ .bar,.hint,.tip,.inapp{display:none!important}
  .paper{width:auto;margin:0;padding:0;box-shadow:none;border-radius:0}
  .q{margin-bottom:20px}
 }
@@ -1791,19 +1801,48 @@ def build_train_print_html(name, errors, date_str, title=None, note=None,
         '<div class="bar">'
         '<span class="bt">练习题打印</span>'
         '<button class="btn primary" onclick="window.print()">打印</button>'
+        '<button class="btn" id="cpBtn" onclick="__cp()">复制链接</button>'
         '%s'
         '<a class="btn" href="/train_student.html">返回做题</a>'
         '</div>'
-        '<div class="tip">正在打开系统打印……<br>如果没有弹出打印窗口，请点上面的「<b>打印</b>」；'
-        '这台设备没有连打印机的话，点「<b>下载 Word</b>」，到有打印机的电脑上打开再打印。</div>'
+        '<div class="inapp" id="inappBar">'
+        '<div><b>没有弹出打印面板？</b>点下面的「<b>开始打印</b>」再试一次，'
+        '手机就会列出你连的打印机（无线打印机也可以）。'
+        '要是点了一直没反应，再点右上角 <b>⋯</b> → <b>在浏览器打开</b>：'
+        '打开的就是这一页，会自动弹出打印。</div>'
+        '<button class="btn primary sm" onclick="window.print()">开始打印</button>'
+        '<button class="btn sm" onclick="__cp()">复制本页链接</button>'
+        '</div>'
+        '<div class="tip" id="tip">正在调起系统打印……<br>没有弹出打印窗口的话，点上面的「<b>打印</b>」。'
+        '这台设备没有连打印机的话，点「<b>下载 Word</b>」，到连着打印机的电脑上打开再打印。</div>'
         '<div class="paper">'
         '<h1>%s</h1>'
         '<div class="meta">%s</div>'
         '<div class="fill">姓名：______________　　日期：______________</div>'
         '<hr>%s</div>'
-        '<script>(function(){var d=0;function go(){if(d)return;d=1;try{window.print()}catch(e){}}'
-        'window.addEventListener("load",function(){setTimeout(go,400)});'
-        'if(document.readyState==="complete")setTimeout(go,400);})();</script>'
+        '<script>(function(){'
+        'var inapp=/micromessenger|qq\\/[\\d.]+/i.test(navigator.userAgent||"");'
+        'var bar=document.getElementById("inappBar");'
+        'function hideBar(){if(bar)bar.className="inapp";}'
+        'function showBar(){if(bar&&inapp)bar.className="inapp on";}'
+        'window.__cp=function(){var u=location.href;'
+        'var done=function(){var b=document.getElementById("cpBtn");'
+        'if(b){b.textContent="已复制 ✓";setTimeout(function(){b.textContent="复制链接";},1800);}};'
+        'try{if(navigator.clipboard&&navigator.clipboard.writeText){'
+        'navigator.clipboard.writeText(u).then(done,function(){__cpx(u,done);});return;}}catch(e){}'
+        '__cpx(u,done);};'
+        'window.__cpx=function(u,done){try{var t=document.createElement("textarea");t.value=u;'
+        't.setAttribute("readonly","");t.style.position="fixed";t.style.top="-1000px";'
+        'document.body.appendChild(t);t.select();t.setSelectionRange(0,u.length);'
+        'document.execCommand("copy");document.body.removeChild(t);done();}'
+        'catch(e){alert("复制失败：请长按页面顶部的网址手动复制");}};'
+        'var d=0;function go(){if(d)return;d=1;hideBar();try{window.print()}catch(e){}}'
+        'function arm(){setTimeout(go,400);setTimeout(showBar,1600);}'
+        'window.addEventListener("beforeprint",hideBar);'      # 打印面板真的开了 -> 收起补救条
+        'window.addEventListener("afterprint",hideBar);'
+        'window.addEventListener("blur",hideBar);'             # 系统打印弹层会抢焦点
+        'window.addEventListener("load",arm);'
+        'if(document.readyState==="complete")setTimeout(arm,0);})();</script>'
         '</body></html>'
         % (xesc(title or "练习题"), _PRINT_CSS, dl_btn,
            xesc(title or "练习题"), xesc(note or ""), "".join(body)))
