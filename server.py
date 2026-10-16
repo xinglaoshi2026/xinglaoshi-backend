@@ -1741,6 +1741,13 @@ body{background:#F2F2F7;color:#111;
  box-shadow:0 6px 24px rgba(69,120,179,.12)}
 .empty h2{margin:0 0 10px;font-size:19px}
 .empty p{margin:0 0 10px;color:#3A3A3C}
+@media (max-width:560px){
+ /* 手机上先看排版再打印：A4 的 14mm 边距在 375px 屏上太挤，预览时收窄 */
+ .paper{padding:20px 16px 26px;border-radius:0;margin:8px 0 28px}
+ .tip{margin:10px 10px 0;border-radius:12px}
+ .bar{padding:8px 10px;gap:6px}
+ .bar .bt{width:100%;margin:0 0 2px}
+}
 @media print{
  body{background:#fff}
  .bar,.hint,.tip{display:none!important}
