@@ -1733,11 +1733,11 @@ body{background:#F2F2F7;color:#111;
  font-size:14px;color:#3A3A3C;box-shadow:0 4px 16px rgba(69,120,179,.10)}
 .paper{width:210mm;max-width:100%;margin:14px auto 40px;background:#fff;padding:14mm 14mm 18mm;
  box-shadow:0 8px 30px rgba(0,0,0,.10);border-radius:6px}
-.paper h1{margin:0 0 6px;font-size:21px;letter-spacing:-.02em}
+.paper h1{margin:0 0 14px;font-size:21px;letter-spacing:-.02em}
 .paper .meta{color:#3A3A3C;font-size:14px;margin:0 0 4px}
 .paper .fill{color:#1C1C1E;font-size:15px;margin:10px 0 4px}
 .paper hr{border:0;border-top:1px solid #111;margin:12px 0 18px}
-.q{margin:0 0 22px;page-break-inside:avoid;break-inside:avoid}
+.q{margin:0 0 10px;page-break-inside:avoid;break-inside:avoid}
 .q .qh{font-weight:700;font-size:15px;margin:0 0 6px}
 .q .qh .k{color:#2F5C8F;font-weight:600;font-size:13px;margin-left:6px}
 .q .qb{font-size:15px}
@@ -1806,7 +1806,6 @@ body{background:#F2F2F7;color:#111;
 @media print{
  .bar,.hint,.ovl,.pa{display:none!important}
  .paper{width:auto;margin:0;padding:0;box-shadow:none;border-radius:0}
- .q{margin-bottom:20px}
 }
 """
 
@@ -1835,10 +1834,15 @@ _PRINT_GUIDE = """
 
 
 def build_train_print_html(name, errors, date_str, title=None, note=None,
-                           with_answers=False, blank_lines=6, dl_url=None,
+                           with_answers=False, blank_lines=0, dl_url=None,
                            back_url="/train_student.html", back_label="返回做题"):
     """某学生某天的练习题 -> 一张 A4 打印页（打开即自动调起系统打印面板）。
-    图片优先内联（打印不依赖网络），页面上保留「下载 Word」兜底。"""
+    图片优先内联（打印不依赖网络），页面上保留「下载 Word」兜底。
+
+    版面按老师的要求精简过：页首只留一行标题 —— 不再印「共 N 道题…」的说明、
+    姓名/日期横线与那条粗分隔线；题与题之间只留 10px（原来 22px），
+    每题下方的作答横线默认 0 行（blank_lines 仍可传，按需恢复留白）。
+    note 参数保留只为兼容旧调用（不再渲染）。"""
     mtk = media_ticket()
     budget = [_PRINT_INLINE_BUDGET]
     body = []
@@ -1877,9 +1881,7 @@ def build_train_print_html(name, errors, date_str, title=None, note=None,
         '打开的就是这一页，会自动弹出打印面板。</div>'
         '<div class="paper">'
         '<h1>%s</h1>'
-        '<div class="meta">%s</div>'
-        '<div class="fill">姓名：______________　　日期：______________</div>'
-        '<hr>%s</div>'
+        '%s</div>'
         '%s'
         '<script>(function(){'
         'var ua=navigator.userAgent||"";'
@@ -1941,7 +1943,7 @@ def build_train_print_html(name, errors, date_str, title=None, note=None,
         '})();</script>'
         '</body></html>'
         % (xesc(title or "练习题"), _PRINT_CSS, dl_btn, xesc(back_url), xesc(back_label),
-           xesc(title or "练习题"), xesc(note or ""), "".join(body), _PRINT_GUIDE))
+           xesc(title or "练习题"), "".join(body), _PRINT_GUIDE))
 
 
 
