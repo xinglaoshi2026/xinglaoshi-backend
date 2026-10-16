@@ -2211,13 +2211,15 @@ function showRules(){
     <p style="margin:4px 0"><b>二、每日出题（每人题量不同）</b>：</p>
     <ul style="margin:2px 0 8px 18px;padding:0">
       <li>每人每天题数在「学生管理」单独设定（默认 3 道），能力弱/时间少的生可少出</li>
-      <li>不足该生设定题数时，补近 7 天新收录的错题</li>
-      <li>仍不足时，提前拉明后天到期的题补足</li>
+      <li>出题优先顺序：①<b>上次做错/半对的题（一定重现）</b> ②当月抽检抽回来的毕业题 ③掌握等级低的 ④到期最久的</li>
+      <li>新收录的错题保底占 <b>max(1, 题量÷2)</b> 个名额，不会被积压的旧题挤光</li>
+      <li>仍不足时，提前拉明天到期的题补足（同一道题重复收录、已被删除的错题都不会占名额）</li>
     </ul>
     <p style="margin:4px 0"><b>三、做对/做错后的变化</b>：</p>
     <ul style="margin:2px 0 8px 18px;padding:0">
       <li><b>做错/半对</b>：连续做对清零，等级 −1（最低 0），<b>明天必再见</b></li>
       <li><b>做对</b>：连续做对 +1，等级 +1（最高 5），间隔拉长：</li>
+      <li>提交里没有自评结果时，这题不算提交（不升级也不降级），学生需回去补选</li>
     </ul>
     <table class="rules-table">
       <tr><th>等级</th><td>0</td><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td></tr>
@@ -2229,7 +2231,7 @@ function showRules(){
       <li>等级到顶（level ≥ 4）</li>
       <li>首次收录 ≥ 14 天</li>
     </ul>
-    <p style="margin:4px 0"><b>五、月度抽检</b>：每月 1 号从已毕业池随机抽 ≤3 道（约 20%）重新加入当天任务，防遗忘。</p>
+    <p style="margin:4px 0"><b>五、月度抽检</b>：每月一次（不再限定 1 号 —— 本月还没抽过，下次生成任务时补抽，一个月只抽一次），从已毕业池随机抽 ≤3 道（约 20%）重新加入当天任务并<b>优先排进题单</b>；抽检做错会重新回到每日循环（明天再见），做对且达标记则继续留在毕业池。</p>
     <p style="margin:4px 0"><b>六、学生做题流程</b>：上传计算过程 → 提交 → 看答案 → 自评（做对/半对/做错）→ 必填错误原因后才能提交。</p>
     <p style="margin:8px 0 2px;font-size:12px;color:var(--ink3)">※ 规则代码在云端 server.py（TRAIN_INTERVALS / train_on_answer / train_build_daily / train_monthly_sample），如需调整间隔天数、毕业门槛或每日题量，告诉 AI 即可对照修改。</p>
   </div>`);
