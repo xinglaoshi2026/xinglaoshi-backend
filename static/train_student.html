@@ -758,15 +758,16 @@
   </div>
 </div>
 
-<!-- 微信/QQ 内置浏览器不能下载 Word：改成「复制一条下载直链 → 到浏览器打开」。
-     直链自带 10 分钟有效的一次性票据，到浏览器后不用重新登录。 -->
+<!-- 微信/QQ 内置浏览器既不支持调起打印、也不允许下载文件：改成「复制一条链接 → 到浏览器打开」。
+     直链自带 30 分钟有效的短时票据，到浏览器后不用重新登录。
+     打印场景给的是「打印页」链接：浏览器打开会直接弹出打印面板，页面上另有「下载 Word」兜底。 -->
 <div id="wxMask" class="mask hidden" onclick="if(event.target===this)closeWx()">
   <div class="sheet">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-      <h2>在浏览器里下载</h2>
+      <h2 id="wxTitle">在浏览器里下载</h2>
       <button class="btn3 sm" onclick="closeWx()"><svg class="ic"><use href="#i-close"/></svg>关闭</button>
     </div>
-    <div class="hint" style="margin-top:6px">微信 / QQ 里不能直接下载 Word，已为你生成一条下载链接（<b>30 分钟内有效</b>），复制后到浏览器打开就会自动下载。</div>
+    <div class="hint" style="margin-top:6px" id="wxDesc">微信 / QQ 里不能直接下载 Word，已为你生成一条下载链接（<b>30 分钟内有效</b>），复制后到浏览器打开就会自动下载。</div>
     <div class="wxlink">
       <input id="wxLink" readonly onclick="this.select()" aria-label="下载链接">
       <button class="btn2 sm" id="wxCopyBtn" onclick="wxCopy(false)">复制链接</button>
@@ -774,9 +775,9 @@
     <ol class="wxsteps">
       <li>点上面的 <b>复制链接</b></li>
       <li>打开手机的<b>浏览器</b>（Safari / Chrome / 手机自带浏览器都行）</li>
-      <li>在地址栏<b>长按 → 粘贴 → 前往</b>，就会自动下载 Word 文件</li>
+      <li id="wxStep3">在地址栏<b>长按 → 粘贴 → 前往</b>，就会自动下载 Word 文件</li>
     </ol>
-    <div class="wxtip">另一个办法：点右上角 <b>⋯</b> → <b>在浏览器打开</b>，回到本页再点一次「<span id="wxBtnName">下载</span>」。<br>链接过期了也不要紧，回到本页重新点一次，会给你一条新的。<br>不打印也可以直接看着屏幕上的题目做，做完拍照上传一样可以。</div>
+    <div class="wxtip" id="wxTip">另一个办法：点右上角 <b>⋯</b> → <b>在浏览器打开</b>，回到本页再点一次。<br>链接过期了也不要紧，回到本页重新点一次，会给你一条新的。<br>不打印也可以直接看着屏幕上的题目做，做完拍照上传一样可以。</div>
   </div>
 </div>
 
@@ -1090,7 +1091,7 @@ async function loadToday(){
   head.innerHTML='<div class="tb-note">'
     +'<svg class="ic"><use href="#i-printer"/></svg>'
     +'<span>题目可以打印出来做，做完拍照上传</span>'
-    +'<button class="btn2 sm" onclick="downloadTodayQuestions()"><svg class="ic"><use href="#i-printer"/></svg>打印题目</button>'
+    +'<button class="btn2 sm" onclick="printTodayQuestions()"><svg class="ic"><use href="#i-printer"/></svg>打印题目</button>'
     +'</div>'
     +'<div class="tb-meta"><span>'+fmtDate(task.date)+'</span>'
     +'<span>今天的练习</span>'+badge
@@ -1588,23 +1589,34 @@ async function loadHomePapers(){
    而系统浏览器没有这边的登录态，又要重新登录一次。
    所以：检测到微信/QQ 环境时，改向后端领一条 10 分钟有效的下载直链（票据写在 URL 里，
    免登录），引导复制到浏览器打开即可直接下载。 */
-let WXDL = '';       // 当前待下载的直链
+let WXDL = '';       // 当前待打开的直链
 function isWechat(){
   try{ return /micromessenger|qq\/[\d.]+/i.test(navigator.userAgent || ''); }catch(e){ return false; }
 }
-async function wxDownload(ticketQuery, btnName){
+/* 领一条免登录直链并弹出引导层。forPrint=true 时引导的是「打印页」
+   （浏览器打开即弹系统打印；页面上另有「下载 Word」兜底）。 */
+async function wxDownload(ticketQuery, btnName, forPrint){
   const got = await call('/api/train/dl.ticket?' + ticketQuery);
   const j = got.j;
   if(got.status !== 200 || !j || !j.url){
-    alert((j && j.error) || (got.net ? '网络不太好，请稍后重试' : '生成下载链接失败，请稍后重试'));
+    alert((j && j.error) || (got.net ? '网络不太好，请稍后重试' : '生成链接失败，请稍后重试'));
     return;
   }
   let url = j.url;
   try{ url = new URL(url, location.origin).href; }catch(e){}
   WXDL = url;
   document.getElementById('wxLink').value = url;
-  const nm = document.getElementById('wxBtnName');
-  if(nm) nm.textContent = btnName || '下载';
+  const setTxt = (id, html)=>{ const el = document.getElementById(id); if(el) el.innerHTML = html; };
+  setTxt('wxTitle', forPrint ? '在浏览器里打印' : '在浏览器里下载');
+  setTxt('wxDesc', forPrint
+    ? '微信 / QQ 里不能直接打印，也不能下载文件。已为你生成一条<b>打印链接</b>（<b>30 分钟内有效</b>），复制后到浏览器打开，会直接弹出打印。'
+    : '微信 / QQ 里不能直接下载 Word，已为你生成一条下载链接（<b>30 分钟内有效</b>），复制后到浏览器打开就会自动下载。');
+  setTxt('wxStep3', forPrint
+    ? '在地址栏<b>长按 → 粘贴 → 前往</b>，浏览器会弹出打印（手机会列出你连的无线打印机，电脑会列出本机打印机）'
+    : '在地址栏<b>长按 → 粘贴 → 前往</b>，就会自动下载 Word 文件');
+  setTxt('wxTip', forPrint
+    ? '打开后如果没有自动弹出打印窗口，页面上还有「<b>打印</b>」按钮；<br>这台设备没有连打印机的话，点页面上的「<b>下载 Word</b>」，到有打印机的电脑上打开再打印。<br>链接过期了也不要紧，回到本页重新点一次，会给你一条新的。'
+    : '另一个办法：点右上角 <b>⋯</b> → <b>在浏览器打开</b>，回到本页再点一次。<br>链接过期了也不要紧，回到本页重新点一次，会给你一条新的。');
   document.getElementById('wxMask').classList.remove('hidden');
   wxCopy(true);      // 尽力自动复制一次（复制不到也不打扰，学生点按钮即可）
 }
@@ -2008,7 +2020,44 @@ async function loadWeek(){
   }).join('');
 }
 
-// 打印版：只含今天要做的题目（不含答案/解析），做题前就能下载打印，方便在纸上作答
+/* 打印题目：打开服务端渲染的 A4 打印页 → 浏览器自动调起系统打印面板。
+   手机的系统打印能连家里无线打印机、电脑直接连本机打印机，一步就能打出纸来，
+   不必先下 Word、再用 Word 打开着打印。
+   打不了的情况（弹窗被拦 / 打印页打不开）才退回下载 Word。 */
+async function printTodayQuestions(){
+  if(!SID){ alert('请先登录'); return; }
+  const dq = TODAY_DATE ? '&date=' + encodeURIComponent(TODAY_DATE) : '';
+  if(isWechat()){   // 微信/QQ 内置浏览器不支持调起打印、也不允许下载 → 引导到浏览器
+    await wxDownload('kind=print' + dq, '打印题目', true);
+    return;
+  }
+  // 先同步开一个占位窗口：等网络请求回来再开，浏览器会当成弹窗拦截
+  let w = null;
+  try{ w = window.open('', '_blank'); }catch(e){}
+  if(w){
+    try{
+      w.document.write('<!doctype html><meta charset="utf-8"><title>正在准备打印…</title>'
+        +'<body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;'
+        +'background:#F2F2F7;color:#1C1C1E;font:16px/1.7 -apple-system,BlinkMacSystemFont,'
+        +"'PingFang SC','Microsoft YaHei',sans-serif\"><div>正在准备打印…</div>");
+      w.document.close();
+    }catch(e){}
+  }
+  const got = await call('/api/train/dl.ticket?kind=print' + dq);
+  const j = got.j;
+  if(got.status === 200 && j && j.url){
+    if(w){ try{ w.location.replace(j.url); w.focus(); return; }catch(e){} }
+    location.href = j.url;   // 占位窗被浏览器拦下 → 就在当前页打开打印页
+    return;
+  }
+  if(w){ try{ w.close(); }catch(e){} }
+  // 打不开打印页（网络异常/服务器忙）→ 退回下载 Word，学生可用 Word 打印
+  alert((j && j.error) || (got.net ? '网络不太好，已改为下载 Word 文件' : '打不开打印页，已改为下载 Word 文件'));
+  await downloadTodayQuestions();
+}
+
+// 只含今天要做的题目（不含答案/解析）的 Word，做题前下载打印，方便在纸上作答。
+// 现在主要作为「打印」的兜底（打印页打不开时才走这里）。
 // ★必须带 date=今天。不带 date 后端会走「该生全部错题」分支，导出整本错题本而不是今天布置的题。
 //   万一 task.date 缺失也不退回"不带 date 直接下载"，而是交给服务端兜底（它也按今天取）。
 async function downloadTodayQuestions(){

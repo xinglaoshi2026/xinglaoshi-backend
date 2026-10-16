@@ -581,6 +581,12 @@ def dl_ticket_scope(path, q):
         if not sid:
             return None
         return "errors|%s|%s|%s" % (sid, (q.get("date", [None])[0] or "").strip(), mode)
+    if path == "/api/train/print":
+        # 打印页（A4 HTML）：与学生端「打印题目」配套，微信里复制到浏览器打开时没有登录态
+        sid = (q.get("sid", [None])[0] or "").strip()
+        if not sid:
+            return None
+        return "print|%s|%s|%s" % (sid, (q.get("date", [None])[0] or "").strip(), mode)
     m = re.match(r"^/api/train/student/([^/]+)/papers/([^/]+)/docx$", path)
     if m:
         return "paper|%s|%s|%s" % (urlunquote(m.group(1)), urlunquote(m.group(2)), mode)
@@ -1636,6 +1642,180 @@ def build_train_errors_docx(name, errors, title=None, note=None,
     return build_paper_docx(paper, qmap)
 
 
+# ---------------- 可打印的 A4 页面（「打印题目」的首选路径） ----------------
+# 手机的系统打印能连家里无线打印机、电脑直接连本机打印机 —— 浏览器打开这张页面就会
+# 自动调起系统打印面板，一路点下去就打出纸，不必先下 Word、再用 Word 打开来打印
+# （微信里两件都做不到，只能复制链接到浏览器；所以打印页做成独立 URL + 短时票据免登录）。
+# 打印不可用（没装打印机/驱动不对）时，页面上留了「下载 Word」按钮兜底。
+_PRINT_BLOCK_RE = re.compile(r"<(script|style|iframe|object|embed)\b[^>]*>[\s\S]*?</\1>", re.I)
+_PRINT_TAG_RE = re.compile(r"<\s*/?\s*(iframe|object|embed|link|meta)\b[^>]*>", re.I)
+_PRINT_EVT_RE = re.compile(r"\son[a-z]+\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", re.I)
+_PRINT_INLINE_MAX = 1200 * 1024          # 单张图超过这个字节数就不内联（避免打印页过大）
+_PRINT_INLINE_BUDGET = 6 * 1024 * 1024   # 内联图片总预算
+
+
+def _print_media_rel(src):
+    """media://xxx 或 /api/media/xxx -> 相对路径 xxx（去前缀、去查询串）。"""
+    rel = (src or "").split("?")[0]
+    for pre in ("media://", "/api/media/"):
+        if rel.startswith(pre):
+            rel = rel[len(pre):]
+            break
+    return rel
+
+
+def _print_img_tag(src, budget, mtk):
+    """打印页里的图：优先内联成 data URI —— 打印页可能被复制到别的浏览器里打开，
+    内联后既不依赖票据，也不怕打印时图还没加载完（否则纸上是一片空白）。"""
+    s = (src or "").strip()
+    if not s:
+        return ""
+    raw = _media_bytes(s)
+    if raw and len(raw) <= _PRINT_INLINE_MAX and len(raw) <= budget[0]:
+        mime = mimetypes.guess_type(_print_media_rel(s))[0] or "image/png"
+        if not mime.startswith("image/"):
+            mime = "image/png"
+        import base64 as _b64
+        budget[0] -= len(raw)
+        return ('<img class="qimg" alt="" src="data:%s;base64,%s">'
+                % (mime, _b64.b64encode(raw).decode("ascii")))
+    if s.startswith("/api/media/"):
+        base = s.split("?")[0]           # 原样保留（已 percent-encoded，二次编码会 404）
+    else:
+        rel = _print_media_rel(s)
+        if not rel:
+            return ""
+        base = "/api/media/" + urlquote(rel, safe="/")
+    q = ("?tk=%s&e=%d" % (urlquote(mtk["tk"], safe=""), mtk["exp"])) if mtk else ""
+    return '<img class="qimg" alt="" src="%s%s">' % (base, q)
+
+
+def _print_html_frag(html, budget, mtk):
+    """题干/解析的 HTML 直接沿用（保留加粗、换行、上下标），只做必要清洗：
+    去掉脚本与事件属性，图片换成内联 data URI。"""
+    s = str(html or "")
+    s = _PRINT_BLOCK_RE.sub("", s)
+    s = _PRINT_TAG_RE.sub("", s)
+    s = _PRINT_EVT_RE.sub("", s)
+    s = s.replace("javascript:", "")
+    s = IMG_TAG_RE.sub(lambda m: _print_img_tag(m.group(1), budget, mtk), s)
+    return s.strip()
+
+
+_PRINT_CSS = """
+@page{size:A4;margin:14mm}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:#F2F2F7;color:#111;
+ font:16px/1.75 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.bar{position:sticky;top:0;z-index:9;display:flex;gap:8px;flex-wrap:wrap;align-items:center;
+ padding:10px 14px;background:rgba(255,255,255,.92);-webkit-backdrop-filter:saturate(180%) blur(20px);
+ backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid rgba(0,0,0,.08)}
+.bar .bt{font-weight:700;margin-right:auto;letter-spacing:-.01em}
+.btn{display:inline-block;border:0;border-radius:11px;padding:9px 16px;font:600 15px/1 inherit;
+ background:#E9E9EE;color:#1C1C1E;cursor:pointer;text-decoration:none}
+.btn.primary{background:#4578B3;color:#fff}
+.btn:active{transform:scale(.97)}
+.hint{margin:12px auto 0;max-width:210mm;padding:0 2px;color:#3A3A3C;font-size:14px}
+.hint b{color:#2F5C8F}
+.tip{margin:12px auto 0;max-width:210mm;background:#fff;border-radius:14px;padding:12px 14px;
+ font-size:14px;color:#3A3A3C;box-shadow:0 4px 16px rgba(69,120,179,.10)}
+.paper{width:210mm;max-width:100%;margin:14px auto 40px;background:#fff;padding:14mm 14mm 18mm;
+ box-shadow:0 8px 30px rgba(0,0,0,.10);border-radius:6px}
+.paper h1{margin:0 0 6px;font-size:21px;letter-spacing:-.02em}
+.paper .meta{color:#3A3A3C;font-size:14px;margin:0 0 4px}
+.paper .fill{color:#1C1C1E;font-size:15px;margin:10px 0 4px}
+.paper hr{border:0;border-top:1px solid #111;margin:12px 0 18px}
+.q{margin:0 0 22px;page-break-inside:avoid;break-inside:avoid}
+.q .qh{font-weight:700;font-size:15px;margin:0 0 6px}
+.q .qh .k{color:#2F5C8F;font-weight:600;font-size:13px;margin-left:6px}
+.q .qb{font-size:15px}
+.q .qb img{max-width:100%;height:auto;display:block;margin:8px 0}
+.q .qb p{margin:0 0 6px}
+.q .lines{margin-top:10px}
+.q .line{height:2.15em;border-bottom:1px dashed #D6D6DB}
+.q .ans{margin-top:10px;padding:10px 12px;background:#F5F7FA;border-radius:8px;font-size:14px}
+.q .ans .lb{font-weight:700;color:#2F5C8F;margin-bottom:4px}
+.q .ans img{max-width:100%;height:auto;display:block;margin:8px 0}
+.empty{max-width:520px;margin:44px auto;background:#fff;border-radius:18px;padding:26px 22px;
+ box-shadow:0 6px 24px rgba(69,120,179,.12)}
+.empty h2{margin:0 0 10px;font-size:19px}
+.empty p{margin:0 0 10px;color:#3A3A3C}
+@media print{
+ body{background:#fff}
+ .bar,.hint,.tip{display:none!important}
+ .paper{width:auto;margin:0;padding:0;box-shadow:none;border-radius:0}
+ .q{margin-bottom:20px}
+}
+"""
+
+
+def build_train_print_html(name, errors, date_str, title=None, note=None,
+                           with_answers=False, blank_lines=6, dl_url=None):
+    """某学生某天的练习题 -> 一张 A4 打印页（打开即自动调起系统打印面板）。
+    图片优先内联（打印不依赖网络），页面上保留「下载 Word」兜底。"""
+    mtk = media_ticket()
+    budget = [_PRINT_INLINE_BUDGET]
+    body = []
+    for i, e in enumerate(errors, 1):
+        # 题干 = stem 的 HTML + images 数组里的图（与导出的 Word 同一口径：
+        # 错题的图在 images 里，stem 只是文字部分）
+        imgs = "".join(_print_img_tag(u, budget, mtk)
+                       for u in (e.get("images") or []) if isinstance(u, str))
+        stem = _print_html_frag(e.get("stem") or "", budget, mtk) + imgs
+        kp = (e.get("knowledgePoint") or "").strip()
+        kp_html = ('<span class="k">%s</span>' % xesc(kp)) if kp else ""
+        lines = "".join('<div class="line"></div>' for _ in range(max(0, int(blank_lines or 0))))
+        ans = ""
+        if with_answers:
+            ai = "".join(_print_img_tag(u, budget, mtk)
+                         for u in (e.get("answerImages") or []) if isinstance(u, str))
+            ana = _print_html_frag(e.get("analysis") or "", budget, mtk)
+            if (e.get("answer") or "").strip() or ai or ana:
+                ans = ('<div class="ans"><div class="lb">答案与解析</div>%s%s%s</div>'
+                       % (_print_html_frag(e.get("answer") or "", budget, mtk), ana, ai))
+        body.append('<section class="q"><div class="qh">%d.%s</div><div class="qb">%s</div>%s%s</section>'
+                    % (i, kp_html, stem, lines, ans))
+    dl_btn = ('<a class="btn" href="%s">下载 Word</a>' % dl_url) if dl_url else ""
+    return (
+        '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<title>%s</title><style>%s</style></head><body>'
+        '<div class="bar">'
+        '<span class="bt">练习题打印</span>'
+        '<button class="btn primary" onclick="window.print()">打印</button>'
+        '%s'
+        '<a class="btn" href="/train_student.html">返回做题</a>'
+        '</div>'
+        '<div class="tip">正在打开系统打印……<br>如果没有弹出打印窗口，请点上面的「<b>打印</b>」；'
+        '这台设备没有连打印机的话，点「<b>下载 Word</b>」，到有打印机的电脑上打开再打印。</div>'
+        '<div class="paper">'
+        '<h1>%s</h1>'
+        '<div class="meta">%s</div>'
+        '<div class="fill">姓名：______________　　日期：______________</div>'
+        '<hr>%s</div>'
+        '<script>(function(){var d=0;function go(){if(d)return;d=1;try{window.print()}catch(e){}}'
+        'window.addEventListener("load",function(){setTimeout(go,400)});'
+        'if(document.readyState==="complete")setTimeout(go,400);})();</script>'
+        '</body></html>'
+        % (xesc(title or "练习题"), _PRINT_CSS, dl_btn,
+           xesc(title or "练习题"), xesc(note or ""), "".join(body)))
+
+
+def build_train_print_empty_html(name, date_str):
+    """今天还没布置题目（或都被删掉了）：给一页中文说明，别让浏览器打开一张空白页。"""
+    return (
+        '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<title>今天还没有题目</title><style>%s</style></head><body>'
+        '<div class="empty"><h2>今天还没有要做的题目</h2>'
+        '<p>%s　%s</p>'
+        '<p>老师还没有为你生成今天的练习，或者今天的题目已经全部完成了。</p>'
+        '<a class="btn primary" href="/train_student.html">回到学习页面</a></div>'
+        '</body></html>'
+        % (_PRINT_CSS, xesc(name or ""), xesc(date_str or "")))
+
+
 def _p_text(text, bold=False, sz=22):
     rpr = "<w:rPr>%s<w:sz w:val=\"%d\"/></w:rPr>" % ("<w:b/>" if bold else "", sz)
     return ("<w:p><w:r>%s<w:t xml:space=\"preserve\">%s</w:t></w:r></w:p>"
@@ -2128,7 +2308,17 @@ class H(BaseHTTPRequestHandler):
             if not sid_q:
                 return send_json(self, {"error": "缺少学生"}, 400)
             exp = int(time.time()) + DL_TTL
-            if kind == "paper":
+            if kind == "print":
+                # 打印页（A4 HTML）：微信里复制到浏览器打开，浏览器会直接调起系统打印
+                d = (q.get("date", [None])[0] or "").strip()
+                if not d and is_student:
+                    d = _date_today()
+                if mode not in ("all",):
+                    mode = "questions"
+                scope = "print|%s|%s|%s" % (sid_q, d, mode)
+                path = ("/api/train/print?sid=%s&mode=%s&date=%s"
+                        % (urlquote(sid_q, safe=""), urlquote(mode, safe=""), urlquote(d, safe="")))
+            elif kind == "paper":
                 pid = (q.get("pid", [None])[0] or "").strip()
                 if not pid:
                     return send_json(self, {"error": "缺少试卷"}, 400)
@@ -2153,6 +2343,45 @@ class H(BaseHTTPRequestHandler):
                                    or hl.startswith("0.0.0.0")) else "https"
             url = ("%s://%s%s" % (proto, host, path)) if host else path
             return send_json(self, {"url": url, "expires": exp, "ttl": DL_TTL})
+        if p == "/api/train/print":
+            # 「打印题目」的首选路径：浏览器打开这张 A4 页面就自动调起系统打印面板 ——
+            # 手机能直连家里无线打印机、电脑直连本机打印机，一步就打出纸来；
+            # 打不了（没打印机/驱动不对）时，点页面上的「下载 Word」兜底。
+            # 页面是独立 URL + 短时票据（微信里复制到系统浏览器时没有登录态）。
+            if not eff_sid:
+                return send_json(self, {"error": "缺少学生"}, 400)
+            d = (q.get("date", [None])[0] or "").strip() or _date_today()
+            mode = (q.get("mode", [None])[0] or "").strip().lower()
+            with_answers = (mode == "all")
+            task, _ = store_get("trainTasks", "t_%s_%s" % (eff_sid, d))
+            pool = {e["id"]: e["body"] for e in store_list("trainErrors", limit=5000)}
+            errs = [pool[i] for i in (task.get("errorIds") or []) if i in pool] if task else []
+            stu, _ = store_get("students", eff_sid)
+            nm = ((stu.get("name") if stu else "") or eff_sid)
+            if not errs:
+                html = build_train_print_empty_html(nm, d)
+            else:
+                # 页面上「下载 Word」按钮：同一天的题目，签一条免登录直链（自己签，不用再请求）
+                _dexp = int(time.time()) + DL_TTL
+                _dscope = "errors|%s|%s|questions" % (eff_sid, d)
+                dl_url = ("/api/train/errors/export.docx?sid=%s&mode=questions&date=%s&e=%d&tk=%s"
+                          % (urlquote(eff_sid, safe=""), urlquote(d, safe=""),
+                             _dexp, _dl_sign(_dscope, _dexp)))
+                html = build_train_print_html(
+                    nm, errs, d,
+                    title="%s %s 练习题" % (nm, d),
+                    note="共 %d 道题　打印后在纸上作答" % len(errs),
+                    with_answers=with_answers, dl_url=dl_url)
+            data = html.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_cors()
+            self.end_headers()
+            self.wfile.write(data)
+            self._responded = True
+            return
         if p == "/api/train/errors/export.docx":
             # 导出 Word。学生只能导出自己的；老师可带 ?studentId= 导出指定学生。
             #  ?date=YYYY-MM-DD  只导该天练习任务里的题
