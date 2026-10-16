@@ -582,8 +582,14 @@ def dl_ticket_scope(path, q):
             return None
         return "errors|%s|%s|%s" % (sid, (q.get("date", [None])[0] or "").strip(), mode)
     if path == "/api/train/print":
-        # 打印页（A4 HTML）：与学生端「打印题目」配套，微信里复制到浏览器打开时没有登录态
+        # 打印页（A4 HTML）：与学生端「打印题目」配套，微信里复制到浏览器打开时没有登录态。
+        # 两种口径：sid(+date) = 某学生某天的练习题；sid+pid = 某一份试卷（sid=t 表示老师自己打印）。
         sid = (q.get("sid", [None])[0] or "").strip()
+        pid = (q.get("pid", [None])[0] or "").strip()
+        if pid:
+            if not sid:
+                return None
+            return "printpaper|%s|%s|%s" % (sid, pid, mode)
         if not sid:
             return None
         return "print|%s|%s|%s" % (sid, (q.get("date", [None])[0] or "").strip(), mode)
@@ -612,8 +618,13 @@ def dl_ticket_user(path, q):
         return None
     if not secrets.compare_digest(tk, _dl_sign(scope, exp)):
         return None
-    return {"role": "student", "student_id": scope.split("|")[1],
-            "username": "", "studentId": scope.split("|")[1], "viaTicket": True}
+    whose = scope.split("|")[1]
+    if scope.startswith("printpaper|") and whose == "t":
+        # 老师自己在训练台点「打印」：票据不绑学生，只放行这一张打印页
+        return {"role": "teacher", "student_id": "", "username": "",
+                "studentId": "", "viaTicket": True}
+    return {"role": "student", "student_id": whose,
+            "username": "", "studentId": whose, "viaTicket": True}
 
 
 def send_dl_expired(h):
@@ -1768,7 +1779,8 @@ body{background:#F2F2F7;color:#111;
 
 
 def build_train_print_html(name, errors, date_str, title=None, note=None,
-                           with_answers=False, blank_lines=6, dl_url=None):
+                           with_answers=False, blank_lines=6, dl_url=None,
+                           back_url="/train_student.html", back_label="返回做题"):
     """某学生某天的练习题 -> 一张 A4 打印页（打开即自动调起系统打印面板）。
     图片优先内联（打印不依赖网络），页面上保留「下载 Word」兜底。"""
     mtk = media_ticket()
@@ -1803,7 +1815,7 @@ def build_train_print_html(name, errors, date_str, title=None, note=None,
         '<button class="btn primary" onclick="window.print()">打印</button>'
         '<button class="btn" id="cpBtn" onclick="__cp()">复制链接</button>'
         '%s'
-        '<a class="btn" href="/train_student.html">返回做题</a>'
+        '<a class="btn" href="%s">%s</a>'
         '</div>'
         '<div class="inapp" id="inappBar">'
         '<div><b>没有弹出打印面板？</b>点下面的「<b>开始打印</b>」再试一次，'
@@ -1844,22 +1856,26 @@ def build_train_print_html(name, errors, date_str, title=None, note=None,
         'window.addEventListener("load",arm);'
         'if(document.readyState==="complete")setTimeout(arm,0);})();</script>'
         '</body></html>'
-        % (xesc(title or "练习题"), _PRINT_CSS, dl_btn,
+        % (xesc(title or "练习题"), _PRINT_CSS, dl_btn, xesc(back_url), xesc(back_label),
            xesc(title or "练习题"), xesc(note or ""), "".join(body)))
 
 
-def build_train_print_empty_html(name, date_str):
-    """今天还没布置题目（或都被删掉了）：给一页中文说明，别让浏览器打开一张空白页。"""
+def build_train_print_empty_html(name, date_str, title=None, note=None,
+                                 back_url="/train_student.html", back_label="回到学习页面"):
+    """没内容可打（今天没布置题 / 卷子里没有题）：给一页中文说明，别让浏览器打开一张空白页。"""
+    _t = title or "今天还没有要做的题目"
     return (
         '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
-        '<title>今天还没有题目</title><style>%s</style></head><body>'
-        '<div class="empty"><h2>今天还没有要做的题目</h2>'
+        '<title>%s</title><style>%s</style></head><body>'
+        '<div class="empty"><h2>%s</h2>'
         '<p>%s　%s</p>'
-        '<p>老师还没有为你生成今天的练习，或者今天的题目已经全部完成了。</p>'
-        '<a class="btn primary" href="/train_student.html">回到学习页面</a></div>'
+        '<p>%s</p>'
+        '<a class="btn primary" href="%s">%s</a></div>'
         '</body></html>'
-        % (_PRINT_CSS, xesc(name or ""), xesc(date_str or "")))
+        % (xesc(_t), _PRINT_CSS, xesc(_t), xesc(name or ""), xesc(date_str or ""),
+           xesc(note or "老师还没有为你生成今天的练习，或者今天的题目已经全部完成了。"),
+           xesc(back_url), xesc(back_label)))
 
 
 def _p_text(text, bold=False, sz=22):
@@ -2351,10 +2367,22 @@ class H(BaseHTTPRequestHandler):
             mode = (q.get("mode", [None])[0] or "").strip().lower()
             sid_q = (eff_sid if is_student
                      else ((q.get("studentId", [None])[0] or "").strip() or eff_sid)) or ""
-            if not sid_q:
+            if not sid_q and kind != "printpaper":
                 return send_json(self, {"error": "缺少学生"}, 400)
             exp = int(time.time()) + DL_TTL
-            if kind == "print":
+            if kind == "printpaper":
+                # 打印「某一份试卷」（训练台发卷面板 / 已发试卷）。老师自己打印时没有学生 id，
+                # 用 "t" 占位 —— dl_ticket_user 认得这条老师票据。
+                pid = (q.get("pid", [None])[0] or "").strip()
+                if not pid:
+                    return send_json(self, {"error": "缺少试卷"}, 400)
+                if mode not in ("all",):
+                    mode = "questions"
+                who = sid_q or "t"
+                scope = "printpaper|%s|%s|%s" % (who, pid, mode)
+                path = ("/api/train/print?sid=%s&pid=%s&mode=%s"
+                        % (urlquote(who, safe=""), urlquote(pid, safe=""), urlquote(mode, safe="")))
+            elif kind == "print":
                 # 打印页（A4 HTML）：微信里复制到浏览器打开，浏览器会直接调起系统打印
                 d = (q.get("date", [None])[0] or "").strip()
                 if not d and is_student:
@@ -2394,30 +2422,62 @@ class H(BaseHTTPRequestHandler):
             # 手机能直连家里无线打印机、电脑直连本机打印机，一步就打出纸来；
             # 打不了（没打印机/驱动不对）时，点页面上的「下载 Word」兜底。
             # 页面是独立 URL + 短时票据（微信里复制到系统浏览器时没有登录态）。
-            if not eff_sid:
-                return send_json(self, {"error": "缺少学生"}, 400)
-            d = (q.get("date", [None])[0] or "").strip() or _date_today()
+            # 两种口径：① sid(+date) = 学生当天练习题（学生端「打印题目」/ 训练台任务「打印」）
+            #          ② pid = 某一份试卷（训练台发卷面板「打印」）
+            pid = (q.get("pid", [None])[0] or "").strip()
             mode = (q.get("mode", [None])[0] or "").strip().lower()
             with_answers = (mode == "all")
-            task, _ = store_get("trainTasks", "t_%s_%s" % (eff_sid, d))
-            pool = {e["id"]: e["body"] for e in store_list("trainErrors", limit=5000)}
-            errs = [pool[i] for i in (task.get("errorIds") or []) if i in pool] if task else []
-            stu, _ = store_get("students", eff_sid)
-            nm = ((stu.get("name") if stu else "") or eff_sid)
-            if not errs:
-                html = build_train_print_empty_html(nm, d)
+            back_url = "/train_student.html" if is_student else "/train"
+            back_label = "返回做题" if is_student else "返回训练台"
+            if pid:
+                pp, _ = store_get("papers", pid)
+                if not pp:
+                    return send_json(self, {"error": "卷子不存在"}, 404)
+                to = [str(t) for t in (pp.get("assignedTo") or [])]
+                if is_student and eff_sid not in to and "all" not in to:
+                    return send_json(self, {"error": "无权限"}, 403)
+                qmap = {i["id"]: i["body"] for i in store_list("questions", limit=5000)}
+                qs = train_paper_resolve(pp, qmap)
+                # 题库题的正文里图片是 media:// 引用，_print_html_frag 会就地换成内联图
+                errs = [{"stem": x.get("content") or "", "images": [],
+                         "answer": x.get("answer") or "", "analysis": x.get("analysis") or "",
+                         "knowledgePoint": ""} for x in qs]
+                title = (pp.get("title") or "试卷")
+                if not errs:
+                    html = build_train_print_empty_html(
+                        "", "", title="这份卷子还没有题目",
+                        note="题目可能已被删除，或这份卷子还没有从题库选入题目。",
+                        back_url=back_url, back_label=back_label)
+                else:
+                    html = build_train_print_html(
+                        title, errs, "", title=title,
+                        note="共 %d 道题　打印后在纸上作答" % len(errs),
+                        with_answers=with_answers, dl_url=None,
+                        back_url=back_url, back_label=back_label)
             else:
-                # 页面上「下载 Word」按钮：同一天的题目，签一条免登录直链（自己签，不用再请求）
-                _dexp = int(time.time()) + DL_TTL
-                _dscope = "errors|%s|%s|questions" % (eff_sid, d)
-                dl_url = ("/api/train/errors/export.docx?sid=%s&mode=questions&date=%s&e=%d&tk=%s"
-                          % (urlquote(eff_sid, safe=""), urlquote(d, safe=""),
-                             _dexp, _dl_sign(_dscope, _dexp)))
-                html = build_train_print_html(
-                    nm, errs, d,
-                    title="%s %s 练习题" % (nm, d),
-                    note="共 %d 道题　打印后在纸上作答" % len(errs),
-                    with_answers=with_answers, dl_url=dl_url)
+                if not eff_sid:
+                    return send_json(self, {"error": "缺少学生"}, 400)
+                d = (q.get("date", [None])[0] or "").strip() or _date_today()
+                task, _ = store_get("trainTasks", "t_%s_%s" % (eff_sid, d))
+                pool = {e["id"]: e["body"] for e in store_list("trainErrors", limit=5000)}
+                errs = [pool[i] for i in (task.get("errorIds") or []) if i in pool] if task else []
+                stu, _ = store_get("students", eff_sid)
+                nm = ((stu.get("name") if stu else "") or eff_sid)
+                if not errs:
+                    html = build_train_print_empty_html(nm, d, back_url=back_url, back_label=back_label)
+                else:
+                    # 页面上「下载 Word」按钮：同一天的题目，签一条免登录直链（自己签，不用再请求）
+                    _dexp = int(time.time()) + DL_TTL
+                    _dscope = "errors|%s|%s|questions" % (eff_sid, d)
+                    dl_url = ("/api/train/errors/export.docx?sid=%s&mode=questions&date=%s&e=%d&tk=%s"
+                              % (urlquote(eff_sid, safe=""), urlquote(d, safe=""),
+                                 _dexp, _dl_sign(_dscope, _dexp)))
+                    html = build_train_print_html(
+                        nm, errs, d,
+                        title="%s %s 练习题" % (nm, d),
+                        note="共 %d 道题　打印后在纸上作答" % len(errs),
+                        with_answers=with_answers, dl_url=dl_url,
+                        back_url=back_url, back_label=back_label)
             data = html.encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")

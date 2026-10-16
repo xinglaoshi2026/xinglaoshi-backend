@@ -1785,7 +1785,10 @@ async function loadTeacherPapers(){
         const n = (p.questionIds&&p.questionIds.length)||0;
         const to = (p.assignedTo[0]==='all'?'全体学生':p.assignedTo.length+' 名学生');
         return `<div class="batch-item" style="cursor:pointer" onclick="toggleSent(${idx})">
-          <div><b>${esc(p.title||'未命名试卷')}</b> · ${n} 题 · ${esc(to)}${p.createdBy?(' · '+esc(p.createdBy)):''}</div>
+          <div style="display:flex;gap:10px;align-items:center;justify-content:space-between">
+            <div><b>${esc(p.title||'未命名试卷')}</b> · ${n} 题 · ${esc(to)}${p.createdBy?(' · '+esc(p.createdBy)):''}</div>
+            <button class="tint sm" style="flex:none" onclick="event.stopPropagation();printPaper('${esc(p.id||'')}')" title="打印这份卷子（打开打印页会自动调起打印机）"><svg class="ic"><use href="#i-printer"/></svg>打印</button>
+          </div>
           <div id="sent-${idx}" class="hidden" style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--line)"></div>
         </div>`;
       }).join('');
@@ -2484,7 +2487,8 @@ function renderTaskStu(){
       <div class="dt-sub">${STMAP[t.status]||t.status}${t.score!=null?('　正确率 '+(t.score*100).toFixed(0)+'%'):''}</div>
       ${reviewLineHtml(t)}</div>
     <div class="dt-acts">
-      <button class="tint sm" onclick="downloadStuErrors('${t.studentId}','${t.date}',true)" title="打印给学生做，不含答案"><svg class="ic"><use href="#i-printer"/></svg>下载题目</button>
+      <button class="tint sm" onclick="printStuTask('${t.studentId}','${t.date}')" title="直接打印这一份（打开打印页会自动调起电脑/手机打印机）"><svg class="ic"><use href="#i-printer"/></svg>打印</button>
+      <button class="ghost sm" onclick="downloadStuErrors('${t.studentId}','${t.date}',true)" title="下载 Word 发给学生做，不含答案"><svg class="ic"><use href="#i-download"/></svg>下载题目</button>
       <button class="ghost sm" onclick="downloadStuErrors('${t.studentId}','${t.date}')" title="含答案与解析，老师用"><svg class="ic"><use href="#i-download"/></svg>含答案</button>
       <button class="ghost sm" onclick="viewTaskLogs('${t.id}')"><svg class="ic"><use href="#i-eye"/></svg>查看作答</button>
       ${(t.status==='done'||t.status==='partial')
@@ -2596,6 +2600,42 @@ function downloadStuErrors(sid, date, questionsOnly){
     + (questionsOnly? '&mode=questions' : '');
   const nm = stuName(sid)||'学生';
   downloadDocx(url, nm + (date? (' '+date) : '') + (questionsOnly? ' 练习题(不含答案)' : ' 错题本') + '.docx');
+}
+/* ---------- 打印（老师端）：打开 A4 打印页 → 自动调起系统打印 ----------
+   为什么不直接 window.open('/api/train/print?...')：浏览器自己导航的请求带不上登录头
+   （token 存在 localStorage 里），会 401。所以先领一条带短时票据的打印直链（30 分钟、
+   只对这一份内容有效），再用新标签打开。票据必须先在手势里开好占位窗，异步再开会被拦。 */
+async function openPrintTicket(query){
+  let w = null;
+  try{ w = window.open('', '_blank'); }catch(e){}
+  if(w){
+    try{
+      w.document.write('<!doctype html><meta charset="utf-8"><title>正在准备打印…</title>'
+        +'<body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;'
+        +'background:#F2F2F7;color:#1C1C1E;font:16px/1.7 -apple-system,BlinkMacSystemFont,sans-serif">'
+        +'<div>正在准备打印…</div>');
+      w.document.close();
+    }catch(e){}
+  }
+  const {status,j} = await call('/api/train/dl.ticket?' + query);
+  if(status!==200 || !j || !j.url){
+    if(w){ try{ w.close(); }catch(e){} }
+    alert((j&&j.error)||'生成打印链接失败，请稍后重试');
+    return;
+  }
+  if(w){ try{ w.location.replace(j.url); w.focus(); return; }catch(e){} }
+  location.href = j.url;
+}
+/* 打印「某学生某天的那份题」（老师任务列表里的「打印」） */
+function printStuTask(sid, date){
+  if(!sid){ alert('缺少学生'); return; }
+  openPrintTicket('kind=print&studentId=' + encodeURIComponent(sid)
+    + (date ? ('&date=' + encodeURIComponent(date)) : ''));
+}
+/* 打印「一份试卷」（发卷面板 / 已发试卷里的「打印」） */
+function printPaper(pid){
+  if(!pid){ alert('这份卷子缺少编号，无法打印'); return; }
+  openPrintTicket('kind=printpaper&pid=' + encodeURIComponent(pid));
 }
 async function viewTaskLogs(tid){
   const {j} = await call('/api/train/tasks/'+tid+'/logs');
