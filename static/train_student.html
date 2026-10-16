@@ -1081,7 +1081,9 @@ async function loadToday(){
   //   （服务端还没落库，或响应比提交结果先到/后到）→ 一律按「已完成」渲染。
   //   否则学生刚交完，界面会回退成待完成：底部提交栏又冒出来、最近一周又锁上，
   //   学生会以为没交成功而重复提交。
-  if(TASK_DONE && !fin) fin = true;
+  //   但只对「刚刚交的那一份」兜底：跨零点后拿到的是今天的新任务，不能被昨天的提交带偏。
+  const stickyDone = TASK_DONE && !!LAST_SUBMITTED_ID && task.id === LAST_SUBMITTED_ID;
+  if(stickyDone && !fin) fin = true;
   const badge = fin ? '<span class="pill ok">已完成</span>'
     : (tst==='partial' ? '<span class="pill warn">部分完成</span>' : '<span class="pill plain">待完成</span>');
   head.className='card topbar-card'+(fin?' done':'');
@@ -1106,7 +1108,7 @@ async function loadToday(){
   // submit() 里已经设过 TASK_DONE=true；紧跟着的 loadToday() 若遇到并发（如启动时的
   // bootWithToken→loadToday().then(updateWeekLock)），旧响应后到会把状态又压回 false，
   // 导致「刚交完，最近一周却被重新锁上」。
-  if(!fin && TASK_DONE){
+  if(!fin && stickyDone){
     TASK_DONE = true;      // 保持解锁，不回退
   }else{
     TASK_DONE = !task || fin;
@@ -1195,6 +1197,10 @@ async function loadToday(){
 // 公共计算过程（多题写在同一张纸上时只传一次，提交时每题都会带上这些图）
 let SHARED = {photos:[], urls:[]};
 let TASK_ID = '';
+// 本次会话「刚刚提交成功」的那份任务 id。跨零点提交时（页面是昨天打开的、凌晨才点提交），
+// 提交的是昨天那份任务，刷新后拿回来的是今天的新任务 —— 不能再把今天这份当成"已完成"，
+// 否则底部提交栏被藏起来，学生今天根本交不上去。
+let LAST_SUBMITTED_ID = '';
 // 把「已上传但还没提交」的照片记在本地：学生中途退出再进来不用重拍
 function persistDrafts(){
   try{
@@ -1894,7 +1900,7 @@ async function submit(){
   }
   btn.disabled=true;
   btn.textContent='提交中…';
-  const {status,j,net}=await call('/api/train/submit',{method:'POST',body:JSON.stringify({answers})}, 60000);
+  const {status,j,net}=await call('/api/train/submit',{method:'POST',body:JSON.stringify({taskId:TASK_ID, answers})}, 60000);
   _submitting=false; btn.disabled=false; btn.textContent='提交今日练习';
   if(status===401){ logout(); return; }
   if(net){
@@ -1907,6 +1913,11 @@ async function submit(){
   if(!j||!j.ok){ document.getElementById('result').textContent=(j&&j.error)||'提交失败，请稍后重试'; return; }
   let h='<div class="score"><div class="big">'+j.right+' / '+j.total+'</div><div class="lb">本次自评做对 '+j.right+' 道，继续加油</div></div>';
   (j.results||[]).forEach((r,i)=>{
+    if(r.invalid){   // 没带上自评结果（正常流程不会出现）：这题没记入，不能显示成"做错了"
+      h+=`<div class="rescard"><div class="qi"><svg class="ic" style="width:15px;height:15px;color:var(--warn)"><use href="#i-alert"/></svg>第${i+1}题 · <b style="color:var(--warn)">没有收到自评结果，这题没有记入</b></div>
+      <div style="color:var(--ink2);margin-top:4px">请回到上面完成这题的第 3 步（做对 / 半对 / 做错），再提交一次。</div></div>`;
+      return;
+    }
     const ok=r.result==='right'||r.result==='self_right';
     const ansImgs=(r.answerImages&&r.answerImages.length)?r.answerImages.map(u=>`<img class="qi" src="${murl(u)}" onclick="zoomImg('${murl(u)}')" onerror="imgErr(this)">`).join(''):'';
     h+=`<div class="rescard"><div class="qi"><svg class="ic" style="width:15px;height:15px;color:${ok?'var(--ok)':'var(--err)'}"><use href="#i-${ok?'check':'x'}"/></svg>第${i+1}题 · <b style="color:${ok?'var(--ok)':'var(--err)'}">${ok?'做对了':'做错了'}</b></div>
@@ -1917,6 +1928,7 @@ async function submit(){
   document.getElementById('bottomBar').classList.add('hidden');
   // 当日作业已提交完成 → 解锁近期错题，并自动展开供复习
   TASK_DONE = true;
+  LAST_SUBMITTED_ID = TASK_ID;   // 记下「刚交的是哪一份」，供刷新时判断是否该按"已完成"兜底
   try{ if(TASK_ID) localStorage.removeItem('tt_drafts_'+TASK_ID); }catch(e){}
   updateWeekLock();
   document.getElementById('weekList').classList.remove('hidden');

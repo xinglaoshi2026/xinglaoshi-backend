@@ -932,6 +932,12 @@ def train_on_answer(card, result):
     # 昨天刚做错的题会被逾期更久的旧卡挤出每日题单（家长/老师看到的就是"没重现"）。
     card["lastResult"] = result
     card["lastAnsweredDate"] = _date_today()
+    # 月度抽检的题答完就回到日常队列重新判定：答错要「明天必见」，答对再按毕业条件
+    # 重判（做对且仍满足毕业条件 → 重新进月度池）。原实现不动 status，抽查题做错后
+    # 仍留在 month_pool 里，永远不再参与组题 —— 抽查做了错题等于白做。
+    if card.get("status") == "month_pool":
+        card["status"] = "active"
+    card.pop("reviewSample", None)
     if right:
         card["consecutiveRight"] += 1
         card["level"] = min(card["level"] + 1, 5)
@@ -968,7 +974,10 @@ def train_heal_card_results():
             continue
         day = b.get("date") or b.get("answerDate") or ""
         k = (sid, eid)
-        if k not in latest or day >= (latest[k].get("date") or latest[k].get("answerDate") or ""):
+        cur = latest.get(k)
+        # 同一天可能有多条流水（老师手动补登等）：取时间戳更大的那条，别被旧记录盖掉
+        if cur is None or ((day, b.get("updatedAt") or 0)
+                           > (cur.get("date") or cur.get("answerDate") or "", cur.get("updatedAt") or 0)):
             latest[k] = b
     n = 0
     for c in todo:
@@ -1082,7 +1091,15 @@ def train_build_daily(student_id, date_str, include_new=True):
     原排序只按 (掌握等级, 逾期天数)，昨天刚做错的题因为逾期 0 天而排在最末，
     一旦学生手上积压的旧卡 ≥ 每日题量（很常见：一次没做就攒下十几张），
     这道题就会被永远挤出题单 —— 与 train_on_answer 里「错了明天必见」的承诺矛盾。
-    等级低的先出、其余按逾期最久优先的次序保持不变。"""
+    等级低的先出、其余按逾期最久优先的次序保持不变。
+
+    另一处旧漏洞(名额白占)：去重与「剔除已被删除的错题」原先放在挑完之后
+    (train_task_error_ids 里)，于是空卡、以及同一道题被重复收录成多条错题时，
+    会先占掉名额再被丢掉 —— 学生当天的题单凭空少几道（每日 3 道只发 1~2 道）。
+    现在改为挑选前就先剔除空卡、按题面内容去重，名额只花在真正要练的题上。
+
+    月度抽检的题(带 reviewSample 标记)排普通卡前面：它们等级高、逾期 0 天，
+    按原排序一次都挤不进题单，抽检等于没做。"""
     stu, _ = store_get("students", student_id)
     try:
         daily_max = int((stu or {}).get("dailyCount", TRAIN_DAILY_MAX) or TRAIN_DAILY_MAX)
@@ -1090,76 +1107,97 @@ def train_build_daily(student_id, date_str, include_new=True):
         daily_max = TRAIN_DAILY_MAX
     if daily_max < 1:
         daily_max = 1
+    # 本人名下现存的错题：既用来剔除「错题已删、卡片还在」的空卡，也用来按内容去重
+    mine = {}
+    for e in store_list("trainErrors", limit=3000):
+        b = e["body"] if isinstance(e, dict) else e
+        if isinstance(b, dict) and b.get("studentId") == student_id and b.get("id"):
+            mine[b["id"]] = b
+
+    def _key(c):
+        """题目内容指纹；返回 None 表示这道题的错题已不存在（空卡，不该占名额）。"""
+        e = mine.get(c.get("errorId"))
+        if not e:
+            return None
+        return ((e.get("stem") or ""), tuple(e.get("images") or []),
+                tuple(e.get("answerImages") or []))
+
     cards = [c["body"] if isinstance(c, dict) else c for c in
              store_list("trainCards", limit=3000)]
-    due = [c for c in cards if c.get("studentId") == student_id
-           and c.get("status") == "active" and c.get("nextDueDate", "") <= date_str]
-    # ①「上次做错/半对」永远最优先（必见承诺）② 掌握等级低的优先
-    # ③ 其余按逾期最久的优先（保持原次序，防止特别老的卡被一直压后）
-    due.sort(key=lambda c: (0 if c.get("lastResult") in ("half", "wrong", "self_wrong") else 1,
+    cards = [c for c in cards if c.get("studentId") == student_id and _key(c) is not None]
+    due = [c for c in cards if c.get("status") == "active" and c.get("nextDueDate", "") <= date_str]
+    # ①「上次做错/半对」永远最优先（必见承诺）② 月度抽检抽回来的 ③ 掌握等级低的优先
+    # ④ 其余按逾期最久的优先（保持原次序，防止特别老的卡被一直压后）
+    due.sort(key=lambda c: (0 if c.get("lastResult") in ("half", "wrong", "self_wrong")
+                            else (1 if c.get("reviewSample") else 2),
                             c.get("level", 0),
                             -_days_between(c.get("nextDueDate", date_str), date_str)))
-    # 新课巩固池：近7天收录且仍 level0 的错题
+    # 新课巩固池：近7天收录且仍 level0 的错题（按题面内容去重，重复收录的只算一道）
     new_pool = []
     if include_new:
-        new_errs = [e["body"] for e in store_list("trainErrors", limit=3000)]
-        for e in new_errs:
-            if e.get("studentId") != student_id:
+        seen_new = set()
+        for eid in mine:
+            c = next((x for x in cards if x.get("id") == train_card_id(student_id, eid)), None)
+            if not c or c.get("level", 0) != 0:
                 continue
-            cid = train_card_id(student_id, e["id"])
-            c = next((x for x in cards if x.get("id") == cid), None)
-            if c and c.get("level", 0) == 0 and _days_between(c.get("firstSeen", date_str), date_str) <= 7:
-                new_pool.append(c)
-    new_ids = {c.get("errorId") for c in new_pool}
+            if _days_between(c.get("firstSeen", date_str), date_str) > 7:
+                continue
+            k = _key(c)
+            if k in seen_new:
+                continue
+            seen_new.add(k)
+            new_pool.append(c)
     new_quota = max(1, daily_max // 2) if new_pool else 0
     picked = []
     picked_ids = set()
-    # 1) 先取新课巩固（限量），保证新错题至少露面
-    for c in new_pool:
-        if len(picked) >= new_quota:
-            break
-        eid = c.get("errorId")
-        if eid in picked_ids:
-            continue
-        picked.append(c); picked_ids.add(eid)
-    # 2) 用到期卡填满剩余名额
-    for c in due:
-        if len(picked) >= daily_max:
-            break
-        eid = c.get("errorId")
-        if eid in picked_ids:
-            continue
-        picked.append(c); picked_ids.add(eid)
-    # 3) 仍不满(到期卡不够)：用新课巩固剩余补齐，绝不因配额而少派
-    if len(picked) < daily_max:
-        for c in new_pool:
-            if len(picked) >= daily_max:
-                break
+    picked_keys = set()
+
+    def _take(cands, limit):
+        """按优先顺序取卡：同一道题（同一错题 id / 同一题面内容）只取一次。"""
+        for c in cands:
+            if len(picked) >= limit:
+                return
             eid = c.get("errorId")
-            if eid in picked_ids:
+            k = _key(c)
+            if not eid or eid in picked_ids or k in picked_keys:
                 continue
-            picked.append(c); picked_ids.add(eid)
+            picked.append(c); picked_ids.add(eid); picked_keys.add(k)
+
+    # 1) 先取新课巩固（限量），保证新错题至少露面
+    _take(new_pool, new_quota)
+    # 2) 用到期卡填满剩余名额
+    _take(due, daily_max)
+    # 3) 仍不满(到期卡不够)：用新课巩固剩余补齐，绝不因配额而少派
+    _take(new_pool, daily_max)
     # 4) 仍不满：拉即将到期的(未来1天内)
     if len(picked) < daily_max:
-        up = [c for c in cards if c.get("studentId") == student_id
-              and c.get("status") == "active" and c.get("nextDueDate", "") > date_str
+        up = [c for c in cards if c.get("status") == "active" and c.get("nextDueDate", "") > date_str
               and _days_between(date_str, c.get("nextDueDate", date_str)) <= 1]
         up.sort(key=lambda c: c.get("nextDueDate", date_str))
-        for c in up:
-            if c.get("errorId") not in picked_ids:
-                picked.append(c); picked_ids.add(c.get("errorId"))
-            if len(picked) >= daily_max:
-                break
+        _take(up, daily_max)
     return picked
 
 
 def train_monthly_sample(student_id, date_str):
-    """每月1号从 month_pool 抽取≤题量(约20%)降级回 active, 混入当天任务；上限不超过该生每日题数。"""
+    """月度抽检：每月一次，从毕业池 month_pool 抽 ≤题量(约20%)降级回 active，
+    混入当天任务；上限不超过该生每日题数。
+
+    修复两处旧漏洞：
+    ① 原来只在「生成任务的日期正好是 1 号」时才抽检 —— 1 号放假/没点生成，整月就
+       永远不抽检。现在按「本自然月是否已抽检过」(学生记录 lastSampleMonth) 判断，
+       本月没抽过就在下次生成任务时补一次，一个月只抽一次。
+    ② 抽回来的卡打上 reviewSample 标记：毕业卡等级高(4~5)、逾期 0 天，按原排序
+       永远排在队尾，一次都挤不进题单（抽检形同虚设）。train_build_daily 会让它
+       排在普通卡前面，答完(train_on_answer)即清掉标记。"""
+    date_str = date_str or _date_today()
+    month = date_str[:7]
+    stu, _ = store_get("students", student_id)
+    if stu and stu.get("lastSampleMonth") == month:
+        return []      # 本月已经抽检过
     cards = [c["body"] for c in store_list("trainCards", limit=3000)]
     pool = [c for c in cards if c.get("studentId") == student_id and c.get("status") == "month_pool"]
     if not pool:
-        return []
-    stu, _ = store_get("students", student_id)
+        return []      # 池子是空的：不打月份标记，等有题毕业后再补抽
     try:
         dmax = int((stu or {}).get("dailyCount", TRAIN_DAILY_MAX) or TRAIN_DAILY_MAX)
     except Exception:
@@ -1167,13 +1205,17 @@ def train_monthly_sample(student_id, date_str):
     cap = max(1, min(3, dmax))
     k = min(cap, max(1, round(len(pool) * 0.2)))
     import random
-    random.seed(student_id + date_str)
+    random.seed(student_id + month)
     chosen = random.sample(pool, min(k, len(pool)))
     for c in chosen:
         c["status"] = "active"
         c["nextDueDate"] = date_str
+        c["reviewSample"] = date_str      # 标记为抽检题：组题时优先排，答完即清
         c["updatedAt"] = now_ms()
         store_put("trainCards", c["id"], c)
+    if stu:
+        stu["lastSampleMonth"] = month
+        store_put("students", student_id, stu)
     return chosen
 
 
@@ -1211,6 +1253,10 @@ def train_rebuild_today_task(student_id, date_str=None):
     if task.get("status") in ("done", "partial"):
         return None      # 已作答：保留原题单，避免把已交的题换掉
     train_heal_card_results()   # 同 train_generate_tasks：先补齐卡片作答结果再重算题单
+    try:
+        train_monthly_sample(student_id, date_str)   # 本自然月已抽检过则内部直接返回
+    except Exception as _e:
+        print('monthly sample failed:', _e)
     task["errorIds"] = train_task_error_ids(student_id, date_str)
     task["updatedAt"] = now_ms()
     store_put("trainTasks", tid, task)
@@ -1226,9 +1272,13 @@ def train_generate_tasks(date_str=None, student_ids=None):
     if student_ids:
         wanted = set(str(x).strip() for x in student_ids if str(x).strip())
         students = [s for s in students if s.get("id") in wanted]
-    if date_str[8:10] == "01":  # 每月1号先月度抽检
-        for s in students:
+    # 月度抽检：每月一次。原来写死"1 号当天生成才抽"，1 号放假就整月不抽 —— 改为
+    # 本自然月没抽检过就补一次（train_monthly_sample 内部按月去重，不会重复抽）。
+    for s in students:
+        try:
             train_monthly_sample(s.get("id"), date_str)
+        except Exception as _e:
+            print('monthly sample failed:', _e)
     made = 0
     for s in students:
         sid = s.get("id")
@@ -1377,13 +1427,53 @@ def train_student_recent(student_id, days=14):
     }
 
 
-def train_submit(student_id, date_str, answers):
-    """学生提交：自动判分 + 更新卡片 + 写流水 + 更新任务。返回逐题结果。"""
-    date_str = date_str or _date_today()
-    tid = "t_%s_%s" % (student_id, date_str)
-    task, _ = store_get("trainTasks", tid)
+def train_submit(student_id, date_str, answers, task_id=None):
+    """学生提交：自动判分 + 更新卡片 + 写流水 + 更新任务。返回逐题结果。
+
+    任务定位（修复跨零点漏洞）：优先用前端带上来的 taskId（学生看到的就是那一天的题单），
+    其次用 date，再其次「今天」，今天没有任务时回退「昨天」——
+    学生 23:55 打开页面、00:05 才点提交，原实现按"今天"找任务 → 任务不存在 → 提交失败，
+    照片和自评全白做。现在会老老实实记到昨天那条任务上。
+    date 只接受今天/昨天，避免用任意历史日期去反复刷旧任务。"""
+    date_str = date_str or ""
+    today = _date_today()
+    yest = _date_after(today, -1)
+    recent = (today, yest)
+    task = None
+
+    def _ok_task(t):
+        return bool(t) and t.get("studentId") == student_id and t.get("generated")
+
+    if task_id:
+        t, _ = store_get("trainTasks", task_id)
+        # 只认今天/昨天的任务：避免拿一个远古任务 id 反复提交来刷掌握等级
+        if _ok_task(t) and (t.get("date") in recent):
+            task = t
+    if task is None:
+        cands = []
+        if date_str in recent:
+            cands.append(date_str)
+        for d in recent:
+            if d not in cands:
+                cands.append(d)
+        for d in cands:
+            t, _ = store_get("trainTasks", "t_%s_%s" % (student_id, d))
+            if _ok_task(t):
+                task = t
+                break
+    if task is None:
+        # 兜底：页面开了好几天（周末没关）——挑最近一条「还没做完」的任务，学生不至于白做
+        stale = [x["body"] for x in store_list("trainTasks", limit=8000)
+                 if isinstance(x, dict) and isinstance(x.get("body"), dict)]
+        stale = [t for t in stale if _ok_task(t) and (t.get("date") or "") <= today
+                 and t.get("status") != "done"]
+        stale.sort(key=lambda t: t.get("date") or "", reverse=True)
+        if stale:
+            task = stale[0]
     if not task:
         return {"ok": False, "error": "今日任务不存在"}
+    tid = task.get("id")
+    date_str = task.get("date") or date_str or _date_today()
     need = set(task.get("errorIds") or [])   # 本任务题单：submit 只接受题单内的题
     # 今天这题是否已经交过（学生中途退出后再进来重做时，不重复记流水/不重复推进卡片等级）
     prev = {}
@@ -1393,6 +1483,7 @@ def train_submit(student_id, date_str, answers):
             prev[b["errorId"]] = b
     results = []
     new_n = 0
+    valid_results = ("right", "half", "wrong", "self_right", "self_wrong")
     for a in answers:
         eid = a.get("errorId")
         e, _ = store_get("trainErrors", eid)
@@ -1413,6 +1504,14 @@ def train_submit(student_id, date_str, answers):
                             "answer": qans, "analysis": e.get("analysis") or "",
                             "answerImages": e.get("answerImages") or [],
                             "stem": e.get("stem") or "", "already": True})
+            continue
+        # 没带（或带错）自评结果：既不奖励也不降级、也不记流水 —— 该题算「没交」。
+        # 原实现把这种情况当成"做错"处理：等级 -1、明天必见，学生明明做对了却被降级。
+        if result not in valid_results:
+            results.append({"errorId": eid, "result": None, "invalid": True,
+                            "answer": qans, "analysis": e.get("analysis") or "",
+                            "answerImages": e.get("answerImages") or [],
+                            "stem": e.get("stem") or ""})
             continue
         cid = train_card_id(student_id, eid)
         c, _ = store_get("trainCards", cid)
@@ -2417,7 +2516,8 @@ class H(BaseHTTPRequestHandler):
             sid = _eff_sid(body.get("studentId"))
             if not sid:
                 return send_json(self, {"error": "缺少 studentId"}, 400)
-            return send_json(self, train_submit(sid, body.get("date"), body.get("answers") or []))
+            return send_json(self, train_submit(sid, body.get("date"), body.get("answers") or [],
+                                                task_id=(body.get("taskId") or "").strip() or None))
         # 教师端：组卷并发送给学生（云端下发）。assignedTo 可为学生 id 列表或 ["all"]
         if p == "/api/train/teacher/papers":
             if not _teacher_only():
