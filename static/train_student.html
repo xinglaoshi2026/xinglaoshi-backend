@@ -1686,12 +1686,17 @@ async function downloadPaper(pid, mode){
   await _downloadDocx(url, '试卷.docx');
 }
 
-/* ---------- 学生端·教师评语（每题后展示）---------- */
+/* ---------- 学生端·教师评语（每题后展示）----------
+   ★这里原来调的是 esc()，但学生端从来没有定义过 esc（只有 escHtml）——
+   于是只要老师写了文字/图片/语音评语，这里就抛 ReferenceError，
+   被 loadStuComments 的 try/catch 吞掉 → 学生端「老师评语」永远显示不出来。
+   （2026-10-16 体检发现，改成 escHtml。） */
 function stuCmtHtml(c){
   let inner='';
-  if(c.type==='text') inner='<div class="cmt-tx">'+esc(c.text||'')+'</div>';
-  else if(c.type==='image') inner='<img class="cmt-img" src="'+esc(murl(c.url))+'" onclick="zoomImg(\''+esc(murl(c.url))+'\')">';
-  else if(c.type==='voice') inner='<audio class="cmt-audio" src="'+esc(murl(c.url))+'" controls preload="none"></audio>';
+  if(c.type==='text') inner='<div class="cmt-tx">'+escHtml(c.text||'')+'</div>';
+  else if(c.type==='image'){ const u=escHtml(murl(c.url));
+    inner='<img class="cmt-img" src="'+u+'" onclick="zoomImg(this.src)">'; }
+  else if(c.type==='voice') inner='<audio class="cmt-audio" src="'+escHtml(murl(c.url))+'" controls preload="none"></audio>';
   return '<div class="cmt-row">'+inner+'</div>';
 }
 async function loadStuComments(eid, idx){

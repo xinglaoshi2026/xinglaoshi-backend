@@ -2543,6 +2543,24 @@ async function saveReview(tid, reviewed){
   renderDashStu();
   toastMsg(reviewed ? '已标记已阅，学生下次打开就能看到' : '已取消已阅', true);
 }
+/* 评语里的图片：点一下放大看清楚。
+   ★训练台原本没定义 zoomImg，但评语图片的 onclick 一直在调它 —— 老师点图片只会报错、没反应。
+   这里补一个轻量浮层（训练台没有学生端那套图片查看器，够用就好）：再点一下收起。 */
+function zoomImg(src){
+  let m = document.getElementById('xls-zoom');
+  if(!m){
+    m = document.createElement('div');
+    m.id = 'xls-zoom';
+    m.style.cssText = 'position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.86);'
+      + 'display:flex;align-items:center;justify-content:center;padding:16px;cursor:zoom-out';
+    m.innerHTML = '<img id="xls-zoom-pic" alt="" style="max-width:100%;max-height:100%;'
+      + 'border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.4)">';
+    m.onclick = function(){ m.remove(); };        // 点任意处收起（看完成绩单再点一下即可）
+    document.body.appendChild(m);
+  }
+  const pic = document.getElementById('xls-zoom-pic');
+  if(pic) pic.src = src;
+}
 // 轻提示（右下角气泡，避免用 alert 打断）
 function toastMsg(text, ok){
   let el = document.getElementById('xls-toast');
