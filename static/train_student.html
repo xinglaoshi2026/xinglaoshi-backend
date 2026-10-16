@@ -990,6 +990,10 @@ function animateIn(){
 // 今日任务的请求代次：只认最后一次发出的请求的响应。
 // 否则「启动时那次慢请求」后到，会把已经提交完成的界面又压回「待完成」。
 let _todaySeq = 0;
+// 今日任务的日期（取自 /api/train/today 返回的 task.date，由服务端按北京时间给出）。
+// 「打印题目」必须按这个日期导出当天的任务题；不带日期后端会当成「该生全部错题」，
+// 导出整个错题本而不是今天布置的题（岳鹏博反馈的现象）。
+let TODAY_DATE = '';
 async function loadToday(){
   const mySeq = ++_todaySeq;
   const {status,j,net}=await call('/api/train/today');
@@ -1008,6 +1012,8 @@ async function loadToday(){
   }
   renderReview(j && j.review);
   const task=j.task;
+  // 记下今日任务日期，供「打印题目」按当天任务导出（不带日期会导出成整本错题）
+  TODAY_DATE = (task && task.date) || '';
   const head=document.getElementById('head');
   const bb=document.getElementById('bottomBar');
   const hideAll = () => { bb.classList.add('hidden');
@@ -1886,12 +1892,17 @@ async function loadWeek(){
 }
 
 // 打印版：只含今天要做的题目（不含答案/解析），做题前就能下载打印，方便在纸上作答
+// ★必须带 date=今天，否则后端会走「该生全部错题」分支，导出整本错题本而不是今天布置的题。
 async function downloadTodayQuestions(){
-  await _downloadDocx(API + '/api/train/errors/export.docx?mode=questions', '今天的题目.docx');
+  if(!TODAY_DATE){ alert('今天还没有练习任务，暂时没有可打印的题目'); return; }
+  const url = API + '/api/train/errors/export.docx?mode=questions'
+    + '&date=' + encodeURIComponent(TODAY_DATE)
+    + '&_=' + Date.now();     // 破缓存：避免 WebView 复用上一次下载的旧文件
+  await _downloadDocx(url, TODAY_DATE + ' 练习题.docx');
 }
 // 下载错题本（Word）：与「组卷下载」同一套排版，后端导出全部错题（含答案）
 async function downloadErrors(){
-  await _downloadDocx(API + '/api/train/errors/export.docx', '错题本.docx');
+  await _downloadDocx(API + '/api/train/errors/export.docx?_=' + Date.now(), '错题本.docx');
 }
 
 // 启动时若有 token 尝试直接进入(后端会校验有效性)

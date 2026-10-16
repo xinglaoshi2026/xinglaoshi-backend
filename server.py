@@ -1861,6 +1861,8 @@ class H(BaseHTTPRequestHandler):
             fname = urlquote((pp.get("title") or "试卷") + ".docx")
             self.send_response(200)
             self.send_header("Content-Type", DOCX_CTYPE)
+            # Word 是一次性下载：禁用缓存，否则微信/WebView 可能复用上一次下载的旧文件
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
             self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + fname)
             self.send_header("Content-Length", str(len(data)))
             self.send_cors()
@@ -1889,6 +1891,12 @@ class H(BaseHTTPRequestHandler):
             questions_only = mode in ("questions", "stem", "print")
             if questions_only:
                 # 只印题目：不含任何答案/解析/答案图
+                if not date_arg and is_student:
+                    # 兜底：学生端「打印题目」语义永远是"今天要做的题"。
+                    # 旧版本页面（或被微信/WebView 缓存的旧 JS）不带 date 参数，会掉到下面的
+                    # else 分支被当成"该生全部错题"导出——学生拿到的是整本错题本而非今天布置的题
+                    # （岳鹏博反馈：今天发布了题，下载下来的却不是今天的）。这里统一按今天取。
+                    date_arg = _date_today()
                 if date_arg:
                     # 当天练习任务内的题（带姓名/日期表头 + 留白，供打印到纸上作答）
                     d = date_arg
@@ -1930,6 +1938,8 @@ class H(BaseHTTPRequestHandler):
                     fname = urlquote("%s 错题本（不含答案）.docx" % nm)
                 self.send_response(200)
                 self.send_header("Content-Type", DOCX_CTYPE)
+                # Word 是一次性下载：禁用缓存，否则微信/WebView 可能复用上一次下载的旧文件
+                self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
                 self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + fname)
                 self.send_header("Content-Length", str(len(data)))
                 self.send_cors()
@@ -1979,6 +1989,8 @@ class H(BaseHTTPRequestHandler):
             fname = urlquote((title or (name + " 错题本")) + ".docx")
             self.send_response(200)
             self.send_header("Content-Type", DOCX_CTYPE)
+            # Word 是一次性下载：禁用缓存，否则微信/WebView 可能复用上一次下载的旧文件
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
             self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + fname)
             self.send_header("Content-Length", str(len(data)))
             self.send_cors()
@@ -2640,6 +2652,8 @@ class H(BaseHTTPRequestHandler):
             fname = urlquote((paper.get("title") or "试卷") + ".docx")
             self.send_response(200)
             self.send_header("Content-Type", DOCX_CTYPE)
+            # Word 是一次性下载：禁用缓存，否则微信/WebView 可能复用上一次下载的旧文件
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
             self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + fname)
             self.send_header("Content-Length", str(len(data)))
             self.send_cors(); self.end_headers()
