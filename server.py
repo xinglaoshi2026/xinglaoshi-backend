@@ -842,6 +842,11 @@ def train_ensure_card(student_id, error_id, first_seen=None):
 def train_on_answer(card, result):
     """result: right / half / wrong / self_right / self_wrong"""
     right = result in ("right", "self_right")
+    # 记下「最近一次作答结果」。train_build_daily 据此把「上次做错/半对」的题
+    # 排到到期队列最前面，兑现下面那句「错了明天必见」——否则学生一旦积压，
+    # 昨天刚做错的题会被逾期更久的旧卡挤出每日题单（家长/老师看到的就是"没重现"）。
+    card["lastResult"] = result
+    card["lastAnsweredDate"] = _date_today()
     if right:
         card["consecutiveRight"] += 1
         card["level"] = min(card["level"] + 1, 5)
@@ -860,6 +865,36 @@ def train_on_answer(card, result):
         card["nextDueDate"] = _date_after(_date_today(), TRAIN_INTERVALS[card["level"]])
     card["updatedAt"] = now_ms()
     store_put("trainCards", card["id"], card)
+
+
+def train_heal_card_results():
+    """老数据自愈：早期卡片没有 lastResult 字段时，从作答流水里回填最近一次结果。
+    train_build_daily 靠这个字段判定「上次做错/半对的题必须重现」。
+    幂等、只补不改；没有需要补的卡时不做流水查询。返回回填条数。"""
+    cards = [c["body"] for c in store_list("trainCards", limit=8000)]
+    todo = [c for c in cards if not c.get("lastResult")]
+    if not todo:
+        return 0
+    latest = {}   # (studentId, errorId) -> 最近一条流水
+    for l in store_list("trainLogs", limit=20000):
+        b = l.get("body") or {}
+        sid, eid = b.get("studentId"), b.get("errorId")
+        if not sid or not eid:
+            continue
+        day = b.get("date") or b.get("answerDate") or ""
+        k = (sid, eid)
+        if k not in latest or day >= (latest[k].get("date") or latest[k].get("answerDate") or ""):
+            latest[k] = b
+    n = 0
+    for c in todo:
+        lg = latest.get((c.get("studentId"), c.get("errorId")))
+        if not lg:
+            continue
+        c["lastResult"] = lg.get("result")
+        c["lastAnsweredDate"] = lg.get("date") or lg.get("answerDate") or ""
+        store_put("trainCards", c["id"], c)
+        n += 1
+    return n
 
 
 def train_answered_ids(task_id):
@@ -956,7 +991,13 @@ def train_build_daily(student_id, date_str, include_new=True):
     不同学生能力/时间不同，题量也应不同。
 
     名额分配(修复旧漏洞)：至少留 max(1, daily_max//2) 道给「新课巩固」池，避免
-    旧到期卡永远占满全部名额、新收录的错题长期排不进去（学生一落后就卡死在老题上）。"""
+    旧到期卡永远占满全部名额、新收录的错题长期排不进去（学生一落后就卡死在老题上）。
+
+    到期卡的优先级(修复旧漏洞)：「上次做错/半对」的题永远排最前面。
+    原排序只按 (掌握等级, 逾期天数)，昨天刚做错的题因为逾期 0 天而排在最末，
+    一旦学生手上积压的旧卡 ≥ 每日题量（很常见：一次没做就攒下十几张），
+    这道题就会被永远挤出题单 —— 与 train_on_answer 里「错了明天必见」的承诺矛盾。
+    等级低的先出、其余按逾期最久优先的次序保持不变。"""
     stu, _ = store_get("students", student_id)
     try:
         daily_max = int((stu or {}).get("dailyCount", TRAIN_DAILY_MAX) or TRAIN_DAILY_MAX)
@@ -968,7 +1009,10 @@ def train_build_daily(student_id, date_str, include_new=True):
              store_list("trainCards", limit=3000)]
     due = [c for c in cards if c.get("studentId") == student_id
            and c.get("status") == "active" and c.get("nextDueDate", "") <= date_str]
-    due.sort(key=lambda c: (c.get("level", 0),
+    # ①「上次做错/半对」永远最优先（必见承诺）② 掌握等级低的优先
+    # ③ 其余按逾期最久的优先（保持原次序，防止特别老的卡被一直压后）
+    due.sort(key=lambda c: (0 if c.get("lastResult") in ("half", "wrong", "self_wrong") else 1,
+                            c.get("level", 0),
                             -_days_between(c.get("nextDueDate", date_str), date_str)))
     # 新课巩固池：近7天收录且仍 level0 的错题
     new_pool = []
@@ -1081,6 +1125,7 @@ def train_rebuild_today_task(student_id, date_str=None):
         return None
     if task.get("status") in ("done", "partial"):
         return None      # 已作答：保留原题单，避免把已交的题换掉
+    train_heal_card_results()   # 同 train_generate_tasks：先补齐卡片作答结果再重算题单
     task["errorIds"] = train_task_error_ids(student_id, date_str)
     task["updatedAt"] = now_ms()
     store_put("trainTasks", tid, task)
@@ -1091,6 +1136,7 @@ def train_generate_tasks(date_str=None, student_ids=None):
     """为全体学生(或指定 student_ids)生成某天任务包(覆盖式)。返回生成统计。
     student_ids 非空时只给这些学生生成，其余学生任务不动（用于按学生单独派发）。"""
     date_str = date_str or _date_today()
+    train_heal_card_results()   # 老卡片回填「最近一次作答结果」，让"必见"规则对存量数据同样生效
     students = [s["body"] for s in store_list("students", limit=2000)]
     if student_ids:
         wanted = set(str(x).strip() for x in student_ids if str(x).strip())
