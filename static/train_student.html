@@ -1892,13 +1892,13 @@ async function loadWeek(){
 }
 
 // 打印版：只含今天要做的题目（不含答案/解析），做题前就能下载打印，方便在纸上作答
-// ★必须带 date=今天，否则后端会走「该生全部错题」分支，导出整本错题本而不是今天布置的题。
+// ★必须带 date=今天。不带 date 后端会走「该生全部错题」分支，导出整本错题本而不是今天布置的题。
+//   万一 task.date 缺失也不退回"不带 date 直接下载"，而是交给服务端兜底（它也按今天取）。
 async function downloadTodayQuestions(){
-  if(!TODAY_DATE){ alert('今天还没有练习任务，暂时没有可打印的题目'); return; }
   const url = API + '/api/train/errors/export.docx?mode=questions'
-    + '&date=' + encodeURIComponent(TODAY_DATE)
+    + (TODAY_DATE ? '&date=' + encodeURIComponent(TODAY_DATE) : '')
     + '&_=' + Date.now();     // 破缓存：避免 WebView 复用上一次下载的旧文件
-  await _downloadDocx(url, TODAY_DATE + ' 练习题.docx');
+  await _downloadDocx(url, (TODAY_DATE || '今天') + ' 练习题.docx');
 }
 // 下载错题本（Word）：与「组卷下载」同一套排版，后端导出全部错题（含答案）
 async function downloadErrors(){
