@@ -1749,13 +1749,45 @@ body{background:#F2F2F7;color:#111;
 .q .ans .lb{font-weight:700;color:#2F5C8F;margin-bottom:4px}
 .q .ans img{max-width:100%;height:auto;display:block;margin:8px 0}
 .btn.sm{padding:8px 13px;font-size:14px}
-/* 打印面板没弹出来时的补救条：给一个显眼的「开始打印」按钮（用户手势里的 print 最可靠），
-   以及「复制链接去浏览器」的备选。平时隐藏，只在微信/QQ 里 1.6s 后仍没弹出打印面板时才打开。 */
-.inapp{display:none;padding:13px 16px;background:#FFF6DE;border-bottom:1px solid #EEDFB0;
- color:#5A4310;font-size:14px;line-height:1.7}
-.inapp.on{display:block}
-.inapp b{color:#8A5B06}
-.inapp .btn{margin:9px 8px 0 0}
+/* 顶部常驻小提示 + 「点右上角 ⋯ 去浏览器」的全屏引导层。
+   起因：安卓微信 / QQ 的内置浏览器（X5 / XWeb）没有实现 window.print 方法，
+   点「打印」不会有任何反应（不是页面坏了）。所以一旦发现打印面板没出来，
+   就弹这层引导，把「去系统浏览器打开这一页」的三步说清楚。 */
+.hint{display:none;margin:10px auto 0;max-width:210mm;padding:10px 14px;
+ background:#FFF6DE;border:1px solid #EEDFB0;border-radius:12px;
+ color:#5A4310;font-size:13.5px;line-height:1.7}
+.hint.on{display:block}
+.hint b{color:#8A5B06}
+.btn.ghost{background:transparent;color:#4578B3;box-shadow:inset 0 0 0 1px rgba(69,120,179,.35)}
+.ovl{position:fixed;left:0;right:0;top:0;bottom:0;z-index:90;display:none;overflow:auto;
+ -webkit-overflow-scrolling:touch;background:rgba(18,20,24,.55);
+ -webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+.ovl.on{display:block}
+.card{margin:80px 16px 30px;max-width:540px;background:#fff;border-radius:18px;
+ padding:20px 18px 16px;box-shadow:0 20px 60px rgba(0,0,0,.30)}
+.card h3{margin:0 0 8px;font-size:19px;line-height:1.4;letter-spacing:-.02em}
+.card .sub{margin:0 0 15px;color:#3A3A3C;font-size:14px;line-height:1.75}
+.card .sub b{color:#1C1C1E}
+.steps{margin:0 0 16px;padding:0;list-style:none;counter-reset:s}
+.steps li{position:relative;padding:0 0 0 30px;margin:0 0 13px;font-size:15px;line-height:1.7}
+.steps li:before{counter-increment:s;content:counter(s);position:absolute;left:0;top:2px;
+ width:21px;height:21px;border-radius:11px;background:#4578B3;color:#fff;
+ font-size:12.5px;font-weight:700;line-height:21px;text-align:center}
+.steps li b{color:#1C1C1E}
+.ovl .btn{margin:0 8px 9px 0}
+.ovl .fine{margin:10px 0 0;color:#6C6C70;font-size:12.5px;line-height:1.7}
+.ovl .fine.on{color:#3A7361;font-weight:600}
+/* 指右上角 ⋯ 的小气泡（引导层打开时一起出现，轻轻跳） */
+.pa{position:fixed;top:8px;right:12px;z-index:95;display:none;align-items:center;gap:5px;
+ background:#fff;border-radius:999px;padding:7px 13px;font-size:13.5px;font-weight:700;
+ color:#1C1C1E;box-shadow:0 6px 22px rgba(0,0,0,.30);pointer-events:none;
+ animation:pab 1.1s ease-in-out infinite}
+.pa.on{display:flex}
+.pa.bot{top:auto;bottom:10px}
+.pa .paArr{color:#4578B3}
+.alt{color:#8A8A8E;font-size:12.5px;line-height:1.6}
+@keyframes pab{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+@keyframes pad{0%,100%{transform:translateY(0)}50%{transform:translateY(7px)}}
 .empty{max-width:520px;margin:44px auto;background:#fff;border-radius:18px;padding:26px 22px;
  box-shadow:0 6px 24px rgba(69,120,179,.12)}
 .empty h2{margin:0 0 10px;font-size:19px}
@@ -1768,13 +1800,37 @@ body{background:#F2F2F7;color:#111;
  .bar .bt{width:100%;margin:0 0 2px}
  /* 手机上按钮要够大好点：最小 40px 触控高度 */
  .btn{padding:11px 15px}
+ .hint{margin:8px 10px 0}
+ .card{margin:64px 10px 26px;padding:18px 15px 14px}
 }
 @media print{
- body{background:#fff}
- .bar,.hint,.tip,.inapp{display:none!important}
+ .bar,.hint,.ovl,.pa{display:none!important}
  .paper{width:auto;margin:0;padding:0;box-shadow:none;border-radius:0}
  .q{margin-bottom:20px}
 }
+"""
+
+
+_PRINT_GUIDE = """
+<div class="ovl" id="ovl">
+ <div class="pa" id="pa"><span class="paArr">&#11014;</span><span class="paTx">点右上角的 ⋯</span></div>
+ <div class="card">
+  <h3 id="gTitle">这台手机的微信 / QQ 打不了打印机</h3>
+  <p class="sub" id="gSub">不是页面出了问题：<b>微信 / QQ 自带的内置浏览器没有打印功能</b>，
+   所以点「打印」不会有任何反应。跟着下面三步，用手机自己的浏览器打开这一页，就能直接选打印机。</p>
+  <ol class="steps">
+   <li id="gStep1">点屏幕<b>右上角的 ⋯</b>（就在「练习题打印」那一行最右边）</li>
+   <li>在弹出的菜单里选 <b id="gMenu">「在浏览器打开」</b>
+    <span class="alt">（也可能是「用浏览器打开」「在 Safari 中打开」「用 QQ 浏览器打开」——看到「浏览器」就对了）</span></li>
+   <li>打开的<b>就是这一页</b>：会自动弹出打印面板，选你家的打印机即可（连着 Wi-Fi 的无线打印机也能选）</li>
+  </ol>
+  <button class="btn primary" onclick="__p()">我到浏览器了，再打印一次</button>
+  <button class="btn" onclick="__cp()">复制本页链接</button>
+  <button class="btn" onclick="__dl()">下载 Word</button>
+  <button class="btn ghost" onclick="__close()">先看题目，稍后再打印</button>
+  <p class="fine" id="gFine"></p>
+ </div>
+</div>
 """
 
 
@@ -1805,41 +1861,69 @@ def build_train_print_html(name, errors, date_str, title=None, note=None,
                        % (_print_html_frag(e.get("answer") or "", budget, mtk), ana, ai))
         body.append('<section class="q"><div class="qh">%d.%s</div><div class="qb">%s</div>%s%s</section>'
                     % (i, kp_html, stem, lines, ans))
-    dl_btn = ('<a class="btn" href="%s">下载 Word</a>' % dl_url) if dl_url else ""
+    dl_btn = ('<a class="btn" id="dlBtn" href="%s">下载 Word</a>' % dl_url) if dl_url else ""
     return (
         '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
         '<title>%s</title><style>%s</style></head><body>'
         '<div class="bar">'
         '<span class="bt">练习题打印</span>'
-        '<button class="btn primary" onclick="window.print()">打印</button>'
+        '<button class="btn primary" onclick="__p()">打印</button>'
         '<button class="btn" id="cpBtn" onclick="__cp()">复制链接</button>'
         '%s'
         '<a class="btn" href="%s">%s</a>'
         '</div>'
-        '<div class="inapp" id="inappBar">'
-        '<div><b>没有弹出打印面板？</b>点下面的「<b>开始打印</b>」再试一次，'
-        '手机就会列出你连的打印机（无线打印机也可以）。'
-        '要是点了一直没反应，再点右上角 <b>⋯</b> → <b>在浏览器打开</b>：'
-        '打开的就是这一页，会自动弹出打印。</div>'
-        '<button class="btn primary sm" onclick="window.print()">开始打印</button>'
-        '<button class="btn sm" onclick="__cp()">复制本页链接</button>'
-        '</div>'
-        '<div class="tip" id="tip">正在调起系统打印……<br>没有弹出打印窗口的话，点上面的「<b>打印</b>」。'
-        '这台设备没有连打印机的话，点「<b>下载 Word</b>」，到连着打印机的电脑上打开再打印。</div>'
+        '<div class="hint" id="hint">点「打印」没反应？点右上角的 <b>⋯</b> → <b>在浏览器打开</b>，'
+        '打开的就是这一页，会自动弹出打印面板。</div>'
         '<div class="paper">'
         '<h1>%s</h1>'
         '<div class="meta">%s</div>'
         '<div class="fill">姓名：______________　　日期：______________</div>'
         '<hr>%s</div>'
+        '%s'
         '<script>(function(){'
-        'var inapp=/micromessenger|qq\\/[\\d.]+/i.test(navigator.userAgent||"");'
-        'var bar=document.getElementById("inappBar");'
-        'function hideBar(){if(bar)bar.className="inapp";}'
-        'function showBar(){if(bar&&inapp)bar.className="inapp on";}'
+        'var ua=navigator.userAgent||"";'
+        'var ios=/iphone|ipad|ipod/i.test(ua);'
+        'var wx=/micromessenger/i.test(ua);'
+        'var qq=/qq[/][0-9.]+/i.test(ua);'
+        'var other=/aweme|toutiao|alipayclient|dingtalk|weibo|xiaohongshu|biliapp/i.test(ua);'
+        'var inapp=wx||qq||other;'
+        'var ovl=document.getElementById("ovl"),pa=document.getElementById("pa");'
+        'var hint=document.getElementById("hint"),fine=document.getElementById("gFine");'
+        'function on(el,cls){if(el)el.className=cls;}'
+        'if(hint&&inapp)on(hint,"hint on");'
+        'var menu=document.getElementById("gMenu");'
+        'if(menu){if(wx&&ios)menu.textContent="「在 Safari 中打开」";'
+        'else if(qq)menu.textContent="「用浏览器打开」";'
+        'else menu.textContent="「在浏览器打开」";}'
+        'var paTx=document.querySelector("#pa .paTx"),st1=document.getElementById("gStep1");'
+        'if(inapp&&ios){'
+        'if(paTx)paTx.textContent="点右下角的 ⋯";'
+        'if(st1)st1.innerHTML="点屏幕<b>右下角的 ⋯</b>（页面最底下那条工具栏的最右边）";}'
+        'var host=wx?(ios?"微信 iPhone 版":"微信安卓版"):(qq?"QQ":(other?"这个 App 的内置浏览器":""));'
+        'if(fine)fine.textContent="家里有电脑的话，点 ⋯ 里的「发送到电脑 / 在电脑上打开」，"'
+        '+"在电脑上打开这一页也会自动弹出打印。"+(host?("　当前环境："+host+"。"):"");'
+        'var ttl=document.getElementById("gTitle"),sub=document.getElementById("gSub");'
+        'if(!inapp&&sub)sub.innerHTML="页面已经排好版了。点「再打印一次」重试；还不行就把链接复制到浏览器里打开，'
+        '或者点「下载 Word」到电脑上打印。";'
+        'if(!inapp&&ttl)ttl.textContent="没有弹出打印面板？";'
+        'var paBot=(inapp&&ios)?1:0;'
+        'var printed=false,tm=null;'
+        'function shut(){on(ovl,"ovl");on(pa,paBot?"pa bot":"pa");}'
+        'function mark(){printed=true;shut();if(hint)on(hint,"hint");}'
+        'function show(){if(printed)return;on(ovl,"ovl on");'
+        'on(pa,paBot?"pa bot on":"pa on");}'
+        'window.__close=shut;'
+        'window.__p=function(){printed=false;shut();'
+        'try{window.print();}catch(e){}'
+        'if(tm)clearTimeout(tm);tm=setTimeout(show,1500);};'
+        'window.__dl=function(){var a=document.getElementById("dlBtn");'
+        'if(a){a.click();}else{alert("这份练习没有 Word 文件，请用「复制本页链接」到浏览器里打印。");}};'
         'window.__cp=function(){var u=location.href;'
         'var done=function(){var b=document.getElementById("cpBtn");'
-        'if(b){b.textContent="已复制 ✓";setTimeout(function(){b.textContent="复制链接";},1800);}};'
+        'if(b){b.textContent="已复制 ✓";setTimeout(function(){b.textContent="复制链接";},1800);}'
+        'if(fine){on(fine,"fine on");'
+        'fine.textContent="已复制本页链接 ✓　粘进手机浏览器的地址栏就能打开（会自动弹出打印）。";}};'
         'try{if(navigator.clipboard&&navigator.clipboard.writeText){'
         'navigator.clipboard.writeText(u).then(done,function(){__cpx(u,done);});return;}}catch(e){}'
         '__cpx(u,done);};'
@@ -1848,16 +1932,17 @@ def build_train_print_html(name, errors, date_str, title=None, note=None,
         'document.body.appendChild(t);t.select();t.setSelectionRange(0,u.length);'
         'document.execCommand("copy");document.body.removeChild(t);done();}'
         'catch(e){alert("复制失败：请长按页面顶部的网址手动复制");}};'
-        'var d=0;function go(){if(d)return;d=1;hideBar();try{window.print()}catch(e){}}'
-        'function arm(){setTimeout(go,400);setTimeout(showBar,1600);}'
-        'window.addEventListener("beforeprint",hideBar);'      # 打印面板真的开了 -> 收起补救条
-        'window.addEventListener("afterprint",hideBar);'
-        'window.addEventListener("blur",hideBar);'             # 系统打印弹层会抢焦点
-        'window.addEventListener("load",arm);'
-        'if(document.readyState==="complete")setTimeout(arm,0);})();</script>'
+        'window.addEventListener("beforeprint",mark);'
+        'window.addEventListener("afterprint",mark);'
+        'window.addEventListener("blur",mark);'
+        'function auto(){setTimeout(function(){if(!printed)window.__p();},400);}'
+        'window.addEventListener("load",auto);'
+        'if(document.readyState==="complete")setTimeout(auto,0);'
+        '})();</script>'
         '</body></html>'
         % (xesc(title or "练习题"), _PRINT_CSS, dl_btn, xesc(back_url), xesc(back_label),
-           xesc(title or "练习题"), xesc(note or ""), "".join(body)))
+           xesc(title or "练习题"), xesc(note or ""), "".join(body), _PRINT_GUIDE))
+
 
 
 def build_train_print_empty_html(name, date_str, title=None, note=None,
