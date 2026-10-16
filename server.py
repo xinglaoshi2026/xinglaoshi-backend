@@ -555,6 +555,91 @@ def media_ticket_ok(tk, exp):
     return secrets.compare_digest(str(tk or ""), _media_sign(e))
 
 
+# ---------------- Word 下载直链票据（微信/QQ 内置浏览器不能下载文件） ----------------
+# 现象：学生在微信里点「打印题目」，微信要么没反应、要么弹"无法下载"，只能把链接复制到
+# 系统浏览器里打开才能下；而系统浏览器没有微信 WebView 里的登录态（token 存在
+# localStorage 里），于是又要重新登录一次。
+# 办法：学生端检测到微信环境后，向后端领一条「下载直链」——URL 里带短时签名票据，
+# 复制到任意浏览器打开即可直接把 Word 下下来，不用登录。
+# 票据只覆盖「某个学生的某一份导出」（scope 里绑死了学生与日期/试卷），10 分钟过期，
+# 不能用于任何其它接口，泄露风险有界。
+DL_TTL = int(os.environ.get("DL_TTL", "1800"))   # 下载直链有效期(秒)，默认 30 分钟
+
+
+def _dl_sign(scope, exp):
+    """下载直链签名：密钥复用媒体票据密钥（存 meta 表，重启不失效）。"""
+    raw = "dl|%s|%s" % (scope, int(exp))
+    return hashlib.sha256((_media_secret() + "|" + raw).encode("utf-8")).hexdigest()[:40]
+
+
+def dl_ticket_scope(path, q):
+    """按请求路径还原票据 scope（必须与签发时完全一致，否则验签不过）。
+    只认两类下载接口，其余一律 None。"""
+    mode = (q.get("mode", [None])[0] or "").strip().lower()
+    if path == "/api/train/errors/export.docx":
+        sid = (q.get("sid", [None])[0] or "").strip()
+        if not sid:
+            return None
+        return "errors|%s|%s|%s" % (sid, (q.get("date", [None])[0] or "").strip(), mode)
+    m = re.match(r"^/api/train/student/([^/]+)/papers/([^/]+)/docx$", path)
+    if m:
+        return "paper|%s|%s|%s" % (urlunquote(m.group(1)), urlunquote(m.group(2)), mode)
+    return None
+
+
+def dl_ticket_user(path, q):
+    """校验下载直链票据；有效则返回「该生本人」的身份，否则 None。
+
+    返回的身份只是把 eff_sid 指到票据里的学生（学生角色天然只看自己），
+    这样导出分支的原逻辑一行都不用改。"""
+    tk = (q.get("tk", [None])[0] or "").strip()
+    if not tk:
+        return None
+    try:
+        exp = int((q.get("e", [None])[0] or "0"))
+    except Exception:
+        return None
+    if exp < int(time.time()):
+        return None
+    scope = dl_ticket_scope(path, q)
+    if not scope:
+        return None
+    if not secrets.compare_digest(tk, _dl_sign(scope, exp)):
+        return None
+    return {"role": "student", "student_id": scope.split("|")[1],
+            "username": "", "studentId": scope.split("|")[1], "viaTicket": True}
+
+
+def send_dl_expired(h):
+    """下载直链过期/被改过：在浏览器里打开的是一张网页，不能丢 JSON 让家长学生发懵。"""
+    html = ("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
+            "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+            "<title>下载链接已过期</title><style>"
+            "body{margin:0;padding:56px 24px;background:#F2F2F7;color:#1C1C1E;"
+            "font:16px/1.7 -apple-system,BlinkMacSystemFont,\"PingFang SC\",\"Microsoft YaHei\",sans-serif;"
+            "display:flex;justify-content:center}"
+            ".box{max-width:420px;background:#fff;border-radius:18px;padding:26px 22px;"
+            "box-shadow:0 6px 24px rgba(69,120,179,.12)}"
+            "h1{margin:0 0 12px;font-size:20px;letter-spacing:-.02em}"
+            "p{margin:0 0 10px;color:#3A3A3C}"
+            ".k{color:#2F5C8F;font-weight:600}"
+            "</style></head><body><div class=\"box\">"
+            "<h1>下载链接已过期</h1>"
+            "<p>为了安全，这条下载链接只能用一次、并且有时间限制。</p>"
+            "<p>请回到<span class=\"k\">微信里的学习页面</span>，重新点一次<span class=\"k\">「打印题目」</span>，"
+            "复制新链接后再到浏览器打开就可以了。</p>"
+            "</div></body></html>")
+    data = html.encode("utf-8")
+    h.send_response(410)
+    h.send_header("Content-Type", "text/html; charset=utf-8")
+    h.send_header("Cache-Control", "no-store")
+    h.send_header("Content-Length", str(len(data)))
+    h.send_cors()
+    h.end_headers()
+    h.wfile.write(data)
+    h._responded = True
+
+
 def _media_url(rel):
     """对象存储启用且「该对象已存在于云」时返回预签名 GET URL(302 重定向)；
     否则返回 None(走本地磁盘读)。这样迁移期间旧图仍在本地、新图已上云，
@@ -1837,6 +1922,14 @@ class H(BaseHTTPRequestHandler):
         # 训练类 GET 接口均需登录
         u = user_of(get_token(self))
         if not u:
+            # 下载直链票据放行：微信里不能下载文件，学生把这条链接复制到系统浏览器打开，
+            # 浏览器里没有登录态，所以用短时签名票据鉴权（见 dl_ticket_user）。
+            u = dl_ticket_user(p, q)
+            if not u and (q.get("tk", [None])[0] or "").strip():
+                # 带了票据却没验过：多半是链接过期后又点了浏览器历史 → 给人话提示页，
+                # 而不是丢一段 JSON 让家长学生看不懂。
+                return send_dl_expired(self)
+        if not u:
             return send_json(self, {"error": "未登录"}, 401)
         # 学生角色: 强制只看自己, 且禁用看板
         is_student = (u.get("role") == "student")
@@ -1926,6 +2019,41 @@ class H(BaseHTTPRequestHandler):
                 practiced = _student_practiced_ids(eff_sid)
                 items = [e for e in items if e.get("id") in practiced]
             return send_json(self, {"items": items, "count": len(items)})
+        if p == "/api/train/dl.ticket":
+            # 领一条「下载直链」：微信/QQ 内置浏览器不能下载文件，学生端检测到微信后调这里，
+            # 把返回的 url 复制到系统浏览器打开即可直接下载 Word（URL 自带短时签名票据，免登录）。
+            kind = (q.get("kind", [None])[0] or "errors").strip().lower()
+            mode = (q.get("mode", [None])[0] or "").strip().lower()
+            sid_q = (eff_sid if is_student
+                     else ((q.get("studentId", [None])[0] or "").strip() or eff_sid)) or ""
+            if not sid_q:
+                return send_json(self, {"error": "缺少学生"}, 400)
+            exp = int(time.time()) + DL_TTL
+            if kind == "paper":
+                pid = (q.get("pid", [None])[0] or "").strip()
+                if not pid:
+                    return send_json(self, {"error": "缺少试卷"}, 400)
+                if mode not in ("all",):
+                    mode = "questions"
+                scope = "paper|%s|%s|%s" % (sid_q, pid, mode)
+                path = ("/api/train/student/%s/papers/%s/docx?mode=%s"
+                        % (urlquote(sid_q, safe=""), urlquote(pid, safe=""), urlquote(mode, safe="")))
+            else:
+                d = (q.get("date", [None])[0] or "").strip()
+                if not d and is_student:
+                    d = _date_today()   # 学生端「打印题目」= 今天要做的题（与导出接口同口径）
+                scope = "errors|%s|%s|%s" % (sid_q, d, mode)
+                path = ("/api/train/errors/export.docx?sid=%s&mode=%s&date=%s"
+                        % (urlquote(sid_q, safe=""), urlquote(mode, safe=""), urlquote(d, safe="")))
+            path += "&e=%d&tk=%s" % (exp, _dl_sign(scope, exp))
+            host = self.headers.get("Host") or ""
+            proto = (self.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip()
+            if not proto:
+                hl = host.lower()
+                proto = "http" if (hl.startswith("127.") or hl.startswith("localhost")
+                                   or hl.startswith("0.0.0.0")) else "https"
+            url = ("%s://%s%s" % (proto, host, path)) if host else path
+            return send_json(self, {"url": url, "expires": exp, "ttl": DL_TTL})
         if p == "/api/train/errors/export.docx":
             # 导出 Word。学生只能导出自己的；老师可带 ?studentId= 导出指定学生。
             #  ?date=YYYY-MM-DD  只导该天练习任务里的题
