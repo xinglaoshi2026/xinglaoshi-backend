@@ -1621,12 +1621,13 @@ def html_mod_unescape(s):
 
 def build_train_errors_docx(name, errors, title=None, note=None,
                             with_answers=True, blank_lines=0, header=None,
-                            show_date=True):
+                            show_date=True, separator=True):
     """把某学生的错题导出为 Word（复用组卷导出的排版：题面 + 答案/解析 + 图片）。
     with_answers=False 时只印题目（供学生做题前打印出来在纸上作答，不含任何答案/解析/答案图）。
 
     note / header 不传就不印（练习题要一张干净的纸：不印「共 N 道题…」与姓名日期栏）。
-    show_date=False 时题目标题后不再跟错题日期（「1. 摩擦起电　2026-10-11」→「1. 摩擦起电」）。"""
+    show_date=False 时题目标题后不再跟错题日期（「1. 摩擦起电　2026-10-11」→「1. 摩擦起电」）。
+    separator=False 时连每题后的分隔空行也不留（题与题紧挨着）。"""
     qmap = {}
     ids = []
     for i, e in enumerate(errors, 1):
@@ -1652,7 +1653,7 @@ def build_train_errors_docx(name, errors, title=None, note=None,
         ids.append(qid)
     paper = {"title": title or ((name or "学生") + " 错题本"),
              "note": note, "header": header, "blankLines": blank_lines,
-             "questionIds": ids}
+             "sepAfter": separator, "questionIds": ids}
     return build_paper_docx(paper, qmap)
 
 
@@ -2059,7 +2060,8 @@ def build_paper_docx(paper, questions_map):
                 rels.append((rid, "media/img%d.%s" % (img_idx, ext)))
                 media.append((arc, data))
                 paras.append(_p_image(rid, img_idx, cx, cy))
-        paras.append(_p_text("", sz=12))
+        if paper.get("sepAfter", True):   # 每题后的分隔空行（练习题要紧凑时可以关掉）
+            paras.append(_p_text("", sz=12))
         for _ in range(blank_lines):   # 打印版：每题下方留白
             paras.append('<w:p><w:r><w:rPr><w:sz w:val="22"/></w:rPr><w:t xml:space="preserve">　</w:t></w:r></w:p>')
 
@@ -2611,7 +2613,7 @@ class H(BaseHTTPRequestHandler):
                     data = build_train_errors_docx(
                         nm, errs,
                         title="%s %s 练习题" % (nm, d),
-                        with_answers=False, show_date=False)
+                        with_answers=False, show_date=False, separator=False)
                     fname = urlquote("%s %s 练习题.docx" % (nm, d))
                 else:
                     # 该生「全部错题」：只印题目（不含答案），供打印到纸上作答
