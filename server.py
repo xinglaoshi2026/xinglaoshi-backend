@@ -1620,9 +1620,13 @@ def html_mod_unescape(s):
 
 
 def build_train_errors_docx(name, errors, title=None, note=None,
-                            with_answers=True, blank_lines=0, header=None):
+                            with_answers=True, blank_lines=0, header=None,
+                            show_date=True):
     """把某学生的错题导出为 Word（复用组卷导出的排版：题面 + 答案/解析 + 图片）。
-    with_answers=False 时只印题目（供学生做题前打印出来在纸上作答，不含任何答案/解析/答案图）。"""
+    with_answers=False 时只印题目（供学生做题前打印出来在纸上作答，不含任何答案/解析/答案图）。
+
+    note / header 不传就不印（练习题要一张干净的纸：不印「共 N 道题…」与姓名日期栏）。
+    show_date=False 时题目标题后不再跟错题日期（「1. 摩擦起电　2026-10-11」→「1. 摩擦起电」）。"""
     qmap = {}
     ids = []
     for i, e in enumerate(errors, 1):
@@ -1644,11 +1648,10 @@ def build_train_errors_docx(name, errors, title=None, note=None,
                 ans.append("<p>附件：%s（请在手机上查看）</p>" % "、".join(atts))
         qmap[qid] = {"content": content, "answer": "".join(ans),
                      "type": e.get("knowledgePoint") or "错题",
-                     "qid": e.get("wrongDate") or ""}
+                     "qid": (e.get("wrongDate") or "") if show_date else ""}
         ids.append(qid)
     paper = {"title": title or ((name or "学生") + " 错题本"),
-             "note": note or ("共 %d 道错题　导出日期 %s" % (len(ids), _date_today())),
-             "header": header, "blankLines": blank_lines,
+             "note": note, "header": header, "blankLines": blank_lines,
              "questionIds": ids}
     return build_paper_docx(paper, qmap)
 
@@ -2593,7 +2596,7 @@ class H(BaseHTTPRequestHandler):
                     # （岳鹏博反馈：今天发布了题，下载下来的却不是今天的）。这里统一按今天取。
                     date_arg = _date_today()
                 if date_arg:
-                    # 当天练习任务内的题（带姓名/日期表头 + 留白，供打印到纸上作答）
+                    # 当天练习任务内的题（干净版：不印说明行/姓名日期栏、不跟错题日期、不留白）
                     d = date_arg
                     task, _ = store_get("trainTasks", "t_%s_%s" % (eff_sid, d))
                     ids = set(task.get("errorIds") or []) if task else set()
@@ -2608,9 +2611,7 @@ class H(BaseHTTPRequestHandler):
                     data = build_train_errors_docx(
                         nm, errs,
                         title="%s %s 练习题" % (nm, d),
-                        note="共 %d 道题　请打印后在纸上作答" % len(errs),
-                        with_answers=False, blank_lines=6,
-                        header="姓名：______________　　日期：______________")
+                        with_answers=False, show_date=False)
                     fname = urlquote("%s %s 练习题.docx" % (nm, d))
                 else:
                     # 该生「全部错题」：只印题目（不含答案），供打印到纸上作答
