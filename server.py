@@ -1627,7 +1627,8 @@ def build_train_errors_docx(name, errors, title=None, note=None,
 
     note / header 不传就不印（练习题要一张干净的纸：不印「共 N 道题…」与姓名日期栏）。
     show_date=False 时题目标题后不再跟错题日期（「1. 摩擦起电　2026-10-11」→「1. 摩擦起电」）。
-    separator=False 时连每题后的分隔空行也不留（题与题紧挨着）。"""
+    separator=False 时进入紧凑排版：连每题后的分隔空行、题干里多余的空行都不留
+    （题与题紧挨着）。"""
     qmap = {}
     ids = []
     for i, e in enumerate(errors, 1):
@@ -1653,7 +1654,8 @@ def build_train_errors_docx(name, errors, title=None, note=None,
         ids.append(qid)
     paper = {"title": title or ((name or "学生") + " 错题本"),
              "note": note, "header": header, "blankLines": blank_lines,
-             "sepAfter": separator, "questionIds": ids}
+             "sepAfter": separator, "compact": not separator,
+             "questionIds": ids}
     return build_paper_docx(paper, qmap)
 
 
@@ -2036,6 +2038,8 @@ def build_paper_docx(paper, questions_map):
                           + _content_segments(qb.get("answer") or "")
                           + _content_segments(qb.get("analysis") or "")):
             if kind == "text":
+                if paper.get("compact") and not val.strip():
+                    continue          # 紧凑版（练习题）：题干末尾那些空行也不要
                 paras.append(_p_text(val))
             else:
                 data = _cache.get(val) or _media_bytes(val)   # 优先用并行预取缓存
