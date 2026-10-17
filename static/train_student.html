@@ -1094,7 +1094,7 @@ async function loadToday(){
   head.innerHTML='<div class="tb-note">'
     +'<svg class="ic"><use href="#i-printer"/></svg>'
     +'<span>题目可以打印出来做，做完拍照上传</span>'
-    +'<button class="btn2 sm" onclick="printTodayQuestions()"><svg class="ic"><use href="#i-printer"/></svg>打印题目</button>'
+    +'<button class="btn2 sm" onclick="downloadTodayQuestions()"><svg class="ic"><use href="#i-printer"/></svg>打印题目</button>'
     +'</div>'
     +'<div class="tb-meta"><span>'+fmtDate(task.date)+'</span>'
     +'<span>今天的练习</span>'+badge
@@ -2021,58 +2021,13 @@ async function loadWeek(){
   }).join('');
 }
 
-/* 打印题目：打开服务端渲染的 A4 打印页 → 浏览器自动调起系统打印面板。
-   手机的系统打印能连家里无线打印机、电脑直接连本机打印机，一步就能打出纸来，
-   不必先下 Word、再用 Word 打开着打印。
-   ★ 微信 / QQ 里的处理：这里**不弹「复制链接」引导层**，直接把当前页导航到打印页 ——
-     学生实测微信里也能弹出系统打印面板（iPhone 走 AirPrint 连无线打印机），
-     所以自动打印照常；万一没弹出来（部分安卓内核不支持 window.print），
-     打印页顶部会出现一条「开始打印」补救条，点一下即用手势内的 print 再试一次，
-     还不行就照提示「⋯ → 在浏览器打开」（打开的正是这一页）。
-   真打不开（网络异常/领票失败）才退回下载 Word。 */
-async function printTodayQuestions(){
-  if(!SID){ alert('请先登录'); return; }
-  const dq = TODAY_DATE ? '&date=' + encodeURIComponent(TODAY_DATE) : '';
-  const wx = isWechat();
-  // 普通浏览器先在用户手势里同步开一个占位窗口：等请求回来再开，会被当成弹窗拦掉
-  let w = null;
-  if(!wx){
-    try{ w = window.open('', '_blank'); }catch(e){}
-    if(w){
-      try{
-        w.document.write('<!doctype html><meta charset="utf-8"><title>正在准备打印…</title>'
-          +'<body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;'
-          +'background:#F2F2F7;color:#1C1C1E;font:16px/1.7 -apple-system,BlinkMacSystemFont,'
-          +"'PingFang SC','Microsoft YaHei',sans-serif\"><div>正在准备打印…</div>");
-        w.document.close();
-      }catch(e){}
-    }
-  }
-  const got = await call('/api/train/dl.ticket?kind=print' + dq);
-  const j = got.j;
-  if(got.status === 200 && j && j.url){
-    if(wx){ location.href = j.url; return; }   // 微信/QQ 里也直接进打印页：页面会自动调起系统打印面板
-    if(w){ try{ w.location.replace(j.url); w.focus(); return; }catch(e){} }
-    location.href = j.url;   // 占位窗被浏览器拦下 → 就在当前页打开打印页
-    return;
-  }
-  if(w){ try{ w.close(); }catch(e){} }
-  // 打不开打印页（网络异常/服务器忙）→ 退回下载 Word，学生可用 Word 打印
-  alert((j && j.error) || (got.net ? '网络不太好，已改为下载 Word 文件' : '打不开打印页，已改为下载 Word 文件'));
-  await downloadTodayQuestions();
-}
-
-// 只含今天要做的题目（不含答案/解析）的 Word，做题前下载打印，方便在纸上作答。
-// 现在主要作为「打印」的兜底（打印页打不开时才走这里）。
+// 打印题目 = 下载今天要做的题目（Word，不含答案/解析），学生自己用 Word / 打印店打出来。
+// 这是最早的行为，2026-10-17 按老师要求原样恢复（不做打印页、不做微信引导层）。
 // ★必须带 date=今天。不带 date 后端会走「该生全部错题」分支，导出整本错题本而不是今天布置的题。
 //   万一 task.date 缺失也不退回"不带 date 直接下载"，而是交给服务端兜底（它也按今天取）。
 async function downloadTodayQuestions(){
-  const dq = TODAY_DATE ? '&date=' + encodeURIComponent(TODAY_DATE) : '';
-  if(isWechat()){   // 微信/QQ 里下不了文件，改为领直链去浏览器打开
-    await wxDownload('kind=errors&mode=questions' + dq);
-    return;
-  }
-  const url = API + '/api/train/errors/export.docx?mode=questions' + dq
+  const url = API + '/api/train/errors/export.docx?mode=questions'
+    + (TODAY_DATE ? '&date=' + encodeURIComponent(TODAY_DATE) : '')
     + '&_=' + Date.now();     // 破缓存：避免 WebView 复用上一次下载的旧文件
   await _downloadDocx(url, (TODAY_DATE || '今天') + ' 练习题.docx');
 }
